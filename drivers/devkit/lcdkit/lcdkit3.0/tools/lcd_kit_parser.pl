@@ -105,18 +105,18 @@ debug_print("working in path $working_path\n");
 chdir $working_path;
 
 my $plat_path;
-my $root_path = "$working_path/../../../../../../..";
+my $root_path = "$working_path/../../../../..";
 if ($chip_plat eq "qcom")
 {
-    $plat_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/qcom/$chip_name/lcdkit";
+    $plat_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/qcom/$chip_name/lcdkit";
 }
 if ($chip_plat eq "mtk")
 {
-    $plat_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/mtk/$chip_name/lcdkit";
+    $plat_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/mtk/$chip_name/lcdkit";
 }
 if ($chip_plat eq "hisi")
 {
-    $plat_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/hisi/$chip_name/lcdkit";
+    $plat_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/hisi/$chip_name/lcdkit";
 }
 
 debug_print("get chip plat xml file path is: $plat_path\n");
@@ -135,7 +135,7 @@ foreach $plat_file (@plat_xmls) {
 }
 
 #collect lcd xmls
-my $panel_xml_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/panel";
+my $panel_xml_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/panel";
 my @panel_xmls = get_hisi_xml_list("panel_xmls");
 foreach my $panel_file (@panel_xmls) {
     debug_print("get panel xml files $panel_file\n");
@@ -144,7 +144,7 @@ foreach my $panel_file (@panel_xmls) {
 my $out_dtsi_file_path;
 my $vender_list_path;
 my $udp_vender_list_path = "$root_path/device/hisi/customize/udp_lcdkit/lcdkit3.0/config/hisi/$chip_name";
-my $devkit_tool_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/tools";
+my $devkit_tool_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/tools";
 
 #clean lcd generate files
 if (($target_file_type eq "dtsi") || ($target_file_type eq "trebledto") || ($target_file_type eq "all") || ($target_file_type eq "fwdtb"))
@@ -180,7 +180,7 @@ if (($target_file_type eq "head") || ($target_file_type eq "dto-head") || ($targ
 {
     if ($out_head_file_path eq "")
     {
-        $out_head_file_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/panel/head";
+        $out_head_file_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/panel/head";
     }
   
     if (!-e "$out_head_file_path"){
@@ -198,7 +198,7 @@ if ((($target_file_type eq "effect") || ($target_file_type eq "all")) && ($chip_
 {
     if ($out_effect_file_path eq "")
     {
-        $out_effect_file_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/panel/effect";
+        $out_effect_file_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/panel/effect";
     }
     if (!-e "$out_effect_file_path"){
         debug_print("out effect file path not exist, create it now!\n");
@@ -211,17 +211,17 @@ if ((($target_file_type eq "effect") || ($target_file_type eq "all")) && ($chip_
 
 if ($chip_plat eq "qcom")
 {
-    $vender_list_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/qcom/$chip_name";
+    $vender_list_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/qcom/$chip_name";
 }
 
 if ($chip_plat eq "mtk")
 {
-    $vender_list_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/mtk/$chip_name";
+    $vender_list_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/mtk/$chip_name";
 }
 
 if ($chip_plat eq "hisi")
 {
-    $vender_list_path = "$root_path/vendor/huawei/chipset_common/devkit/lcdkit/lcdkit3.0/config/hisi/$chip_name";
+    $vender_list_path = "$root_path/drivers/devkit/lcdkit/lcdkit3.0/config/hisi/$chip_name";
 }
 
 #get lcd list

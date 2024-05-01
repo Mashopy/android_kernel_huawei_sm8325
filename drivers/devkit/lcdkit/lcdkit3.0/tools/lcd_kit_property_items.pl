@@ -5992,18 +5992,10 @@ sub create_xml_name_map_struct
 
     $lcd_struct .= "struct lcd_kit_xml_string_name_map xml_string_name_map[] = {\n";
 
-    if ($target_file_type eq "fwdtb") {
-        for (my $count = 0; $count < @fwdtb_dtsi_property_strings; $count++) {
-            my $xml_name = get_xml_string_name($fwdtb_dtsi_property_strings[$count][0]);
-            my $dtsi_name = get_dtsi_string_name($fwdtb_dtsi_property_strings[$count][5]);
-            $lcd_struct .= "    {\"" . $xml_name . "\",    \"" . $dtsi_name . "\"},\n";
-        }
-    } else {
-        for (my $count = 0; $count < @dtsi_property_strings; $count++) {
-            my $xml_name = get_xml_string_name($dtsi_property_strings[$count][0]);
-            my $dtsi_name = get_dtsi_string_name($dtsi_property_strings[$count][5]);
-            $lcd_struct .= "    {\"" . $xml_name . "\",    \"" . $dtsi_name . "\"},\n";
-        }
+    for (my $count = 0; $count < @dtsi_property_strings; $count++) {
+        my $xml_name = get_xml_string_name($dtsi_property_strings[$count][0]);
+        my $dtsi_name = get_dtsi_string_name($dtsi_property_strings[$count][5]);
+        $lcd_struct .= "    {\"" . $xml_name . "\",    \"" . $dtsi_name . "\"},\n";
     }
 
     $lcd_struct .= "};\n\n";
