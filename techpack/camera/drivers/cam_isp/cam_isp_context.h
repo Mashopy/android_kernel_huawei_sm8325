@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2022, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _CAM_ISP_CONTEXT_H_
@@ -251,6 +251,8 @@ struct cam_isp_context_event_record {
  * @last_applied_req_id:       Last applied request id
  * @last_sof_timestamp:        SOF timestamp of the last frame
  * @bubble_frame_cnt:          Count of the frame after bubble
+ * @total_bubble_frame_cnt:    total number of the frame after bubble and cdm
+ *                             callback received
  * @state_monitor_head:        Write index to the state monitoring array
  * @req_info                   Request id information about last buf done
  * @cam_isp_ctx_state_monitor: State monitoring array
@@ -297,6 +299,7 @@ struct cam_isp_context {
 	int64_t                          last_applied_req_id;
 	uint64_t                         last_sof_timestamp;
 	uint32_t                         bubble_frame_cnt;
+	uint32_t                         total_bubble_frame_cnt;
 	atomic64_t                       state_monitor_head;
 	struct cam_isp_context_state_monitor cam_isp_ctx_state_monitor[
 		CAM_ISP_CTX_STATE_MONITOR_MAX_ENTRIES];

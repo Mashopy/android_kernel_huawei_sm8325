@@ -84,4 +84,7 @@ int cam_sensor_bob_pwm_mode_switch(struct cam_hw_soc_info *soc_info,
 	int bob_reg_idx, bool flag);
 
 bool cam_sensor_util_check_gpio_is_shared(struct cam_hw_soc_info *soc_info);
+
+int msm_cam_sensor_handle_reg_gpio(int seq_type,
+	struct msm_camera_gpio_num_info *gpio_num_info, int val);
 #endif /* _CAM_SENSOR_UTIL_H_ */

@@ -1120,48 +1120,57 @@ static int32_t cam_cci_burst_read(struct v4l2_subdev *sd,
 		}
 
 		while (true) {
-			read_words = cam_io_r_mb(base +
+		read_words = cam_io_r_mb(base +
 				CCI_I2C_M0_READ_BUF_LEVEL_ADDR +
 				master * 0x100);
-			if (read_words <= 0) {
-				CAM_DBG(CAM_CCI, "FIFO Buffer lvl is 0");
-				break;
-			}
+		if (read_words <= 0) {
+			CAM_DBG(CAM_CCI, "FIFO Buffer lvl is 0");
+			goto enable_irq;
+		}
 
-			j++;
+read_again:
+		j++;
 			CAM_DBG(CAM_CCI, "Iteration: %u read_words %d",
 				j, read_words);
 
-			total_read_words += read_words;
-			while (read_words > 0) {
-				val = cam_io_r_mb(base +
+		total_read_words += read_words;
+		while (read_words > 0) {
+			val = cam_io_r_mb(base +
 					CCI_I2C_M0_READ_DATA_ADDR +
 					master * 0x100);
-				for (i = 0; (i < 4) &&
-					(index < read_cfg->num_byte); i++) {
+			for (i = 0; (i < 4) &&
+				(index < read_cfg->num_byte); i++) {
 					CAM_DBG(CAM_CCI, "i:%d index:%d",
 						i, index);
-					if (!first_byte) {
-						CAM_DBG(CAM_CCI, "sid 0x%x",
-							val & 0xFF);
-						first_byte++;
-					} else {
-						read_cfg->data[index] =
-							(val  >> (i * 8)) & 0xFF;
+				if (!first_byte) {
+					CAM_DBG(CAM_CCI, "sid 0x%x",
+						val & 0xFF);
+					first_byte++;
+				} else {
+					read_cfg->data[index] =
+						(val  >> (i * 8)) & 0xFF;
 						CAM_DBG(CAM_CCI, "data[%d] 0x%x",
 							index,
-							read_cfg->data[index]);
-						index++;
-					}
+						read_cfg->data[index]);
+					index++;
 				}
-				read_words--;
 			}
+			read_words--;
+		}
 
 			CAM_DBG(CAM_CCI,
 				"Iteration:%u total_read_words %d",
-				j, total_read_words);
+			j, total_read_words);
 		}
 
+		read_words = cam_io_r_mb(base +
+			CCI_I2C_M0_READ_BUF_LEVEL_ADDR + master * 0x100);
+		if (read_words > 0) {
+			CAM_DBG(CAM_CCI, "FIFO Buffer lvl is %d", read_words);
+			goto read_again;
+		}
+
+enable_irq:
 		spin_lock_irqsave(&cci_dev->lock_status, flags);
 		if (cci_dev->irqs_disabled) {
 			irq_mask_update =

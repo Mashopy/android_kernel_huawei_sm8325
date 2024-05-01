@@ -9,6 +9,7 @@
 #include "cam_actuator_core.h"
 #include "cam_trace.h"
 #include "camera_main.h"
+#include "vendor_actuator_core.h"
 
 static int cam_actuator_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
@@ -63,6 +64,12 @@ static long cam_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 		}
 
 		rc = cam_actuator_subdev_close_internal(sd, NULL);
+		break;
+	case VIDIOC_CAM_CONTROL_VENDOR:
+		rc = vendor_actuator_driver_cmd(a_ctrl, arg);
+		if (rc)
+			CAM_ERR(CAM_ACTUATOR,
+				"Failed for driver_cmd_vendor: %d", rc);
 		break;
 	default:
 		CAM_ERR(CAM_ACTUATOR, "Invalid ioctl cmd: %u", cmd);
@@ -273,6 +280,7 @@ static int cam_actuator_component_bind(struct device *dev,
 	a_ctrl->soc_info.dev = &pdev->dev;
 	a_ctrl->soc_info.dev_name = pdev->name;
 	a_ctrl->io_master_info.master_type = CCI_MASTER;
+	a_ctrl->io_master_info.device_type = CAM_ACTUATOR;
 
 	a_ctrl->io_master_info.cci_client = kzalloc(sizeof(
 		struct cam_sensor_cci_client), GFP_KERNEL);

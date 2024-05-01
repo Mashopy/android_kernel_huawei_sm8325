@@ -12,6 +12,7 @@
 #include "cam_debug_util.h"
 #include "cam_cx_ipeak.h"
 #include "cam_mem_mgr.h"
+#include "vendor_soc_util.h"
 
 static char supported_clk_info[256];
 
@@ -404,10 +405,10 @@ long cam_soc_util_get_clk_round_rate(struct cam_hw_soc_info *soc_info,
 /**
  * cam_soc_util_set_clk_rate()
  *
- * @brief:            Sets the given rate for the clk requested for
+ * @brief:          Sets the given rate for the clk requested for
  *
- * @clk:              Clock structure information for which rate is to be set
- * @clk_name:         Name of the clock for which rate is being set
+ * @clk:            Clock structure information for which rate is to be set
+ * @clk_name:       Name of the clock for which rate is being set
  * @clk_rate:         Clock rate to be set
  * @applied_clk_rate: Final clock rate set to the clk
  *
@@ -680,8 +681,8 @@ int cam_soc_util_clk_disable(struct clk *clk, const char *clk_name)
 int cam_soc_util_clk_enable_default(struct cam_hw_soc_info *soc_info,
 	enum cam_vote_level clk_level)
 {
-	int                          i, rc = 0;
-	enum cam_vote_level          apply_level;
+	int i, rc = 0;
+	enum cam_vote_level apply_level;
 	unsigned long                applied_clk_rate;
 
 	if ((soc_info->num_clk == 0) ||
@@ -1390,7 +1391,7 @@ int cam_soc_util_get_dt_properties(struct cam_hw_soc_info *soc_info)
 	rc = cam_soc_util_get_gpio_info(soc_info);
 	if (rc)
 		return rc;
-
+	vendor_soc_util_get_dt_properties(soc_info);
 	if (of_find_property(of_node, "qcom,cam-cx-ipeak", NULL))
 		rc = cam_cx_ipeak_register_cx_ipeak(soc_info);
 

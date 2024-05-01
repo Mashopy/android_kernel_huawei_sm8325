@@ -801,6 +801,7 @@ static int __cam_req_mgr_send_req(struct cam_req_mgr_core_link *link,
 	apply_req.link_hdl = link->link_hdl;
 	apply_req.report_if_bubble = 0;
 	apply_req.re_apply = false;
+	apply_req.frame_id = link->frame_id; /* used for actuatorVA */
 	if (link->retry_cnt > 0) {
 		if (g_crm_core_dev->recovery_on_apply_fail)
 			apply_req.re_apply = true;
@@ -1553,6 +1554,93 @@ static int __cam_req_mgr_check_sync_req_is_ready(
 	return 0;
 }
 
+/**
+ * __cam_req_mgr_check_peer_req_is_applied()
+ *
+ * @brief : Check whether peer req is applied
+ * @link : pointer to link whose input queue and req tbl are
+ * traversed through
+ * @idx : slot idx
+ * @return : true means the req is applied, others not applied
+ *
+ */
+static bool __cam_req_mgr_check_peer_req_is_applied(
+	struct cam_req_mgr_core_link *link,
+	int32_t idx)
+{
+	bool applied = true;
+	int64_t req_id;
+	int i, sync_slot_idx = 0;
+	struct cam_req_mgr_core_link *sync_link = NULL;
+	struct cam_req_mgr_slot *slot = NULL;
+	struct cam_req_mgr_slot *sync_slot = NULL;
+	struct cam_req_mgr_req_queue *in_q = NULL;
+
+	if (idx < 0)
+		return true;
+
+	slot = &link->req.in_q->slot[idx];
+	req_id = slot->req_id;
+	in_q = link->req.in_q;
+
+	CAM_DBG(CAM_REQ,
+		"Check Req[%lld] idx %d req_status %d link_hdl %x is applied in peer link",
+		req_id, idx, slot->status, link->link_hdl);
+
+	if (slot->sync_mode == CAM_REQ_MGR_SYNC_MODE_NO_SYNC) {
+		applied = true;
+		goto end;
+	}
+
+	for (i = 0; i < link->num_sync_links; i++) {
+		sync_link = link->sync_link[i];
+
+		if (!sync_link) {
+			applied &= true;
+			continue;
+		}
+
+		in_q = sync_link->req.in_q;
+		if (!in_q) {
+			CAM_DBG(CAM_CRM, "Link hdl %x in_q is NULL",
+				sync_link->link_hdl);
+			applied &= true;
+			continue;
+		}
+
+		sync_slot_idx = __cam_req_mgr_find_slot_for_req(
+		sync_link->req.in_q, req_id);
+
+		if ((sync_slot_idx < 0) ||
+			(sync_slot_idx >= MAX_REQ_SLOTS)) {
+			CAM_DBG(CAM_CRM,
+				"Can't find req:%lld from peer link, idx:%d",
+				req_id, sync_slot_idx);
+			applied &= true;
+			continue;
+		}
+
+		sync_slot = &in_q->slot[sync_slot_idx];
+
+		if (sync_slot->status == CRM_SLOT_STATUS_REQ_APPLIED)
+			applied &= true;
+		else
+			applied &= false;
+
+		CAM_DBG(CAM_CRM,
+			"link:%x idx:%d status:%d applied:%d",
+			sync_link->link_hdl, sync_slot_idx, sync_slot->status, applied);
+	}
+
+end:
+	CAM_DBG(CAM_REQ,
+		"Check Req[%lld] idx %d applied:%d",
+		req_id, idx, link->link_hdl, applied);
+
+	return applied;
+}
+
+
 static int __cam_req_mgr_check_multi_sync_link_ready(
 	struct cam_req_mgr_core_link *link,
 	struct cam_req_mgr_slot *slot,
@@ -1729,6 +1817,7 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 
 	mutex_lock(&session->lock);
 	in_q = link->req.in_q;
+	link->frame_id = trigger_data->frame_id; /* used for actuatorVA */
 	/*
 	 * Check if new read index,
 	 * - if in pending  state, traverse again to complete
@@ -1815,9 +1904,16 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 						slot->req_id,
 						(trigger == CAM_TRIGGER_POINT_SOF) ? "SOF" : "EOF");
 
-				if (!rc)
-					rc = __cam_req_mgr_check_link_is_ready(link,
-						slot->idx, false);
+				if (!rc) {
+					rc = __cam_req_mgr_check_peer_req_is_applied(
+						link, in_q->last_applied_idx);
+
+					if (rc)
+						rc = __cam_req_mgr_check_link_is_ready(
+							link, slot->idx, false);
+					else
+						rc = -EINVAL;
+				}
 			}
 		}
 
@@ -1859,6 +1955,15 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 				"linx_hdl %x Req[%lld] idx %d ready to apply",
 				link->link_hdl, in_q->slot[in_q->rd_idx].req_id,
 				in_q->rd_idx);
+		}
+	} else { /* used for delay sensor when actuatorVA config */
+		rc = __cam_req_mgr_inject_delay(link->req.l_tbl, slot->idx, trigger);
+		if (rc < 0) {
+			CAM_WARN(CAM_CRM,
+				"req_slot_ready:Req: %lld needs to inject delay at %s need go to end",
+				slot->req_id,
+				(trigger == CAM_TRIGGER_POINT_SOF) ? "SOF" : "EOF");
+			goto end;
 		}
 	}
 
@@ -1925,9 +2030,8 @@ static int __cam_req_mgr_process_req(struct cam_req_mgr_core_link *link,
 			(trigger == CAM_TRIGGER_POINT_SOF)) {
 			slot->status = CRM_SLOT_STATUS_REQ_APPLIED;
 
-			CAM_DBG(CAM_CRM, "req %d is applied on link %x",
-				slot->req_id,
-				link->link_hdl);
+			CAM_DBG(CAM_CRM, "req %d idx %d is applied on link %x",
+				slot->req_id, in_q->rd_idx, link->link_hdl);
 			idx = in_q->rd_idx;
 			reset_step = link->max_delay;
 
@@ -2985,8 +3089,8 @@ static int cam_req_mgr_process_trigger(void *priv, void *data)
 	struct cam_req_mgr_core_link        *link = NULL;
 	struct cam_req_mgr_req_queue        *in_q = NULL;
 	struct crm_task_payload             *task_data = NULL;
-	int                                  reset_step = 0;
-	int                                  i = 0;
+	int reset_step = 0;
+	int i = 0;
 
 	if (!data || !priv) {
 		CAM_ERR(CAM_CRM, "input args NULL %pK %pK", data, priv);
@@ -3017,20 +3121,18 @@ static int cam_req_mgr_process_trigger(void *priv, void *data)
 				__cam_req_mgr_dec_idx(&idx, 1, in_q->num_slots);
 
 			reset_step = link->max_delay;
+
 			for (i = 0; i < link->num_sync_links; i++) {
 				if (link->sync_link[i]) {
 					if ((link->in_msync_mode) &&
 						(link->sync_link[i]->max_delay >
-							reset_step))
-						reset_step =
-						link->sync_link[i]->max_delay;
+						reset_step))
+						reset_step = link->sync_link[i]->max_delay;
 				}
 			}
-
 			__cam_req_mgr_dec_idx(
 				&idx, reset_step + 1,
 				in_q->num_slots);
-
 			__cam_req_mgr_reset_req_slot(link, idx);
 		}
 	}

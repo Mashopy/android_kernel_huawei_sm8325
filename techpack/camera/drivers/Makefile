@@ -219,6 +219,116 @@ camera-$(CONFIG_SPECTRA_TFE) += \
 	cam_isp/isp_hw_mgr/isp_hw/tfe_csid_hw/cam_tfe_csid530.o \
 	cam_isp/isp_hw_mgr/cam_tfe_hw_mgr.o
 
+# =====================================================
+# HW Qcom Privite Camera Drivers Code
+# =====================================================
+EXTRA_CAMERA := cam_vendor
+COMMON_CAMERA := ../common
+cameratree := $(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/camera \
+	$(srctree)/../../vendor/huawei/chipset_common/plugins/kernel/include/camera
+
+cam_include_dirs := $(shell dirname `find $(cameratree) -name '*.h'` | uniq)
+ccflags-y += $(addprefix -I,$(cam_include_dirs))
+
+ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera/media/
+ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera/media/custom
+ccflags-y += -I$(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/hwsensor
+ccflags-y += -I$(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/hwsensor/apsensor_channel
+ccflags-y += -DVL53L1_FULL_KERNEL
+ccflags-y += -DVL53L3
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(EXTRA_CAMERA)/cam_cfg/vendor_cfg_dev.o \
+	$(EXTRA_CAMERA)/cam_cfg/vendor_cfg_core.o \
+	$(EXTRA_CAMERA)/cam_hiview/vendor_cam_hiview.o \
+	$(EXTRA_CAMERA)/cam_fs/vendor_cam_fs.o
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(EXTRA_CAMERA)/cam_isp/isp_hw_mgr/isp_hw/ife_csid_hw/vendor_ife_csid_core.o \
+	$(EXTRA_CAMERA)/cam_utils/vendor_soc_util.o
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_actuator/vendor_actuator_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_csiphy/vendor_csiphy_soc.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ctrl/vendor_ctrl.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_eeprom/vendor_eeprom_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/vendor_ois_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_sensor/vendor_sensor_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_sensor_io/vendor_sensor_io.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_sensor_utils/vendor_sensor_util.o
+
+camera-$(CONFIG_SPECTRA_DEBUG) += \
+        $(EXTRA_CAMERA)/cam_sensor_module/cam_debug/vendor_debug_adapter.o
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/dw9781/ois_dw9781.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/dw9787/ois_dw9787.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/lc898129/ois_lc898129_fun.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/lc898129/ois_lc898129.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/aw86006/ois_aw86006.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_ois/rumbas10/ois_rumbas10.o
+
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/tmf880x/tmf8801/tof8801_driver.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/tmf880x/tmf8801/tof8801_app0.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/tmf880x/tmf8801/tof8801_bootloader.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/tmf880x/tmf8801/tof_hex_interpreter.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/stmvl53l1_module.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/stmvl53l1_module-i2c.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/vl53l1_platform_ipp.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_hist_funcs.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_xtalk.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_hist_algos_gen3.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_hist_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_sigma_estimate.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_dmax.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/protected/src/vl53l1_hist_algos_gen4.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/stmvl53l1_i2c.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/stmvl53l1_log.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api_strings.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_error_strings.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_register_funcs.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api_preset_modes.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api_calibration.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_silicon_core.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_zone_presets.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_nvm.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_api_debug.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_core_support.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_wait.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vl53L1/src/vl53l1_nvm_debug.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vi5300/vi5300_api.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vi5300/vi5300_firmware.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vi5300/vi5300_module.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vi5300/vi5300_platform.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vendor_laser_dev.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_laser/vendor_laser_soc.o
+
+camera-$(CONFIG_LEDS_QPNP_FLASH_V2) += \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_classdev.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_thermal.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_pmic.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_test.o
+
+ifneq (,$(filter $(CONFIG_LEDS_QTI_FLASH),y m))
+camera-y += \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_classdev.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_thermal.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_pmic.o \
+	$(EXTRA_CAMERA)/cam_sensor_module/cam_flash/vendor_torch_test.o
+endif
+
+# =====================================================
+# HW Chipset Common Camera Drivers Code
+# =====================================================
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	$(COMMON_CAMERA)/cam_hiview/cam_hiview.o \
+	$(COMMON_CAMERA)/cam_debug/cam_debug_core.o \
+	$(COMMON_CAMERA)/cam_class/huawei_cam_class.o \
+	$(COMMON_CAMERA)/cam_class/cam_flash_test/cam_flash_test.o
 
 camera-y += camera_main.o
 
@@ -228,3 +338,4 @@ ifeq ($(CONFIG_SPECTRA_CAMERA),m)
 $(info "SPECTRA CAMERA IS BUILT AS DLKM")
 BOARD_VENDOR_KERNEL_MODULES +=  $(KERNEL_MODULES_OUT)/camera.ko
 endif
+

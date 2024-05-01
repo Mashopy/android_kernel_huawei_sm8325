@@ -10,6 +10,7 @@
 #include <media/cam_sensor.h>
 #include <dt-bindings/msm/msm-camera.h>
 #include "camera_main.h"
+#include "vendor_csiphy_soc.h"
 
 static struct dentry *root_dentry;
 
@@ -77,6 +78,7 @@ static void cam_csiphy_debug_unregister(void)
 	root_dentry = NULL;
 }
 
+
 static int cam_csiphy_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
@@ -116,6 +118,10 @@ static long cam_csiphy_subdev_ioctl(struct v4l2_subdev *sd,
 
 	switch (cmd) {
 	case VIDIOC_CAM_CONTROL:
+		rc = vendor_csiphy_restart(csiphy_dev, arg);
+		if (rc)
+			return rc;
+
 		rc = cam_csiphy_core_cfg(csiphy_dev, arg);
 		if (rc)
 			CAM_ERR(CAM_CSIPHY,

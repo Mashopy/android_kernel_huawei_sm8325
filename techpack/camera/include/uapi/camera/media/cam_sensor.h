@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/ioctl.h>
 #include <camera/media/cam_defs.h>
+#include <media/custom/vendor_cam_sensor.h>
 
 #define CAM_SENSOR_PROBE_CMD   (CAM_COMMON_OPCODE_MAX + 1)
 #define CAM_FLASH_MAX_LED_TRIGGERS 2
@@ -36,10 +37,12 @@ struct  cam_sensor_query_cap {
 	__u32        pos_roll;
 	__u32        pos_yaw;
 	__u32        actuator_slot_id;
+	__u32        va_slot_id;
 	__u32        eeprom_slot_id;
 	__u32        ois_slot_id;
 	__u32        flash_slot_id;
 	__u32        csiphy_slot_id;
+	__u8         fuseid_data[FUSEID_LEN_MAX];
 } __attribute__((packed));
 
 /**
@@ -103,6 +106,9 @@ struct cam_cmd_i2c_info {
 	__u8     i2c_freq_mode;
 	__u8     cmd_type;
 	__u16    reserved;
+	__u32    dual_slave_addr;
+	__u32    is_big_endian;
+	__u32    dev_type;
 } __attribute__((packed));
 
 /**
@@ -116,6 +122,7 @@ struct cam_cmd_i2c_info {
 struct cam_ois_opcode {
 	__u32 prog;
 	__u32 coeff;
+	char fw_ver_name[MAX_OIS_NAME_SIZE];
 	__u32 pheripheral;
 	__u32 memory;
 } __attribute__((packed));
@@ -165,6 +172,8 @@ struct cam_cmd_probe {
 	__u32    data_mask;
 	__u16    camera_id;
 	__u16    reserved;
+	struct   custom_sensor_probe_info sensor_probe_info;
+	struct   custom_module_probe_info module_probe_info;
 } __attribute__((packed));
 
 /**

@@ -13,7 +13,7 @@
 #define CAM_REQ_MGR_MAX_LINKED_DEV     16
 #define MAX_REQ_SLOTS                  48
 
-#define CAM_REQ_MGR_WATCHDOG_TIMEOUT          1000
+#define CAM_REQ_MGR_WATCHDOG_TIMEOUT          4000
 #define CAM_REQ_MGR_WATCHDOG_TIMEOUT_DEFAULT  5000
 #define CAM_REQ_MGR_WATCHDOG_TIMEOUT_MAX      50000
 #define CAM_REQ_MGR_SCHED_REQ_TIMEOUT         1000
@@ -34,7 +34,7 @@
 
 #define MAXIMUM_LINKS_PER_SESSION  4
 
-#define MAXIMUM_RETRY_ATTEMPTS 2
+#define MAXIMUM_RETRY_ATTEMPTS 4
 
 #define MINIMUM_WORKQUEUE_SCHED_TIME_IN_MS 5
 
@@ -421,6 +421,7 @@ struct cam_req_mgr_core_link {
 	bool                                 skip_init_frame;
 	uint64_t                             last_sof_trigger_jiffies;
 	bool                                 wq_congestion;
+	int64_t                              frame_id; /* used for actuatorVA */
 };
 
 /**

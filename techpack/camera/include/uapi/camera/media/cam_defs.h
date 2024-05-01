@@ -61,7 +61,6 @@
 #define CAM_MAX_ACQ_RES    5
 #define CAM_MAX_HW_SPLIT   3
 
-
 /**
  * enum flush_type_t - Identifies the various flush types
  *

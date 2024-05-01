@@ -57,6 +57,7 @@
 #include "cam_tfe_csid530.h"
 #include "cam_csid_ppi100.h"
 #include "camera_main.h"
+#include "vendor_camera_main.h"
 
 struct camera_submodule_component {
 	int (*init)(void);
@@ -162,6 +163,11 @@ static const struct camera_submodule_component camera_custom[] = {
 };
 
 static const struct camera_submodule submodule_table[] = {
+	{
+		.name = "Camera Vendor Module",
+		.num_component = ARRAY_SIZE(vendor_module),
+		.component = (struct camera_submodule_component *)vendor_module,
+	},
 	{
 		.name = "Camera BASE",
 		.num_component = ARRAY_SIZE(camera_base),

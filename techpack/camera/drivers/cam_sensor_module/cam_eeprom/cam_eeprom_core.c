@@ -12,6 +12,7 @@
 #include "cam_debug_util.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "vendor_eeprom_core.h"
 
 #define MAX_READ_SIZE  0x7FFFF
 
@@ -1288,7 +1289,15 @@ static int32_t cam_eeprom_pkt_parse(struct cam_eeprom_ctrl_t *e_ctrl, void *arg)
 		if (rc) {
 			CAM_ERR(CAM_EEPROM,
 				"read_eeprom_memory failed");
-			goto power_down;
+			if (vendor_eeprom_read_need_retry(e_ctrl)) {
+				rc = cam_eeprom_read_memory(e_ctrl, &e_ctrl->cal_data);
+				if (rc) {
+					CAM_ERR(CAM_EEPROM, "retry read_eeprom_memory failed");
+					goto power_down;
+				}
+			} else {
+				goto power_down;
+			}
 		}
 
 		rc = cam_eeprom_get_cal_data(e_ctrl, csl_packet);

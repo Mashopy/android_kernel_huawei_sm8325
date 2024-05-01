@@ -2,7 +2,6 @@
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
  */
-
 #include <linux/module.h>
 #include <cam_sensor_cmn_header.h>
 #include "cam_actuator_core.h"
@@ -10,6 +9,8 @@
 #include "cam_trace.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "vendor_actuator_core.h"
+#include "vendor_ctrl.h"
 
 int32_t cam_actuator_construct_default_power_setting(
 	struct cam_sensor_power_ctrl_t *power_info)
@@ -110,7 +111,7 @@ static int32_t cam_actuator_power_up(struct cam_actuator_ctrl_t *a_ctrl)
 		CAM_ERR(CAM_ACTUATOR, "cci init failed: rc: %d", rc);
 		goto cci_failure;
 	}
-
+	vendor_actuator_init_pwctrl_state(a_ctrl);
 	return rc;
 cci_failure:
 	if (cam_sensor_util_power_down(power_info, soc_info))
@@ -240,6 +241,7 @@ int32_t cam_actuator_slaveInfo_pkt_parser(struct cam_actuator_ctrl_t *a_ctrl,
 			a_ctrl->io_master_info.master_type);
 		 rc = -EINVAL;
 	}
+	vendor_actuator_pkt_parser(a_ctrl, i2c_info);
 
 	return rc;
 }
@@ -262,6 +264,7 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 
 	list_for_each_entry(i2c_list,
 		&(i2c_set->list_head), list) {
+		vendor_actuator_revert_byte(a_ctrl, i2c_list);
 		rc = cam_actuator_i2c_modes_util(
 			&(a_ctrl->io_master_info),
 			i2c_list);
@@ -275,6 +278,7 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 				i2c_set->request_id);
 		}
 	}
+	vendor_actuator_apply_settings(a_ctrl, i2c_set);
 
 	return rc;
 }
@@ -300,6 +304,9 @@ int32_t cam_actuator_apply_request(struct cam_req_mgr_apply_request *apply)
 	trace_cam_apply_req("Actuator", apply->request_id);
 
 	CAM_DBG(CAM_ACTUATOR, "Request Id: %lld", apply->request_id);
+	if (vendor_actuator_apply_request(a_ctrl, apply))
+		return -EINVAL;
+
 	mutex_lock(&(a_ctrl->actuator_mutex));
 	if ((apply->request_id ==
 		a_ctrl->i2c_data.per_frame[request_id].request_id) &&
@@ -378,6 +385,8 @@ static int cam_actuator_update_req_mgr(
 	add_req.link_hdl = a_ctrl->bridge_intf.link_hdl;
 	add_req.req_id = csl_packet->header.request_id;
 	add_req.dev_hdl = a_ctrl->bridge_intf.device_hdl;
+
+	vendor_actuator_update_req_mgr(a_ctrl, csl_packet, &add_req);
 
 	if (a_ctrl->bridge_intf.crm_cb &&
 		a_ctrl->bridge_intf.crm_cb->add_req) {
@@ -872,7 +881,6 @@ int32_t cam_actuator_driver_cmd(struct cam_actuator_ctrl_t *a_ctrl,
 			rc = -EFAULT;
 			goto release_mutex;
 		}
-
 		a_ctrl->cam_act_state = CAM_ACTUATOR_ACQUIRE;
 	}
 		break;
@@ -937,6 +945,7 @@ int32_t cam_actuator_driver_cmd(struct cam_actuator_ctrl_t *a_ctrl,
 			rc = -EFAULT;
 			goto release_mutex;
 		}
+		vendor_actuator_ctrl_register(a_ctrl);
 	}
 		break;
 	case CAM_START_DEV: {

@@ -26,6 +26,7 @@
 #include "cam_soc_util.h"
 #include "cam_debug_util.h"
 #include "cam_context.h"
+#include "vendor_actuator_dev.h"
 
 #define NUM_MASTERS 2
 #define NUM_QUEUES 2
@@ -115,6 +116,7 @@ struct cam_actuator_ctrl_t {
 	struct cam_actuator_query_cap act_info;
 	struct actuator_intf_params bridge_intf;
 	uint32_t last_flush_req;
+	struct vendor_actuator_ctrl v_ctrl;
 };
 
 /**

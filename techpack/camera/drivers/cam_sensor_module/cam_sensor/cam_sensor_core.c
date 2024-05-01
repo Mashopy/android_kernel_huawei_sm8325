@@ -11,7 +11,8 @@
 #include "cam_trace.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
-
+#include "vendor_sensor_core.h"
+#include "vendor_sensor_io.h"
 
 static int cam_sensor_update_req_mgr(
 	struct cam_sensor_ctrl_t *s_ctrl,
@@ -438,6 +439,7 @@ int32_t cam_sensor_update_slave_info(struct cam_cmd_probe *probe_info,
 		probe_info->expected_data;
 	s_ctrl->sensordata->slave_info.sensor_id_mask =
 		probe_info->data_mask;
+	vendor_sensor_update_slave_info(probe_info, s_ctrl);
 	/* Userspace passes the pipeline delay in reserved field */
 	s_ctrl->pipeline_delay =
 		probe_info->reserved;
@@ -545,7 +547,8 @@ int32_t cam_handle_mem_ptr(uint64_t handle, struct cam_sensor_ctrl_t *s_ctrl)
 		rc = -EINVAL;
 		goto end;
 	}
-	if (pkt->num_cmd_buf != 2) {
+	/* pkt->num_cmd_buf != 2 is for compatible other prd */
+	if (pkt->num_cmd_buf < 2) {
 		CAM_ERR(CAM_SENSOR, "Expected More Command Buffers : %d",
 			 pkt->num_cmd_buf);
 		rc = -EINVAL;
@@ -586,6 +589,12 @@ int32_t cam_handle_mem_ptr(uint64_t handle, struct cam_sensor_ctrl_t *s_ctrl)
 				"Failed to parse the command Buffer Header");
 			goto end;
 		}
+	}
+	rc = vendor_cam_handle_probe_reg_settings(pkt->num_cmd_buf,
+		s_ctrl, cmd_desc);
+	if (rc < 0) {
+		CAM_ERR(CAM_SENSOR, "Failed to handle probe register settings");
+		goto end;
 	}
 
 end:
@@ -685,7 +694,7 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
-	rc = camera_io_dev_read(
+	rc = vendor_camera_io_dev_read(
 		&(s_ctrl->io_master_info),
 		slave_info->sensor_id_reg_addr,
 		&chipid,
@@ -777,6 +786,8 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			goto free_power_settings;
 		}
 
+		vendor_sensor_apply_reg_settings(s_ctrl);
+
 		/* Match sensor ID */
 		rc = cam_sensor_match_id(s_ctrl);
 		if (rc < 0) {
@@ -784,6 +795,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			msleep(20);
 			goto free_power_settings;
 		}
+
+		rc = vendor_module_match_id(s_ctrl);
+		if (rc < 0)
+			goto free_power_settings;
 
 		CAM_INFO(CAM_SENSOR,
 			"Probe success,slot:%d,slave_addr:0x%x,sensor_id:0x%x",
@@ -923,6 +938,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		struct  cam_sensor_query_cap sensor_cap;
 
 		cam_sensor_query_cap(s_ctrl, &sensor_cap);
+		vendor_sensor_query_cap(s_ctrl, &sensor_cap);
 		if (copy_to_user(u64_to_user_ptr(cmd->handle),
 			&sensor_cap, sizeof(struct  cam_sensor_query_cap))) {
 			CAM_ERR(CAM_SENSOR, "Failed Copy to User");
@@ -972,10 +988,12 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			"CAM_START_DEV Success, sensor_id:0x%x,sensor_slave_addr:0x%x",
 			s_ctrl->sensordata->slave_info.sensor_id,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr);
+		vendor_sensor_start_dev(s_ctrl);
 	}
 		break;
 	case CAM_STOP_DEV: {
-		if (s_ctrl->sensor_state != CAM_SENSOR_START) {
+		if ((s_ctrl->sensor_state != CAM_SENSOR_START) &&
+			(s_ctrl->sensor_state != CAM_SENSOR_CONFIG)) {
 			rc = -EINVAL;
 			CAM_WARN(CAM_SENSOR,
 			"Not in right state to stop : %d",
@@ -1000,6 +1018,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			"CAM_STOP_DEV Success, sensor_id:0x%x,sensor_slave_addr:0x%x",
 			s_ctrl->sensordata->slave_info.sensor_id,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr);
+		vendor_sensor_stop_dev(s_ctrl);
 	}
 		break;
 	case CAM_CONFIG_DEV: {
@@ -1339,6 +1358,8 @@ int cam_sensor_apply_settings(struct cam_sensor_ctrl_t *s_ctrl,
 			CAM_DBG(CAM_SENSOR,
 				"Invalid/NOP request to apply: %lld", req_id);
 		}
+
+		vendor_sensor_dump_reg(s_ctrl);
 
 		/* Change the logic dynamically */
 		for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {

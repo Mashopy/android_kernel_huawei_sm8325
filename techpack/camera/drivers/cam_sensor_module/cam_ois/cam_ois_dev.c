@@ -9,6 +9,7 @@
 #include "cam_ois_core.h"
 #include "cam_debug_util.h"
 #include "camera_main.h"
+#include "vendor_ois_core.h"
 
 static int cam_ois_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
@@ -60,6 +61,12 @@ static long cam_ois_subdev_ioctl(struct v4l2_subdev *sd,
 			return 0;
 		}
 		rc = cam_ois_subdev_close_internal(sd, NULL);
+		break;
+	case VIDIOC_CAM_CONTROL_VENDOR:
+		rc = vendor_ois_driver_cmd(o_ctrl, arg);
+		if (rc)
+			CAM_ERR(CAM_OIS,
+				"Failed for driver_cmd_vendor: %d", rc);
 		break;
 	default:
 		CAM_ERR(CAM_OIS, "Wrong IOCTL cmd: %u", cmd);
@@ -291,6 +298,7 @@ static int cam_ois_component_bind(struct device *dev,
 	o_ctrl->ois_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 
 	o_ctrl->io_master_info.master_type = CCI_MASTER;
+	o_ctrl->io_master_info.device_type = CAM_OIS;
 	o_ctrl->io_master_info.cci_client = kzalloc(
 		sizeof(struct cam_sensor_cci_client), GFP_KERNEL);
 	if (!o_ctrl->io_master_info.cci_client)
@@ -308,6 +316,8 @@ static int cam_ois_component_bind(struct device *dev,
 	INIT_LIST_HEAD(&(o_ctrl->i2c_init_data.list_head));
 	INIT_LIST_HEAD(&(o_ctrl->i2c_calib_data.list_head));
 	INIT_LIST_HEAD(&(o_ctrl->i2c_mode_data.list_head));
+	INIT_LIST_HEAD(&(o_ctrl->i2c_time_data.list_head));
+	INIT_LIST_HEAD(&(o_ctrl->i2c_shutdown_data.list_head));
 	mutex_init(&(o_ctrl->ois_mutex));
 	rc = cam_ois_driver_soc_init(o_ctrl);
 	if (rc) {

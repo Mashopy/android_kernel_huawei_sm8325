@@ -8,6 +8,8 @@
 #include "cam_sensor_soc.h"
 #include "cam_sensor_core.h"
 #include "camera_main.h"
+#include "vendor_sensor_core.h"
+#include "vendor_ctrl.h"
 
 static int cam_sensor_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
@@ -61,6 +63,12 @@ static long cam_sensor_subdev_ioctl(struct v4l2_subdev *sd,
 		}
 
 		rc = cam_sensor_subdev_close_internal(sd, NULL);
+		break;
+	case VIDIOC_CAM_CONTROL_VENDOR:
+		rc = vendor_sensor_driver_cmd(s_ctrl, arg);
+		if (rc)
+			CAM_ERR(CAM_SENSOR,
+				"Failed in Driver Vendor cmd:: %d", rc);
 		break;
 	default:
 		CAM_ERR(CAM_SENSOR, "Invalid ioctl cmd: %d", cmd);
@@ -216,6 +224,7 @@ static int32_t cam_sensor_driver_i2c_probe(struct i2c_client *client,
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.streamon_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.streamoff_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.read_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.sensor_reg_settings.list_head));
 
 	for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
 		INIT_LIST_HEAD(&(s_ctrl->i2c_data.per_frame[i].list_head));
@@ -271,6 +280,7 @@ static int cam_sensor_component_bind(struct device *dev,
 	s_ctrl->pdev = pdev;
 
 	s_ctrl->io_master_info.master_type = CCI_MASTER;
+	s_ctrl->io_master_info.device_type = CAM_SENSOR;
 
 	rc = cam_sensor_parse_dt(s_ctrl);
 	if (rc < 0) {
@@ -306,6 +316,7 @@ static int cam_sensor_component_bind(struct device *dev,
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.streamon_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.streamoff_settings.list_head));
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.read_settings.list_head));
+	INIT_LIST_HEAD(&(s_ctrl->i2c_data.sensor_reg_settings.list_head));
 
 	for (i = 0; i < MAX_PER_FRAME_ARRAY; i++) {
 		INIT_LIST_HEAD(&(s_ctrl->i2c_data.per_frame[i].list_head));
@@ -324,6 +335,8 @@ static int cam_sensor_component_bind(struct device *dev,
 	s_ctrl->sensordata->power_info.dev = &pdev->dev;
 	platform_set_drvdata(pdev, s_ctrl);
 	s_ctrl->sensor_state = CAM_SENSOR_INIT;
+
+	vendor_sensor_ctrl_register(s_ctrl);
 	CAM_DBG(CAM_SENSOR, "Component bound successfully");
 
 	return rc;

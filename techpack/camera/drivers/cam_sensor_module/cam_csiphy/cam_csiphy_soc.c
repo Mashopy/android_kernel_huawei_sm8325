@@ -15,6 +15,7 @@
 #include "include/cam_csiphy_2_0_hwreg.h"
 #include "include/cam_csiphy_2_1_0_hwreg.h"
 #include "cam_subdev.h"
+#include "vendor_csiphy_soc.h"
 
 /* Clock divide factor for CPHY spec v1.0 */
 #define CSIPHY_DIVISOR_16           16
@@ -507,6 +508,8 @@ int32_t cam_csiphy_parse_dt_info(struct platform_device *pdev,
 		rc =  -EINVAL;
 		return rc;
 	}
+
+	vendor_csiphy_reg_config(soc_info, csiphy_dev);
 
 	if (soc_info->num_clk > CSIPHY_NUM_CLK_MAX) {
 		CAM_ERR(CAM_CSIPHY, "invalid clk count=%d, max is %d",

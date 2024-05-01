@@ -11,6 +11,7 @@
 #include <cam_req_mgr_util.h>
 #include "cam_sensor_soc.h"
 #include "cam_soc_util.h"
+#include "vendor_sensor_core.h"
 
 int32_t cam_sensor_get_sub_module_index(struct device_node *of_node,
 	struct cam_sensor_board_info *s_info)
@@ -90,6 +91,8 @@ int32_t cam_sensor_get_sub_module_index(struct device_node *of_node,
 		CAM_ERR(CAM_SENSOR, "paring the dt node for csiphy rc %d", rc);
 	else
 		sensor_info->subdev_id[SUB_MODULE_CSIPHY] = val;
+
+	vendor_sensor_get_sub_module_index(of_node, s_info);
 
 	return rc;
 }

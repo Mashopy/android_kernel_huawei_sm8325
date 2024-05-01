@@ -78,11 +78,10 @@ irqreturn_t cam_cci_irq(int irq_num, void *data)
 		base, irq_status0, irq_status1);
 
 	cam_io_w_mb(irq_status0, base + CCI_IRQ_CLEAR_0_ADDR);
-	cam_io_w_mb(irq_status1, base + CCI_IRQ_CLEAR_1_ADDR);
 
 	reg_bmsk = CCI_IRQ_MASK_1_RMSK;
 	if ((irq_status1 & CCI_IRQ_STATUS_1_I2C_M1_RD_THRESHOLD) &&
-	!(irq_status0 & CCI_IRQ_STATUS_0_I2C_M1_RD_DONE_BMSK)) {
+		!(irq_status0 & CCI_IRQ_STATUS_0_I2C_M1_RD_DONE_BMSK)) {
 		reg_bmsk &= ~CCI_IRQ_STATUS_1_I2C_M1_RD_THRESHOLD;
 		spin_lock_irqsave(&cci_dev->lock_status, flags);
 		cci_dev->irqs_disabled |=
@@ -91,7 +90,7 @@ irqreturn_t cam_cci_irq(int irq_num, void *data)
 	}
 
 	if ((irq_status1 & CCI_IRQ_STATUS_1_I2C_M0_RD_THRESHOLD) &&
-	!(irq_status0 & CCI_IRQ_STATUS_0_I2C_M0_RD_DONE_BMSK)) {
+		!(irq_status0 & CCI_IRQ_STATUS_0_I2C_M0_RD_DONE_BMSK)) {
 		reg_bmsk &= ~CCI_IRQ_STATUS_1_I2C_M0_RD_THRESHOLD;
 		spin_lock_irqsave(&cci_dev->lock_status, flags);
 		cci_dev->irqs_disabled |=
@@ -134,6 +133,7 @@ irqreturn_t cam_cci_irq(int irq_num, void *data)
 		cam_io_w_mb(irq_update_rd_done, base + CCI_IRQ_MASK_1_ADDR);
 	}
 
+	cam_io_w_mb(irq_status1, base + CCI_IRQ_CLEAR_1_ADDR);
 	cam_io_w_mb(0x1, base + CCI_IRQ_GLOBAL_CLEAR_CMD_ADDR);
 
 	if (irq_status0 & CCI_IRQ_STATUS_0_RST_DONE_ACK_BMSK) {

@@ -9,6 +9,9 @@
 #include "cam_flash_core.h"
 #include "cam_common_util.h"
 #include "camera_main.h"
+#include "vendor_torch_classdev.h"
+#include "vendor_torch_thermal.h"
+#include "vendor_torch_test.h"
 
 static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 		void *arg, struct cam_flash_private_soc *soc_private)
@@ -135,7 +138,7 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 		struct cam_flash_query_cap_info flash_cap = {0};
 
 		CAM_DBG(CAM_FLASH, "CAM_QUERY_CAP");
-		flash_cap.slot_info  = fctrl->soc_info.index;
+		flash_cap.slot_info = fctrl->soc_info.index;
 		flash_cap.flash_type = soc_private->flash_type;
 		for (i = 0; i < fctrl->flash_num_sources; i++) {
 			flash_cap.max_current_flash[i] =
@@ -532,6 +535,12 @@ static int cam_flash_component_bind(struct device *dev,
 	mutex_init(&(fctrl->flash_mutex));
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
+	if (cam_torch_classdev_register(pdev, fctrl) < 0)
+		CAM_ERR(CAM_FLASH, "register classdev failed");
+
+	if (cam_torch_thermal_protect_classdev_register(pdev, fctrl) < 0)
+		CAM_ERR(CAM_FLASH, "register thermal protect classdev failed");
+
 	CAM_DBG(CAM_FLASH, "Component bound successfully");
 	return rc;
 
@@ -589,8 +598,14 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 
 	CAM_DBG(CAM_FLASH, "Adding Flash Sensor component");
 	rc = component_add(&pdev->dev, &cam_flash_component_ops);
-	if (rc)
+	if (rc) {
 		CAM_ERR(CAM_FLASH, "failed to add component rc: %d", rc);
+		return rc;
+	}
+
+	rc = register_test_flashlight_data(&pdev->dev);
+	if (rc < 0)
+		CAM_ERR(CAM_FLASH, "register_test_flashlight_data failed");
 
 	return rc;
 }

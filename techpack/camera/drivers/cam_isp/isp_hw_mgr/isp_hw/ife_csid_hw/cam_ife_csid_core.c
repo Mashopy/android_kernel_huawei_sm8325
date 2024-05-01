@@ -22,6 +22,7 @@
 #include "cam_subdev.h"
 #include "cam_tasklet_util.h"
 #include "dt-bindings/msm/msm-camera.h"
+#include "vendor_ife_csid_core.h"
 
 /* Timeout value in msec */
 #define IFE_CSID_TIMEOUT                               1000
@@ -688,6 +689,7 @@ static int cam_ife_csid_path_reset(struct cam_ife_csid_hw *csid_hw,
 
 	rem_jiffies = wait_for_completion_timeout(complete,
 		msecs_to_jiffies(CAM_IFE_CSID_RESET_TIMEOUT_MS));
+	vendor_ife_hiview_handle();
 	if (!rem_jiffies) {
 		rc = -ETIMEDOUT;
 		CAM_ERR(CAM_ISP, "CSID:%d Res id %d fail rc = %d",
@@ -3843,6 +3845,7 @@ static int cam_ife_csid_reset_regs(
 
 	rem_jiffies = wait_for_completion_timeout(&csid_hw->csid_top_complete,
 		msecs_to_jiffies(CAM_IFE_CSID_RESET_TIMEOUT_MS));
+	vendor_ife_hiview_handle();
 	if (rem_jiffies == 0) {
 		val = cam_io_r_mb(soc_info->reg_map[0].mem_base +
 			csid_reg->cmn_reg->csid_top_irq_status_addr);
@@ -5014,7 +5017,8 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d RX_ERROR_LANE0_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz",
 				csid_hw->hw_intf->hw_idx,
 				soc_info->applied_src_clk_rate);
-			fatal_err_detected = true;
+			vendor_ife_error_notify(CSIPHY_LANE_0_OVERFLOW);
+			fatal_err_detected = vendor_ife_error_found(csid_hw);
 			goto handle_fatal_error;
 		}
 		if (irq_status[CAM_IFE_CSID_IRQ_REG_RX] &
@@ -5023,7 +5027,8 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d RX_ERROR_LANE1_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz",
 				csid_hw->hw_intf->hw_idx,
 				soc_info->applied_src_clk_rate);
-			fatal_err_detected = true;
+			vendor_ife_error_notify(CSIPHY_LANE_1_OVERFLOW);
+			fatal_err_detected = vendor_ife_error_found(csid_hw);
 			goto handle_fatal_error;
 		}
 		if (irq_status[CAM_IFE_CSID_IRQ_REG_RX] &
@@ -5032,7 +5037,8 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d RX_ERROR_LANE2_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz",
 				csid_hw->hw_intf->hw_idx,
 				soc_info->applied_src_clk_rate);
-			fatal_err_detected = true;
+			vendor_ife_error_notify(CSIPHY_LANE_2_OVERFLOW);
+			fatal_err_detected = vendor_ife_error_found(csid_hw);
 			goto handle_fatal_error;
 		}
 		if (irq_status[CAM_IFE_CSID_IRQ_REG_RX] &
@@ -5041,7 +5047,8 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d RX_ERROR_LANE3_FIFO_OVERFLOW: Skew/Less Data on lanes/ Slow csid clock:%luHz",
 				csid_hw->hw_intf->hw_idx,
 				soc_info->applied_src_clk_rate);
-			fatal_err_detected = true;
+			vendor_ife_error_notify(CSIPHY_LANE_3_OVERFLOW);
+			fatal_err_detected = vendor_ife_error_found(csid_hw);
 			goto handle_fatal_error;
 		}
 		if (irq_status[CAM_IFE_CSID_IRQ_REG_RX] &
@@ -5049,6 +5056,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d RX_ERROR_TPG_FIFO_OVERFLOW: Backpressure from IFE",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_TG_OVERFLOW);
 			fatal_err_detected = true;
 			event_type |= CAM_ISP_HW_ERROR_CSID_OVERFLOW;
 			goto handle_fatal_error;
@@ -5059,6 +5067,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d CPHY_EOT_RECEPTION: No EOT on lane/s",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_CPHY_EOT_RECEPTION);
 			csid_hw->error_irq_count++;
 			non_fatal_detected = true;
 		}
@@ -5067,6 +5076,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d CPHY_SOT_RECEPTION: Less SOTs on lane/s",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_CPHY_SOT_RECEPTION);
 			csid_hw->error_irq_count++;
 			non_fatal_detected = true;
 		}
@@ -5075,6 +5085,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d CPHY_PH_CRC CPHY: Pkt Hdr CRC mismatch",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_CPHY_PH_CRC);
 			fatal_err_detected = true;
 			goto handle_fatal_error;
 		}
@@ -5083,6 +5094,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d ERROR_CRC CPHY: Long pkt payload CRC mismatch",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_ERROR_CRC);
 			csid_hw->error_irq_count++;
 			non_fatal_detected = true;
 		}
@@ -5091,6 +5103,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d ERROR_ECC: Dphy pkt hdr errors unrecoverable",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_ERROR_ECC);
 			fatal_err_detected = true;
 			goto handle_fatal_error;
 		}
@@ -5103,6 +5116,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d MMAPPED_VC_DT: VC:%d DT:%d mapped to more than 1 csid paths",
 				csid_hw->hw_intf->hw_idx, (val >> 22),
 				((val >> 16) & 0x3F), (val & 0xFFFF));
+			vendor_ife_error_notify(CSIPHY_MMAPPED_VC_DT);
 		}
 		if ((irq_status[CAM_IFE_CSID_IRQ_REG_RX] &
 			CSID_CSI2_RX_ERROR_UNMAPPED_VC_DT) &&
@@ -5116,6 +5130,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 				"CSID:%d UNMAPPED_VC_DT: VC:%d DT:%d WC:%d not mapped to any csid paths",
 				csid_hw->hw_intf->hw_idx, (val >> 22),
 				((val >> 16) & 0x3F), (val & 0xFFFF));
+			vendor_ife_error_notify(CSIPHY_UNMAPPED_VC_DT);
 			csid_hw->error_irq_count++;
 			non_fatal_detected = true;
 		}
@@ -5127,6 +5142,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d ERROR_STREAM_UNDERFLOW: Fewer bytes rcvd than WC:%d in pkt hdr",
 				csid_hw->hw_intf->hw_idx, (val & 0xFFFF));
+			vendor_ife_error_notify(CSIPHY_ERROR_STREAM_UNDERFLOW);
 			fatal_err_detected = true;
 			goto handle_fatal_error;
 		}
@@ -5135,6 +5151,7 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 			CAM_ERR_RATE_LIMIT(CAM_ISP,
 				"CSID:%d UNBOUNDED_FRAME: Frame started with EOF or No EOF",
 				csid_hw->hw_intf->hw_idx);
+			vendor_ife_error_notify(CSIPHY_UNBOUNDED_FRAME);
 			csid_hw->error_irq_count++;
 			non_fatal_detected = true;
 		}

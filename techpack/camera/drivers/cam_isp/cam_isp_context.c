@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2022, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -830,6 +830,7 @@ static int __cam_isp_ctx_handle_buf_done_for_req_list(
 		atomic_set(&ctx_isp->process_bubble, 0);
 		req_isp->cdm_reset_before_apply = false;
 		ctx_isp->bubble_frame_cnt = 0;
+		ctx_isp->total_bubble_frame_cnt = 0;
 
 		if (buf_done_req_id <= ctx->last_flush_req) {
 			for (i = 0; i < req_isp->num_fence_map_out; i++)
@@ -1776,6 +1777,7 @@ static int __cam_isp_ctx_notify_sof_in_activated_state(
 				"No available active req in bubble");
 			atomic_set(&ctx_isp->process_bubble, 0);
 			ctx_isp->bubble_frame_cnt = 0;
+			ctx_isp->total_bubble_frame_cnt = 0;
 			rc = -EINVAL;
 			return rc;
 		}
@@ -1836,10 +1838,28 @@ static int __cam_isp_ctx_notify_sof_in_activated_state(
 			}
 		} else if (req_isp->bubble_detected) {
 			ctx_isp->bubble_frame_cnt++;
+			ctx_isp->total_bubble_frame_cnt++;
 			CAM_DBG(CAM_ISP,
 				"Waiting on bufdone for bubble req: %lld, since frame_cnt = %lld",
 				req->request_id,
-				ctx_isp->bubble_frame_cnt);
+				ctx_isp->total_bubble_frame_cnt);
+			if (ctx_isp->total_bubble_frame_cnt >= 3 &&
+				(req_isp->num_acked == 0 ||
+				req_isp->num_deferred_acks == 0)) {
+				req_isp->num_acked = 0;
+				req_isp->num_deferred_acks = 0;
+				ctx_isp->bubble_frame_cnt = 0;
+				req_isp->bubble_detected = false;
+				req_isp->cdm_reset_before_apply = true;
+				list_del_init(&req->list);
+				list_add(&req->list, &ctx->pending_req_list);
+				atomic_set(&ctx_isp->process_bubble, 0);
+				ctx_isp->active_req_cnt--;
+				CAM_DBG(CAM_REQ,
+					"Move active req: %lld to pending list(cnt = %d) [bubble re-apply],ctx %u",
+					req->request_id,
+					ctx_isp->active_req_cnt, ctx->ctx_id);
+			}
 		} else {
 			CAM_DBG(CAM_ISP, "Delayed bufdone for req: %lld",
 				req->request_id);
@@ -3713,6 +3733,7 @@ static int __cam_isp_ctx_flush_req_in_top_state(
 
 end:
 	ctx_isp->bubble_frame_cnt = 0;
+	ctx_isp->total_bubble_frame_cnt = 0;
 	atomic_set(&ctx_isp->process_bubble, 0);
 	atomic_set(&ctx_isp->rxd_epoch, 0);
 	return rc;

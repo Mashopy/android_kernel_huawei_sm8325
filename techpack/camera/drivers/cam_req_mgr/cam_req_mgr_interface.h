@@ -347,6 +347,7 @@ struct cam_req_mgr_apply_request {
 	int32_t    report_if_bubble;
 	uint32_t   trigger_point;
 	bool       re_apply;
+	int64_t    frame_id; /* used for actuatorVA */
 };
 
 /**

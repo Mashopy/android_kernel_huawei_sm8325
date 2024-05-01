@@ -16,15 +16,19 @@
 
 /**
  * @master_type: CCI master type
+ * @device_type: device type
  * @client: I2C client information structure
  * @cci_client: CCI client information structure
  * @spi_client: SPI client information structure
+ * @not_need_dmd_report: Determine whether to report i2c dmd
  */
 struct camera_io_master {
 	int master_type;
+	int64_t device_type;
 	struct i2c_client *client;
 	struct cam_sensor_cci_client *cci_client;
 	struct cam_sensor_spi_client *spi_client;
+	bool not_need_dmd_report;
 };
 
 /**

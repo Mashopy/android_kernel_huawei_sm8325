@@ -308,11 +308,15 @@ int cam_mem_get_cpu_buf(int32_t buf_handle, uintptr_t *vaddr_ptr, size_t *len)
 		return -EPERM;
 	}
 
-	if (buf_handle != tbl.bufq[idx].buf_handle)
+	if (buf_handle != tbl.bufq[idx].buf_handle) {
+		CAM_ERR(CAM_MEM, "idx %d invalid buf_handle %d", idx, buf_handle);
 		return -EINVAL;
+	}
 
-	if (!(tbl.bufq[idx].flags & CAM_MEM_FLAG_KMD_ACCESS))
+	if (!(tbl.bufq[idx].flags & CAM_MEM_FLAG_KMD_ACCESS)) {
+		CAM_ERR(CAM_MEM, "idx %d Invalid Flag 0x%x", idx, tbl.bufq[idx].flags);
 		return -EINVAL;
+	}
 
 	if (tbl.bufq[idx].kmdvaddr) {
 		*vaddr_ptr = tbl.bufq[idx].kmdvaddr;

@@ -5,6 +5,7 @@
 
 #include "cam_sensor_io.h"
 #include "cam_sensor_i2c.h"
+#include "vendor_cam_hiview.h"
 
 int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	uint32_t addr, uint16_t data, uint32_t data_mask,
@@ -13,6 +14,7 @@ int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	uint32_t delay_ms)
 {
 	int16_t mask = data_mask & 0xFF;
+	int rc;
 
 	if (!io_master_info) {
 		CAM_ERR(CAM_SENSOR, "Invalid Args");
@@ -20,10 +22,10 @@ int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	}
 
 	if (io_master_info->master_type == CCI_MASTER) {
-		return cam_cci_i2c_poll(io_master_info->cci_client,
+		rc = cam_cci_i2c_poll(io_master_info->cci_client,
 			addr, data, mask, data_type, addr_type, delay_ms);
 	} else if (io_master_info->master_type == I2C_MASTER) {
-		return cam_qup_i2c_poll(io_master_info->client,
+		rc = cam_qup_i2c_poll(io_master_info->client,
 			addr, data, data_mask, addr_type, data_type,
 			delay_ms);
 	} else {
@@ -31,6 +33,13 @@ int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 			io_master_info->master_type);
 		return -EINVAL;
 	}
+
+	if (rc) {
+		vendor_cam_i2c_hiview_handle(io_master_info, "(io dev poll failed)");
+		CAM_ERR(CAM_SENSOR, "camera io dev poll failed, rc = %d", rc);
+	}
+
+	return rc;
 }
 
 int32_t camera_io_dev_erase(struct camera_io_master *io_master_info,
@@ -68,26 +77,32 @@ int32_t camera_io_dev_read(struct camera_io_master *io_master_info,
 	enum camera_sensor_i2c_type addr_type,
 	enum camera_sensor_i2c_type data_type)
 {
+	int rc;
 	if (!io_master_info) {
 		CAM_ERR(CAM_SENSOR, "Invalid Args");
 		return -EINVAL;
 	}
 
 	if (io_master_info->master_type == CCI_MASTER) {
-		return cam_cci_i2c_read(io_master_info->cci_client,
+		rc = cam_cci_i2c_read(io_master_info->cci_client,
 			addr, data, addr_type, data_type);
 	} else if (io_master_info->master_type == I2C_MASTER) {
-		return cam_qup_i2c_read(io_master_info->client,
+		rc = cam_qup_i2c_read(io_master_info->client,
 			addr, data, addr_type, data_type);
 	} else if (io_master_info->master_type == SPI_MASTER) {
-		return cam_spi_read(io_master_info,
+		rc = cam_spi_read(io_master_info,
 			addr, data, addr_type, data_type);
 	} else {
 		CAM_ERR(CAM_SENSOR, "Invalid Comm. Master:%d",
 			io_master_info->master_type);
 		return -EINVAL;
 	}
-	return 0;
+
+	if (rc) {
+		vendor_cam_i2c_hiview_handle(io_master_info, "(io dev read failed)");
+		CAM_ERR(CAM_SENSOR, "camera io dev read failed, rc = %d", rc);
+	}
+	return rc;
 }
 
 int32_t camera_io_dev_read_seq(struct camera_io_master *io_master_info,
@@ -95,29 +110,37 @@ int32_t camera_io_dev_read_seq(struct camera_io_master *io_master_info,
 	enum camera_sensor_i2c_type addr_type,
 	enum camera_sensor_i2c_type data_type, int32_t num_bytes)
 {
+	int rc;
+
 	if (io_master_info->master_type == CCI_MASTER) {
-		return cam_camera_cci_i2c_read_seq(io_master_info->cci_client,
+		rc = cam_camera_cci_i2c_read_seq(io_master_info->cci_client,
 			addr, data, addr_type, data_type, num_bytes);
 	} else if (io_master_info->master_type == I2C_MASTER) {
-		return cam_qup_i2c_read_seq(io_master_info->client,
+		rc = cam_qup_i2c_read_seq(io_master_info->client,
 			addr, data, addr_type, num_bytes);
 	} else if (io_master_info->master_type == SPI_MASTER) {
-		return cam_spi_read_seq(io_master_info,
-			addr, data, addr_type, num_bytes);
-	} else if (io_master_info->master_type == SPI_MASTER) {
-		return cam_spi_write_seq(io_master_info,
+		rc = cam_spi_read_seq(io_master_info,
 			addr, data, addr_type, num_bytes);
 	} else {
 		CAM_ERR(CAM_SENSOR, "Invalid Comm. Master:%d",
 			io_master_info->master_type);
 		return -EINVAL;
 	}
-	return 0;
+
+	if (rc == -ETIMEDOUT)
+		vendor_cam_i2c_hiview_handle(io_master_info, "(io dev read seq failed)");
+
+	if (rc)
+		CAM_ERR(CAM_SENSOR, "camera io dev read seq failed, rc = %d", rc);
+
+	return rc;
 }
 
 int32_t camera_io_dev_write(struct camera_io_master *io_master_info,
 	struct cam_sensor_i2c_reg_setting *write_setting)
 {
+	int rc;
+
 	if (!write_setting || !io_master_info) {
 		CAM_ERR(CAM_SENSOR,
 			"Input parameters not valid ws: %pK ioinfo: %pK",
@@ -131,25 +154,34 @@ int32_t camera_io_dev_write(struct camera_io_master *io_master_info,
 	}
 
 	if (io_master_info->master_type == CCI_MASTER) {
-		return cam_cci_i2c_write_table(io_master_info,
+		rc = cam_cci_i2c_write_table(io_master_info,
 			write_setting);
 	} else if (io_master_info->master_type == I2C_MASTER) {
-		return cam_qup_i2c_write_table(io_master_info,
+		rc = cam_qup_i2c_write_table(io_master_info,
 			write_setting);
 	} else if (io_master_info->master_type == SPI_MASTER) {
-		return cam_spi_write_table(io_master_info,
+		rc = cam_spi_write_table(io_master_info,
 			write_setting);
 	} else {
 		CAM_ERR(CAM_SENSOR, "Invalid Comm. Master:%d",
 			io_master_info->master_type);
 		return -EINVAL;
 	}
+
+	if (rc) {
+		vendor_cam_i2c_hiview_handle(io_master_info, "(io dev write failed)");
+		CAM_ERR(CAM_SENSOR, "camera io dev write failed, rc = %d", rc);
+	}
+
+	return rc;
 }
 
 int32_t camera_io_dev_write_continuous(struct camera_io_master *io_master_info,
 	struct cam_sensor_i2c_reg_setting *write_setting,
 	uint8_t cam_sensor_i2c_write_flag)
 {
+	int rc;
+
 	if (!write_setting || !io_master_info) {
 		CAM_ERR(CAM_SENSOR,
 			"Input parameters not valid ws: %pK ioinfo: %pK",
@@ -163,19 +195,26 @@ int32_t camera_io_dev_write_continuous(struct camera_io_master *io_master_info,
 	}
 
 	if (io_master_info->master_type == CCI_MASTER) {
-		return cam_cci_i2c_write_continuous_table(io_master_info,
+		rc = cam_cci_i2c_write_continuous_table(io_master_info,
 			write_setting, cam_sensor_i2c_write_flag);
 	} else if (io_master_info->master_type == I2C_MASTER) {
-		return cam_qup_i2c_write_continuous_table(io_master_info,
+		rc = cam_qup_i2c_write_continuous_table(io_master_info,
 			write_setting, cam_sensor_i2c_write_flag);
 	} else if (io_master_info->master_type == SPI_MASTER) {
-		return cam_spi_write_table(io_master_info,
+		rc = cam_spi_write_table(io_master_info,
 			write_setting);
 	} else {
 		CAM_ERR(CAM_SENSOR, "Invalid Comm. Master:%d",
 			io_master_info->master_type);
 		return -EINVAL;
 	}
+
+	if (rc) {
+		vendor_cam_i2c_hiview_handle(io_master_info, "(io dev write continuous failed)");
+		CAM_ERR(CAM_SENSOR, "camera io dev write continuous failed, rc = %d", rc);
+	}
+
+	return rc;
 }
 
 int32_t camera_io_init(struct camera_io_master *io_master_info)

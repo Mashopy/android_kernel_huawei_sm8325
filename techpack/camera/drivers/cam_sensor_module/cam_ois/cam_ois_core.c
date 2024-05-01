@@ -14,6 +14,8 @@
 #include "cam_res_mgr_api.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "vendor_ois_core.h"
+#include "vendor_ctrl.h"
 
 int32_t cam_ois_construct_default_power_setting(
 	struct cam_sensor_power_ctrl_t *power_info)
@@ -239,11 +241,12 @@ static int cam_ois_update_time(struct i2c_settings_array *i2c_set)
 			for (i = 0; i < size; i++) {
 				CAM_DBG(CAM_OIS, "time: reg_data[%d]: 0x%x",
 					i, (qtime_ns & 0xFF));
-				i2c_list->i2c_settings.reg_setting[i].reg_data =
+				i2c_list->i2c_settings.reg_setting[size - i - 1].reg_data =
 					(qtime_ns & 0xFF);
 				qtime_ns >>= 8;
 			}
 		}
+		vendor_ois_update_time(i2c_list, qtime_ns);
 	}
 
 	return rc;
@@ -411,7 +414,7 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, 1);
+		&i2c_reg_setting, CAM_SENSOR_I2C_WRITE_BURST);
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 		goto release_firmware;
@@ -454,7 +457,7 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, 1);
+		&i2c_reg_setting, CAM_SENSOR_I2C_WRITE_BURST);
 	if (rc < 0)
 		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 
@@ -526,7 +529,6 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		CAM_ERR(CAM_OIS, "Invalid packet params");
 		return -EINVAL;
 	}
-
 
 	switch (csl_packet->header.op_code & 0xFFFFFF) {
 	case CAM_OIS_PACKET_OPCODE_INIT:
@@ -636,10 +638,17 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
 		}
 
-		if (o_ctrl->ois_fw_flag) {
+		// 2 for qcom download
+		if (o_ctrl->ois_fw_flag == 2) {
 			rc = cam_ois_fw_download(o_ctrl);
 			if (rc) {
 				CAM_ERR(CAM_OIS, "Failed OIS FW Download");
+				goto pwr_dwn;
+			}
+		} else if (o_ctrl->ois_fw_flag) {
+			rc = vendor_ois_download(o_ctrl);
+			if (rc) {
+				CAM_ERR(CAM_OIS, "Failed Vendor OIS FW Download");
 				goto pwr_dwn;
 			}
 		}
@@ -832,6 +841,16 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		}
 		break;
 	}
+	case CAM_OIS_PACKET_OPCODE_CUSTOM_CONFIG: {
+		rc = vendor_ois_custom_config_pkt_parse(csl_packet);
+		if (rc < 0) return rc;
+		break;
+	}
+	case CAM_OIS_PACKET_OPCODE_CUSTOM_INIT: {
+		rc = vendor_ois_custom_init_pkt_parse(o_ctrl, csl_packet);
+		if (rc < 0) return rc;
+		break;
+	}
 	default:
 		CAM_ERR(CAM_OIS, "Invalid Opcode: %d",
 			(csl_packet->header.op_code & 0xFFFFFF));
@@ -842,6 +861,7 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		return rc;
 pwr_dwn:
 	cam_ois_power_down(o_ctrl);
+	o_ctrl->cam_ois_state = CAM_OIS_ACQUIRE;
 	return rc;
 }
 
@@ -933,6 +953,7 @@ int cam_ois_driver_cmd(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			goto release_mutex;
 		}
 		CAM_DBG(CAM_OIS, "ois_cap: ID: %d", ois_cap.slot_info);
+		vendor_ois_ctrl_register(o_ctrl);
 		break;
 	case CAM_ACQUIRE_DEV:
 		rc = cam_ois_get_dev_handle(o_ctrl, arg);
