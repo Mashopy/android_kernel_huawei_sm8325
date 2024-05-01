@@ -3,7 +3,7 @@
 # Makefile for the Linux proc filesystem routines.
 #
 
-LINUXINCLUDE	+= -I$(srctree)/../../vendor/huawei/kernel/kernel/sched/hw_rtg/include
+LINUXINCLUDE	+= -I$(srctree)/kernel/sched/hw_rtg/include
 
 obj-y   += proc.o
 

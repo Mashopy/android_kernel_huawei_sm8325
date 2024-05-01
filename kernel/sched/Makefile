@@ -16,7 +16,7 @@ ifneq ($(CONFIG_SCHED_OMIT_FRAME_POINTER),y)
 CFLAGS_core.o := $(PROFILING) -fno-omit-frame-pointer
 endif
 
-LINUXINCLUDE    += -I$(srctree)/../../vendor/huawei/kernel/kernel/sched/hw_rtg/include
+LINUXINCLUDE    += -I$(srctree)/kernel/sched/hw_rtg/include
 
 obj-y += core.o loadavg.o clock.o cputime.o
 obj-y += idle.o fair.o rt.o

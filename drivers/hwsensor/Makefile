@@ -13,7 +13,7 @@ obj-y                                       += color_sensor/
 obj-y                                       += xhub_logbuff.o
 obj-y                                       += sensors_sysfs_ps.o
 obj-y                                       += sensors_sysfs_hinge.o
-ccflags-y += -Ivendor/huawei/chipset_common/plugins/kernel/include/
+ccflags-y += -I$(srctree)/include/chipset_common
 
 obj-$(CONFIG_HUAWEI_EXTRA_IR_MODE)			+= extra_ir_mode/
 obj-$(CONFIG_HUAWEI_HORIZONTAL_MODE)			+= acc_horizontal_mode/

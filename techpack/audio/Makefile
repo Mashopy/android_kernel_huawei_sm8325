@@ -42,7 +42,7 @@ LINUXINCLUDE    += \
                 -I$(srctree)/techpack/audio/include/uapi/audio \
                 -I$(srctree)/techpack/audio/include/asoc \
                 -I$(srctree)/techpack/audio/include \
-                -I$(srctree)/../../vendor/huawei/chipset_common/plugins/kernel/include/hwpower/wireless_charge \
+                -I$(srctree)/include/chipset_common/hwpower/wireless_charge \
                 -I$(srctree)/drivers/devkit/audiokit \
                 -I$(srctree)/drivers/devkit/audiokit/headset_debug \
                 -I$(srctree)/drivers/devkit/audiokit/microphone_debug

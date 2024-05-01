@@ -224,16 +224,15 @@ camera-$(CONFIG_SPECTRA_TFE) += \
 # =====================================================
 EXTRA_CAMERA := cam_vendor
 COMMON_CAMERA := ../common
-cameratree := $(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/camera \
-	$(srctree)/../../vendor/huawei/chipset_common/plugins/kernel/include/camera
+cameratree := $(srctree)/include/chipset_common/camera
 
 cam_include_dirs := $(shell dirname `find $(cameratree) -name '*.h'` | uniq)
 ccflags-y += $(addprefix -I,$(cam_include_dirs))
 
 ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera/media/
 ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera/media/custom
-ccflags-y += -I$(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/hwsensor
-ccflags-y += -I$(srctree)/../../vendor/huawei/extra_qcom/kernel/drivers/hwsensor/apsensor_channel
+ccflags-y += -I$(srctree)/drivers/hwsensor
+ccflags-y += -I$(srctree)/drivers/hwsensor/apsensor_channel
 ccflags-y += -DVL53L1_FULL_KERNEL
 ccflags-y += -DVL53L3
 
