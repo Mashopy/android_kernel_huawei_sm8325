@@ -179,7 +179,7 @@
 	qcom,core-dev-table =
 		<  300000 MHZ_TO_MBPS( 150, 16) >,
 		<  806400 MHZ_TO_MBPS( 300, 16) >,
-		< 1497600 MHZ_TO_MBPS( 466, 16) >,
+		< 1497600 MHZ_TO_MBPS( 300, 16) >,
 		< 1804800 MHZ_TO_MBPS( 600, 16) >;
 };
 
@@ -199,8 +199,9 @@
 		qcom,core-dev-table =
 			<  300000 MHZ_TO_MBPS(  200, 4) >,
 			<  806400 MHZ_TO_MBPS(  451, 4) >,
-			< 1209600 MHZ_TO_MBPS(  547, 4) >,
+			< 1209600 MHZ_TO_MBPS(  451, 4) >,
 			< 1497600 MHZ_TO_MBPS(  768, 4) >,
+			< 1612800 MHZ_TO_MBPS( 1017, 4) >,
 			< 1804800 MHZ_TO_MBPS( 1555, 4) >;
 	};
 };
@@ -208,10 +209,10 @@
 &cpu4_cpu_llcc_latmon {
 	qcom,core-dev-table =
 		<  300000 MHZ_TO_MBPS(  150, 16) >,
-		<  710400 MHZ_TO_MBPS(  300, 16) >,
+		<  844800 MHZ_TO_MBPS(  300, 16) >,
 		< 1075200 MHZ_TO_MBPS(  466, 16) >,
 		< 1324800 MHZ_TO_MBPS(  600, 16) >,
-		< 1881600 MHZ_TO_MBPS(  806, 16) >,
+		< 2227200 MHZ_TO_MBPS(  806, 16) >,
 		< 2592000 MHZ_TO_MBPS(  933, 16) >,
 		< 2841600 MHZ_TO_MBPS( 1000, 16) >;
 };
@@ -235,9 +236,11 @@
 		qcom,core-dev-table =
 			<  300000 MHZ_TO_MBPS( 200, 4) >,
 			<  710400 MHZ_TO_MBPS( 451, 4) >,
-			<  844800 MHZ_TO_MBPS( 547, 4) >,
+			<  844800 MHZ_TO_MBPS( 451, 4) >,
 			< 1075200 MHZ_TO_MBPS( 768, 4) >,
+			< 1324800 MHZ_TO_MBPS(1017, 4) >,
 			< 1881600 MHZ_TO_MBPS(1555, 4) >,
+			< 2227200 MHZ_TO_MBPS(1708, 4) >,
 			< 2592000 MHZ_TO_MBPS(2092, 4) >,
 			< 2841600 MHZ_TO_MBPS(3196, 4) >;
 	};

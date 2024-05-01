@@ -7,10 +7,6 @@
 };
 
 &audio_apr {
-	msm_audio_ion_cma: qcom,msm-audio-ion-cma {
-		compatible = "qcom,msm-audio-ion-cma";
-	};
-
 	q6core: qcom,q6core-audio {
 		compatible = "qcom,q6core-audio";
 		#address-cells = <1>;
@@ -95,7 +91,7 @@
 		qcom,auxpcm-audio-intf = <1>;
 		qcom,wcn-bt = <0>;
 		qcom,ext-disp-audio-rx = <0>;
-		qcom,afe-rxtx-lb = <0>;
+		qcom,afe-rxtx-lb = <1>;
 
 		clock-names = "lpass_audio_hw_vote";
 		clocks = <&lpass_audio_hw_vote 0>;

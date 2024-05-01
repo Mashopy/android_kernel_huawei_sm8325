@@ -1393,11 +1393,6 @@
 				type = "passive";
 			};
 
-			mx_pe_config3: mx-pe-config3 {
-				temperature = <3>;
-				hysteresis = <1>;
-				type = "passive";
-			};
 		};
 
 		cooling-maps {
@@ -1409,11 +1404,6 @@
 			mx_pe_cdev_2 {
 				trip = <&mx_pe_config2>;
 				cooling-device = <&msm_gpu 1 1>;
-			};
-
-			mx_pe_cdev_3 {
-				trip = <&mx_pe_config3>;
-				cooling-device = <&modem_tj 1 1>;
 			};
 		};
 	};

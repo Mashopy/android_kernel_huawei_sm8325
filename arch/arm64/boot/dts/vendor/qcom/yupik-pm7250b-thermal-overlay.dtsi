@@ -69,11 +69,6 @@
 				trip = <&b_bcl_lvl0>;
 				cooling-device = <&modem_pa 2 2>;
 			};
-
-			vbat_modem1 {
-				trip = <&b_bcl_lvl0>;
-				cooling-device = <&modem_tj 1 1>;
-			};
 		};
 	};
 
@@ -88,11 +83,6 @@
 			vbat_cdsp1 {
 				trip = <&b_bcl_lvl1>;
 				cooling-device = <&cdsp_sw 4 4>;
-			};
-
-			vbat_modem2 {
-				trip = <&b_bcl_lvl1>;
-				cooling-device = <&modem_tj 3 3>;
 			};
 		};
 	};
@@ -139,11 +129,6 @@
 				trip = <&c_bcl_lvl0>;
 				cooling-device = <&modem_pa 2 2>;
 			};
-
-			vph_modem1 {
-				trip = <&c_bcl_lvl0>;
-				cooling-device = <&modem_tj 1 1>;
-			};
 		};
 	};
 
@@ -159,11 +144,6 @@
 			vph_cdsp1 {
 				trip = <&c_bcl_lvl1>;
 				cooling-device = <&cdsp_sw 4 4>;
-			};
-
-			vph_modem2 {
-				trip = <&c_bcl_lvl1>;
-				cooling-device = <&modem_tj 3 3>;
 			};
 		};
 	};
@@ -225,12 +205,6 @@
 			pm8350c_gpu {
 				trip = <&pm8350c_trip0>;
 				cooling-device = <&msm_gpu THERMAL_MAX_LIMIT
-							THERMAL_MAX_LIMIT>;
-			};
-
-			pm8350c_mdm {
-				trip = <&pm8350c_trip0>;
-				cooling-device = <&modem_tj THERMAL_MAX_LIMIT
 							THERMAL_MAX_LIMIT>;
 			};
 

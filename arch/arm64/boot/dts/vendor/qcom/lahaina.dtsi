@@ -15,6 +15,12 @@
 #include <dt-bindings/spmi/spmi.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator-levels.h>
 #include <dt-bindings/gpio/gpio.h>
+#include "huawei_charger/huawei_charger_common.dtsi"
+#include "huawei_charger/huawei_power_test.dtsi"
+#include "huawei_charger/huawei_batt_info.dtsi"
+#include "huawei_charger/huawei_edk2_charger.dtsi"
+#include "huawei_usb/huawei_usb_common.dtsi"
+#include "lahaina-drg.dtsi"
 
 #define MHZ_TO_MBPS(mhz, w) ((mhz * 1000000 * w) / (1024 * 1024))
 #define BW_OPP_ENTRY(mhz, w) opp-mhz {opp-hz = /bits/ 64 <MHZ_TO_MBPS(mhz, w)>;}
@@ -27,6 +33,7 @@
 / {
 	model = "Qualcomm Technologies, Inc. Lahaina";
 	compatible = "qcom,lahaina";
+	Hardware = "SM8325";
 	qcom,msm-id = <415 0x10000>, <456 0x10000>, <501 0x10000>;
 	interrupt-parent = <&intc>;
 
@@ -34,12 +41,13 @@
 	#size-cells = <2>;
 
 	chosen {
-		bootargs = "log_buf_len=256K earlycon=msm_geni_serial,0x98c000 rcupdate.rcu_expedited=1 rcu_nocbs=0-7 kpti=off";
+		bootargs = "log_buf_len=1024K earlycon=msm_geni_serial,0x98c000 rcupdate.rcu_expedited=1 rcu_nocbs=0-7 kpti=off";
 	};
 
 	memory { device_type = "memory"; reg = <0 0 0 0>; };
 	reserved_memory: reserved-memory { };
-
+	rootparam: rootparam {
+	};
 	mem-offline {
 		compatible = "qcom,mem-offline";
 		offline-sizes = <0x1 0x40000000 0x0 0x40000000>,
@@ -52,8 +60,10 @@
 	aliases {
 		ufshc1 = &ufshc_mem; /* Embedded UFS Slot */
 		sdhc1 = &sdhc_2; /* SDC2 SD card slot */
+		sdhc2 = &sdhc_1; /* SDC4 SDIO slot */
 		serial0 = &qupv3_se3_2uart;
 		hsuart0 = &qupv3_se18_4uart;
+		hsuart3 = &qupv3_se2_4uart;
 		pci-domain0 = &pcie0; /* PCIe0 domain */
 		pci-domain1 = &pcie1; /* PCIe1 domain */
 		swr0 = &swr0;
@@ -65,6 +75,31 @@
 
 	firmware: firmware {};
 
+	dev_detect: dev_detect {
+	compatible = "huawei,dev_detect";
+	status = "ok";
+	};
+
+	fingerprint: fingerprint {
+	};
+	huawei_hall_sensor: huawei_hall_sensor {
+	};
+	hw_sensor_info: hw_sensor_info {
+	};
+
+	vibrator_hw_config: vibrator_hw_config {
+	};
+	antenna_board_detect: antenna_board_detect {
+	};
+
+	singleap_wifionly: singleap_wifionly {
+    	};
+	drop_sensor_enable: drop_sensor_enable {
+	};
+	sensorhub_ext_config: sensorhub_ext_config {
+		compatible = "huawei,sensorhub";
+		status = "ok";
+	};
 	cpus {
 		#address-cells = <2>;
 		#size-cells = <0>;
@@ -78,6 +113,7 @@
 			qcom,freq-domain = <&cpufreq_hw 0 4>;
 			capacity-dmips-mhz = <1024>;
 			dynamic-power-coefficient = <100>;
+			freq-current = <&c0_freq_current>;
 			cpu-idle-states = <&SLVR_RAIL_OFF>;
 			next-level-cache = <&L2_0>;
 			#cooling-cells = <2>;
@@ -102,6 +138,7 @@
 			qcom,freq-domain = <&cpufreq_hw 0 4>;
 			capacity-dmips-mhz = <1024>;
 			dynamic-power-coefficient = <100>;
+			freq-current = <&c0_freq_current>;
 			cpu-idle-states = <&SLVR_RAIL_OFF>;
 			next-level-cache = <&L2_1>;
 			#cooling-cells = <2>;
@@ -121,6 +158,7 @@
 			qcom,freq-domain = <&cpufreq_hw 0 4>;
 			capacity-dmips-mhz = <1024>;
 			dynamic-power-coefficient = <100>;
+			freq-current = <&c0_freq_current>;
 			cpu-idle-states = <&SLVR_RAIL_OFF>;
 			next-level-cache = <&L2_2>;
 			#cooling-cells = <2>;
@@ -140,6 +178,7 @@
 			qcom,freq-domain = <&cpufreq_hw 0 4>;
 			capacity-dmips-mhz = <1024>;
 			dynamic-power-coefficient = <100>;
+			freq-current = <&c0_freq_current>;
 			cpu-idle-states = <&SLVR_RAIL_OFF>;
 			next-level-cache = <&L2_3>;
 			#cooling-cells = <2>;
@@ -159,6 +198,7 @@
 			qcom,freq-domain = <&cpufreq_hw 1 4>;
 			capacity-dmips-mhz = <1946>;
 			dynamic-power-coefficient = <515>;
+			freq-current = <&c1_freq_current>;
 			cpu-idle-states = <&GOLD_RAIL_OFF>;
 			next-level-cache = <&L2_4>;
 			#cooling-cells = <2>;
@@ -178,6 +218,7 @@
 			qcom,freq-domain = <&cpufreq_hw 1 4>;
 			capacity-dmips-mhz = <1946>;
 			dynamic-power-coefficient = <515>;
+			freq-current = <&c1_freq_current>;
 			cpu-idle-states = <&GOLD_RAIL_OFF>;
 			next-level-cache = <&L2_5>;
 			#cooling-cells = <2>;
@@ -197,6 +238,7 @@
 			qcom,freq-domain = <&cpufreq_hw 1 4>;
 			capacity-dmips-mhz = <1946>;
 			dynamic-power-coefficient = <515>;
+			freq-current = <&c1_freq_current>;
 			cpu-idle-states = <&GOLD_RAIL_OFF>;
 			next-level-cache = <&L2_6>;
 			#cooling-cells = <2>;
@@ -216,6 +258,7 @@
 			qcom,freq-domain = <&cpufreq_hw 2 4>;
 			capacity-dmips-mhz = <2048>;
 			dynamic-power-coefficient = <845>;
+			freq-current = <&c2_freq_current>;
 			cpu-idle-states = <&GOLD_RAIL_OFF>;
 			next-level-cache = <&L2_7>;
 			#cooling-cells = <2>;
@@ -226,8 +269,15 @@
 			};
 		};
 
+		huawei_lcd_panel: huawei,lcd_panel {
+		};
+
+		huawei_sec_lcd_panel: huawei,sec_lcd_panel {
+		};
+
 		cpu-map {
-			cluster0 {
+			cluster0: cluster0 {
+				#cooling-cells = <2>;
 				core0 {
 					cpu = <&CPU0>;
 				};
@@ -245,7 +295,8 @@
 				};
 			};
 
-			cluster1 {
+			cluster1: cluster1 {
+				#cooling-cells = <2>;
 				core0 {
 					cpu = <&CPU4>;
 				};
@@ -259,8 +310,8 @@
 				};
 			};
 
-			cluster2 {
-
+			cluster2: cluster2 {
+				#cooling-cells = <2>;
 				core0 {
 					cpu = <&CPU7>;
 				};
@@ -268,7 +319,151 @@
 		};
 	};
 
+	c0_freq_current: c0_freq_current {
+		table = <
+		691200 14000
+		806400 18000
+		902400 20000
+		998400 22000
+		1094400 24000
+		1209600 28000
+		1305600 34000
+		1401600 42000
+		1497600 47000
+		1612800 55000
+		1708800 75000
+		1804800 84000
+		>;
+	};
+
+	c1_freq_current: c1_freq_current {
+		table = <
+		710400 42000
+		844800 51000
+		960000 59000
+		1075200 74000
+		1209600 85000
+		1324800 99000
+		1440000 114000
+		1555200 135000
+		1670400 154000
+		1766400 170000
+		1881600 236000
+		1996800 267000
+		2112000 309000
+		2227200 366000
+		2342400 437000
+		2419200 455000
+		>;
+	};
+
+	c2_freq_current: c2_freq_current {
+		table = <
+		844800 28000
+		960000 47000
+		1075200 66000
+		1190400 80000
+		1305600 91000
+		1420800 99000
+		1555200 114000
+		1670400 126000
+		1785600 143000
+		1900800 158000
+		2035200 177000
+		2150400 237000
+		2265600 274000
+		2380800 311000
+		2496000 354000
+		2592000 405000
+		2688000 458000
+		2764800 503000
+		2841600 554000
+		>;
+	};
+
+	huawei_ar: ar {
+		compatible = "huawei,smart-ar";
+		status = "ok";
+		ar_support_num = <11>;
+		ar_support_list = "in_vehicle", "on_bicycle", "walking", "running", "still", "fast_walking", "on_foot", "elevator", "relative_still", "moblivious", "stay";
+	};
+
+	huawei_flp: flp {
+		compatible = "huawei,flp-common";
+		status = "ok";
+	};
+
+	huawei_softtimer: softtimer {
+		compatible = "huawei,contexthub-softtimer";
+		status = "ok";
+	};
+
+    huawei_bt_info: huawei_bt_info {
+    };
+
+	huawei_audio_info: huawei_audio_info {
+	};
+
+	audio_hw_config: audio_hw_config {
+	};
+
+	sensor_hw_config: sensor_hw_config {
+	};
+
+	ana_hs: ana_hs {
+	};
+
+	smartpakit:smartpakit {
+	};
+
+	deviceboxID: deviceboxID {
+	};
+
+	hw_adsp_misc:hw_adsp_misc {
+	};
+
+	audio_gpio_ctl: audio_gpio_ctl {
+	};
+
 	soc: soc { };
+	/*rsmc*/
+	huawei_rsmc: huawei_rsmc {
+	};
+	huawei_wifi_info: huawei_wifi_info {
+	};
+
+	/*power*/
+	hi110x: hi110x {
+	};
+	/*wifi*/
+	hisi_wifi:hisi_wifi {
+	};
+	/*bfgx*/
+	hisi_bfgx:hisi_bfgx {
+	};
+	/*customize*/
+	hisi_cust_cfg:hisi_cust_cfg {
+	};
+ 	/*gps*/
+	hisi_gps:hisi_gps {
+	};
+	huawei_disable_mpss: huawei_disable_mpss {
+	};
+
+	product_name_camera: product_name_camera {
+	};
+
+	gpio_check: gpio_check {
+	};
+
+	als_after_sale_TCS3718ALSPRX: als_after_sale_TCS3718ALSPRX {
+		compatible = "TCS3718ALSPRX";
+		status = "ok";
+	};
+
+	mntn_switch {
+		mntn_switch = "01111111111110101011111110100110000001100000001";
+	};
 };
 
 
@@ -282,17 +477,178 @@
 		compatible = "android,firmware";
 		vbmeta {
 			compatible = "android,vbmeta";
-			parts = "vbmeta,boot,system,vendor,dtbo";
+			parts = "vbmeta,boot,ramdisk,eng_system,eng_vendor,vbmeta_system,vbmeta_vendor,vbmeta_odm,vbmeta_hw_product,vbmeta_cust,version,preload,dtbo,vendor_boot";
+			ta_parts = "boot,ramdisk,vbmeta_system,vbmeta_vendor,vbmeta_odm,vbmeta_hw_product,preas,preavs,vbmeta_cust";
 		};
 
 		fstab {
 			compatible = "android,fstab";
-			vendor {
-				compatible = "android,vendor";
-				dev = "/dev/block/platform/soc/1d84000.ufshc/by-name/vendor";
+			system_ext4 {
+				mnt_point = "/system";
+				dev = "system";
 				type = "ext4";
-				mnt_flags = "ro,barrier=1,discard";
-				fsmgr_flags = "wait,slotselect,avb";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			system_erofs {
+				mnt_point = "/system";
+				dev = "system";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			vendor_ext4 {
+				mnt_point = "/vendor";
+				dev = "vendor";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			vendor_erofs {
+				mnt_point = "/vendor";
+				dev = "vendor";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			odm_ext4 {
+				mnt_point = "/odm";
+				dev = "odm";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			odm_erofs {
+				mnt_point = "/odm";
+				dev = "odm";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			cust_ext4 {
+				mnt_point = "/cust";
+				dev = "cust";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			cust_erofs {
+				mnt_point = "/cust";
+				dev = "cust";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			hw_product_ext4 {
+				mnt_point = "/hw_product";
+				dev = "hw_product";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			hw_product_erofs {
+				mnt_point = "/hw_product";
+				dev = "hw_product";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,logical,avb,first_stage_mount";
+				status = "ok";
+			};
+			version_ext4 {
+				mnt_point = "/version";
+				dev = "/dev/block/by-name/version";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			version_erofs {
+				mnt_point = "/version";
+				dev = "/dev/block/by-name/version";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preload_ext4 {
+				mnt_point = "/preload";
+				dev = "/dev/block/by-name/preload";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preload_erofs {
+				mnt_point = "/preload";
+				dev = "/dev/block/by-name/preload";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preas_ext4 {
+				mnt_point = "/preas";
+				dev = "/dev/block/by-name/preas";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preas_erofs {
+				mnt_point = "/preas";
+				dev = "/dev/block/by-name/preas";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preavs_ext4 {
+				mnt_point = "/vendor/preavs";
+				dev = "/dev/block/by-name/preavs";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			preavs_erofs {
+				mnt_point = "/vendor/preavs";
+				dev = "/dev/block/by-name/preavs";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,avb,first_stage_mount";
+				status = "ok";
+			};
+			metadata {
+				mnt_point = "/metadata";
+				dev = "/dev/block/by-name/metadata";
+				type = "ext4";
+				mnt_flags = "rw,noatime,nosuid,nodev,discard";
+				fsmgr_flags = "wait,first_stage_mount,check,formattable";
+				status = "ok";
+			};
+			patch_ext4 {
+				mnt_point = "/patch_hw";
+				dev = "/dev/block/by-name/patch";
+				type = "ext4";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,first_stage_mount,avb_keys=/patch_avb_key";
+				status = "ok";
+			};
+			patch_erofs {
+				mnt_point = "/patch_hw";
+				dev = "/dev/block/by-name/patch";
+				type = "erofs";
+				mnt_flags = "ro";
+				fsmgr_flags = "wait,nofail,first_stage_mount,avb_keys=/patch_avb_key";
 				status = "ok";
 			};
 		};
@@ -337,7 +693,7 @@
 
 	cdsp_secure_heap: cdsp_secure_heap@80c00000 {
 		no-map;
-		reg = <0x0 0x80c00000 0x0 0x4600000>;
+		//reg = <0x0 0x80c00000 0x0 0x4600000>;
 	};
 
 	pil_camera_mem: pil_camera_region@85200000 {
@@ -392,37 +748,37 @@
 
 	pil_modem_mem: modem_region@8b800000 {
 		no-map;
-		reg = <0x0 0x8b800000 0x0 0x10000000>;
+		reg = <0x0 0x8b800000 0x0 0xD800000>;
 	};
 
 	hyp_reserved_mem: qheebsp_dbg_vm_hyp_region@d0000000 {
 		no-map;
-		reg = <0x0 0xd0000000 0x0 0x800000>;
+		//reg = <0x0 0xd0000000 0x0 0x800000>;
 	};
 
 	pil_trustedvm_mem: pil_trustedvm_region@d0800000 {
 		no-map;
-		reg = <0x0 0xd0800000 0x0 0x76f7000>;
+	//	reg = <0x0 0xd0800000 0x0 0x76f7000>;
 	};
 
 	qrtr_shbuf: qrtr-shmem {
 		no-map;
-		reg = <0x0 0xd7ef7000 0x0 0x9000>;
+	//	reg = <0x0 0xd7ef7000 0x0 0x9000>;
 	};
 
 	chan0_shbuf: neuron_block@0 {
 		no-map;
-		reg = <0x0 0xd7f00000 0x0 0x80000>;
+	//	reg = <0x0 0xd7f00000 0x0 0x80000>;
 	};
 
 	chan1_shbuf: neuron_block@1 {
 		no-map;
-		reg = <0x0 0xd7f80000 0x0 0x80000>;
+	//	reg = <0x0 0xd7f80000 0x0 0x80000>;
 	};
 
 	removed_mem: removed_region@d8800000 {
 		no-map;
-		reg = <0x0 0xd8800000 0x0 0x6800000>;
+		reg = <0x0 0xd8800000 0x0 0x7a00000>;
 	};
 
 	adsp_mem: adsp_region {
@@ -486,7 +842,7 @@
 		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
 		reusable;
 		alignment = <0x0 0x400000>;
-		size = <0x0 0x1400000>;
+		size = <0x0 0x2000000>;
 	};
 
 	/* global autoconfigured region for contiguous allocations */
@@ -514,16 +870,8 @@
 		size = <0x0 0x1000000>;
 	};
 
-	audio_cma_mem: audio_cma_region {
-		compatible = "shared-dma-pool";
-		alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
-		reusable;
-		alignment = <0x0 0x400000>;
-		size = <0x0 0x1C00000>;
-	};
-
 	splash_memory:splash_region {
-		reg = <0x0 0xe1000000 0x0 0x02300000>;
+		reg = <0x0 0xe2200000 0x0 0x02300000>;
 		label = "cont_splash_region";
 	};
 
@@ -542,7 +890,7 @@
 	};
 
 	dfps_data_memory: dfps_data_region {
-		reg = <0x0 0xe3300000 0x0 0x0100000>;
+		reg = <0x0 0xe4500000 0x0 0x0100000>;
 		label = "dfps_data_region";
 	};
 
@@ -565,6 +913,29 @@
 		reusable;
 		alignment = <0x0 0x400000>;
 		size = <0x0 0x6400000>;
+	};
+
+	rainbow_mem: rainbow_mem@CF800000 {
+		compatible = "rainbow_mem";
+		no-map;
+		reg = <0x0 0xCF800000 0x0 0x400000>;
+	};
+
+	bootfail_mem: bootfail_mem@CFC00000 {
+		compatible = "bootfail_mem";
+		no-map;
+		reg = <0x0 0xCFC00000 0x0 0x800>;
+	};
+
+	kerneldump {
+		reg = <0x00 0x0 0x0 0x0>;
+		resize = "0x250000000";
+	};
+};
+
+/ {
+	huawei_boot_time {
+		compatible = "huawei,hw_boot_time_info";
 	};
 };
 
@@ -2202,7 +2573,7 @@
 			class = "message-queue";
 			direction = "receive";
 			max-size = <0 65536>;
-			shared-buffer = <&chan0_shbuf>;
+		//	shared-buffer = <&chan0_shbuf>;
 			qcom,primary;
 			haven-label = <1>;
 			peer-name = <2>;
@@ -2214,7 +2585,7 @@
 			class = "message-queue";
 			direction = "send";
 			max-size = <0 65536>;
-			shared-buffer = <&chan1_shbuf>;
+		//	shared-buffer = <&chan1_shbuf>;
 			qcom,primary;
 			haven-label = <2>;
 			peer-name = <2>;
@@ -2239,7 +2610,7 @@
 		qcom,master;
 		haven-label = <3>;
 		peer-name = <2>;
-		shared-buffer = <&qrtr_shbuf>;
+	//	shared-buffer = <&qrtr_shbuf>;
 	};
 
 	jtag_mm0: jtagmm@7040000 {
@@ -3075,6 +3446,7 @@
 		phy-names = "ufsphy";
 		#reset-cells = <1>;
 
+		qcom,disable-clkscaling;
 		lanes-per-direction = <2>;
 		dev-ref-clk-freq = <0>; /* 19.2 MHz */
 		clock-names =
@@ -3188,6 +3560,77 @@
 		};
 	};
 
+	sdhc_1: sdhci@8844000 {
+		compatible = "qcom,sdhci-msm-v5";
+		reg = <0x08844000 0x1000>;
+		reg-names = "hc_mem";
+
+		interrupts = <GIC_SPI 261 IRQ_TYPE_LEVEL_HIGH>,
+		<GIC_SPI 227 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "hc_irq", "pwr_irq";
+
+		qcom,bus-width = <4>;
+		qcom,large-address-bus;
+
+		interconnects = <&aggre1_noc MASTER_SDCC_4 &mc_virt SLAVE_EBI1>,
+		<&gem_noc MASTER_APPSS_PROC &config_noc SLAVE_SDCC_4>;
+		interconnect-names = "sdhc-ddr","cpu-sdhc";
+		qcom,msm-bus,name = "sdhc1";
+		qcom,msm-bus,num-cases = <8>;
+		qcom,msm-bus,num-paths = <2>;
+		qcom,msm-bus,vectors-KBps =
+		/* No Vote */
+		<0 0>, <0 0>,
+		/* 400 KB/s*/
+		<1046 1600>, <1600 1600>,
+		/* 20 MB/s */
+		<52286 80000>, <80000 80000>,
+		/* 25 MB/s */
+		<65360 100000>, <100000 100000>,
+		/* 50 MB/s */
+		<130718 200000>, <133320 133320>,
+		/* 100 MB/s */
+		<261438 200000>, <150000 150000>,
+		/* 200 MB/s */
+		<261438 400000>, <300000 300000>,
+		/* Max. bandwidth */
+		<1338562 4096000>, <1338562 4096000>;
+		qcom,bus-bw-vectors-bps = <0 400000 20000000 25000000 50000000
+		100750000 200000000 4294967295>;
+
+		qcom,restore-after-cx-collapse;
+
+		qcom,clk-rates = <400000 20000000 25000000
+		50000000 100000000 201500000>;
+		qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50",
+		"SDR104";
+
+		qcom,devfreq,freq-table = <50000000 200000000>;
+		clocks = <&clock_gcc GCC_SDCC4_AHB_CLK>,
+		<&clock_gcc GCC_SDCC4_APPS_CLK>;
+		clock-names = "iface", "core";
+
+		/* DLL HSR settings. Refer go/hsr - <Target> DLL settings */
+		qcom,dll-hsr-list = <0x0007642C 0xA800 0x10
+		0x2C010800 0x80040868>;
+
+		qcom,scaling-lower-bus-speed-mode = "DDR52";
+
+		bus-width = <4>;
+
+		status = "disabled";
+
+		qos0 {
+			mask = <0x0f>;
+			vote = <44>;
+		};
+
+		qos1 {
+			mask = <0xf0>;
+			vote = <44>;
+		};
+	};
+
 	sdhc_2: sdhci@8804000 {
 		compatible = "qcom,sdhci-msm-v5";
 		reg = <0x08804000 0x1000>;
@@ -3229,7 +3672,7 @@
 		qcom,restore-after-cx-collapse;
 
 		qcom,clk-rates = <400000 20000000 25000000
-					50000000 100000000 201500000>;
+					50000000 100000000 192000000 201500000>;
 		qcom,bus-speed-mode = "SDR12", "SDR25", "SDR50", "DDR50",
 				      "SDR104";
 
@@ -4175,7 +4618,12 @@
 		compatible = "qcom,msm-watchdog";
 		reg = <0x17c10000 0x1000>;
 		reg-names = "wdt-base";
-		interrupts = <0 0 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <0 0 IRQ_TYPE_LEVEL_HIGH>,
+			     <0 1 IRQ_TYPE_LEVEL_HIGH>;
+		qcom,bark-time = <15000>;
+		qcom,pet-time = <9360>;
+		qcom,wakeup-enable;
+		qcom,ipi-ping;
 	};
 
 	tsens0:tsens@c222000 {
@@ -4453,7 +4901,6 @@
 		memory-region = <&pil_modem_mem>;
 		qcom,proxy-timeout-ms = <10000>;
 		qcom,sysmon-id = <0>;
-		qcom,minidump-id = <3>;
 		qcom,aux-minidump-ids = <4>;
 		qcom,ssctl-instance-id = <0x12>;
 		qcom,pas-id = <4>;
@@ -5140,6 +5587,7 @@
 		memory-region = <&pil_slpi_mem>;
 		qcom,complete-ramdump;
 		qcom,signal-aop;
+		qcom,ignore-ssr-failure;
 
 		/* Inputs from ssc */
 		interrupts-extended = <&pdc 9 IRQ_TYPE_LEVEL_HIGH>,
@@ -5208,7 +5656,7 @@
 		status = "ok";
 		qcom,pas-id = <28>;
 		qcom,firmware-name = "trustedvm";
-		memory-region = <&pil_trustedvm_mem>;
+       //       memory-region = <&pil_trustedvm_mem>;
 	};
 
 	qcom,guestvm_loader {
@@ -5569,6 +6017,15 @@
 		qcom,subsys-name = "adsp";
 		qcom,protection-domain = "tms/servreg", "msm/adsp/charger_pd";
 
+		power_glink: huawei,power_glink {
+			compatible = "huawei,power_glink";
+		};
+
+		huawei,blpwm {
+			compatible = "huawei,blpwm";
+			status = "disabled";
+		};
+
 		battery_charger: qcom,battery_charger {
 			compatible = "qcom,battery-charger";
 		};
@@ -5586,11 +6043,28 @@
 			compatible = "qcom,altmode-glink";
 			#altmode-cells = <1>;
 		};
+
+		cust_attr: huawei,cust_attr {
+			compatible = "huawei,cust-attr-glink";
+			#cust-cells = <1>;
+		};
+	};
+
+	huawei,dtsi_attr_interface {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "huawei,dtsi-attr-interface";
+		huawei,cust_attr_dev = <&cust_attr 0>;
+		status = "ok";
 	};
 
 	qcom,pmic_glink_log {
 		compatible = "qcom,pmic-glink";
 		qcom,pmic-glink-channel = "PMIC_LOGS_ADSP_APPS";
+
+		huawei,ulog_glink_trace {
+			compatible = "huawei,ulog_glink_trace";
+		};
 
 		qcom,battery_debug {
 			compatible = "qcom,battery-debug";
@@ -5765,6 +6239,7 @@
 
 #include "lahaina-gpu.dtsi"
 #include "display/lahaina-sde.dtsi"
+#include "lahaina-thermal-hw.dtsi"
 #include "lahaina-thermal.dtsi"
 
 &qupv3_se18_4uart {
@@ -5773,15 +6248,6 @@
 
 &qupv3_se13_i2c {
 	status = "ok";
-	nq@64 {
-		compatible = "rtc6226";
-		reg = <0x64>;
-		fmint-gpio = <&tlmm 50 0>;
-		vdd-supply = <&L7E>;
-		rtc6226,vdd-supply-voltage = <2800000 2800000>;
-		vio-supply = <&S10B>;
-		rtc6226,vio-supply-voltage = <1800000 1800000 >;
-	};
 };
 
 #include "camera/lahaina-camera.dtsi"

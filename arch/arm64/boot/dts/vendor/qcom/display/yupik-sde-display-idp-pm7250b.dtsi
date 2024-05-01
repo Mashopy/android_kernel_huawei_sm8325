@@ -3,7 +3,6 @@
 &pm7250b_gpios {
 	disp_lcd_bias_en {
 		disp_lcd_bias_en_default: disp_lcd_bias_en_default {
-			pins = "gpio2";
 			function = "func1";
 			input-disable;
 			output-enable;
@@ -47,7 +46,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,platform-reset-gpio = <&tlmm 44 0>;
-	qcom,platform-en-gpio = <&pm7250b_gpios 2 0>;
 	qcom,platform-bklight-en-gpio = <&pm8350c_gpios 7 0>;
 };
 
@@ -59,7 +57,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,platform-reset-gpio = <&tlmm 44 0>;
-	qcom,platform-en-gpio = <&pm7250b_gpios 2 0>;
 	qcom,platform-bklight-en-gpio = <&pm8350c_gpios 7 0>;
 };
 
@@ -71,7 +68,6 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,platform-reset-gpio = <&tlmm 44 0>;
-	qcom,platform-en-gpio = <&pm7250b_gpios 2 0>;
 	qcom,platform-bklight-en-gpio = <&pm8350c_gpios 7 0>;
 };
 
