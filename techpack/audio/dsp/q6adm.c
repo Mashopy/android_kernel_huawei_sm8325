@@ -9,6 +9,7 @@
 #include <linux/jiffies.h>
 #include <linux/uaccess.h>
 #include <linux/atomic.h>
+#include <linux/of_device.h>
 #include <dsp/msm-dts-srs-tm-config.h>
 #include <dsp/apr_audio-v2.h>
 #include <dsp/q6adm-v2.h>
@@ -20,6 +21,7 @@
 #include <ipc/apr.h>
 #include "adsp_err.h"
 #include <soc/qcom/secure_buffer.h>
+#include "dsp_trace_utils.h"
 
 #define TIMEOUT_MS 1000
 
@@ -112,6 +114,8 @@ struct adm_ctl {
 	int tx_port_id;
 	bool hyp_assigned;
 	int fnn_app_type;
+	bool get_hal_ec_en;
+	bool is_voip_ec_enable;
 	bool is_channel_swapped;
 };
 
@@ -145,6 +149,9 @@ static int adm_get_parameters[MAX_COPPS_PER_PORT * ADM_GET_PARAMETER_LENGTH];
 static int adm_module_topo_list[MAX_COPPS_PER_PORT *
 				ADM_GET_TOPO_MODULE_INSTANCE_LIST_LENGTH];
 static struct mutex dts_srs_lock;
+
+static int adm_umap_cal_data_wrap(int32_t cal_index,
+	struct cal_block_data *cal_block);
 
 void msm_dts_srs_acquire_lock(void)
 {
@@ -219,6 +226,13 @@ int adm_get_default_copp_idx(int port_id)
 	return -EINVAL;
 }
 EXPORT_SYMBOL(adm_get_default_copp_idx);
+
+void adm_set_viop_ec_enable(bool is_enable)
+{
+	this_adm.is_voip_ec_enable = is_enable;
+	pr_err("%s:voip ec enable is %d", __func__, is_enable);
+}
+EXPORT_SYMBOL_GPL(adm_set_viop_ec_enable);
 
 int adm_get_topology_for_port_from_copp_id(int port_id, int copp_id)
 {
@@ -1650,7 +1664,7 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 						[copp_idx], payload[1]);
 				wake_up(
 				&this_adm.copp.wait[port_idx][copp_idx]);
-				break;
+					break;
 				/*
 				 * if soft volume is called and already
 				 * interrupted break out of the sequence here
@@ -2036,6 +2050,8 @@ static int remap_cal_data(struct cal_block_data *cal_block, int cal_index)
 		}
 		cal_block->map_data.q6map_handle = atomic_read(&this_adm.
 			mem_map_handles[cal_index]);
+		ADM_TRACE_MAP_CAL(cal_index, cal_block);
+		ret = 0;
 	}
 done:
 	return ret;
@@ -2121,6 +2137,7 @@ static void send_adm_custom_topology(void)
 		goto unlock;
 	}
 unlock:
+	adm_umap_cal_data_wrap(cal_index, cal_block);
 	mutex_unlock(&this_adm.cal_data[cal_index]->lock);
 done:
 	return;
@@ -2371,6 +2388,9 @@ static int adm_remap_and_send_cal_block(int cal_index, int port_id,
 	if (ret < 0)
 		pr_debug("%s: No cal sent for cal_index %d, port_id = 0x%x! ret %d sample_rate %d\n",
 			__func__, cal_index, port_id, ret, sample_rate);
+
+	adm_umap_cal_data_wrap(cal_index, cal_block);
+
 done:
 	return ret;
 }
@@ -2720,6 +2740,8 @@ static int adm_arrange_mch_map_v8(
 		goto non_mch_path;
 	};
 
+	pr_info("%s: is_voip_ec_enable is %d idx %d channel_mode %d port_idx %d\n", __func__,
+		this_adm.is_voip_ec_enable, idx, channel_mode, port_idx);
 	if ((ep_payload->dev_num_channel > 2) &&
 		(port_channel_map[port_idx].set_channel_map ||
 		 multi_ch_maps[idx].set_channel_map)) {
@@ -2733,19 +2755,39 @@ static int adm_arrange_mch_map_v8(
 				PCM_FORMAT_MAX_NUM_CHANNEL_V8);
 	} else {
 		if (channel_mode == 1) {
-			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FC;
+			pr_info("%s: is_voip_ec_enable is %d\n", __func__, this_adm.is_voip_ec_enable);
+			if ((port_idx == IDX_AFE_PORT_ID_TX_CODEC_DMA_TX_4 ||
+				port_idx == IDX_SLIMBUS_7_TX) && this_adm.get_hal_ec_en && this_adm.is_voip_ec_enable) {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
+			} else {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FC;
+			}
 		} else if (channel_mode == 2) {
-			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
-			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+			if ((port_idx == IDX_AFE_PORT_ID_QUINARY_MI2S_RX || port_idx == IDX_AFE_PORT_ID_PRIMARY_MI2S_RX ||
+				port_idx == IDX_AFE_PORT_ID_RX_CODEC_DMA_RX_0 || port_idx == IDX_SLIMBUS_7_RX) &&
+				this_adm.get_hal_ec_en && idx == ADM_MCH_MAP_IDX_REC) {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_LS;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_RS;
+			} else {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+			}
 		} else if (channel_mode == 3) {
 			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
 			ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_FC;
 		} else if (channel_mode == 4) {
-			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
-			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
-			ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LS;
-			ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RS;
+			if (port_idx == IDX_AFE_PORT_ID_TX_CODEC_DMA_TX_3 && this_adm.get_hal_ec_en && this_adm.is_voip_ec_enable) {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FC;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_LFE;
+				ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LB;
+				ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RB;
+			} else {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+				ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LS;
+				ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RS;
+			}
 		} else if (channel_mode == 5) {
 			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
@@ -2768,14 +2810,25 @@ static int adm_arrange_mch_map_v8(
 			ep_payload->dev_channel_mapping[5] = PCM_CHANNEL_RS;
 			ep_payload->dev_channel_mapping[6] = PCM_CHANNEL_CS;
 		} else if (channel_mode == 8) {
-			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
-			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
-			ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_FC;
-			ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_LFE;
-			ep_payload->dev_channel_mapping[4] = PCM_CHANNEL_LB;
-			ep_payload->dev_channel_mapping[5] = PCM_CHANNEL_RB;
-			ep_payload->dev_channel_mapping[6] = PCM_CHANNEL_LS;
-			ep_payload->dev_channel_mapping[7] = PCM_CHANNEL_RS;
+			if (this_adm.get_hal_ec_en && this_adm.is_voip_ec_enable) {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+				ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LS;
+				ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RS;
+				ep_payload->dev_channel_mapping[4] = PCM_CHANNEL_TFL;
+				ep_payload->dev_channel_mapping[5] = PCM_CHANNEL_TFR;
+				ep_payload->dev_channel_mapping[6] = PCM_CHANNEL_TSL;
+				ep_payload->dev_channel_mapping[7] = PCM_CHANNEL_TSR;
+			} else {
+				ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
+				ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+				ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_CS;
+				ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_LFE;
+				ep_payload->dev_channel_mapping[4] = PCM_CHANNEL_LB;
+				ep_payload->dev_channel_mapping[5] = PCM_CHANNEL_RB;
+				ep_payload->dev_channel_mapping[6] = PCM_CHANNEL_LS;
+				ep_payload->dev_channel_mapping[7] = PCM_CHANNEL_RS;
+			}
 		} else if (channel_mode == 10) {
 			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
@@ -3013,7 +3066,7 @@ static int adm_copp_set_ec_ref_mfc_cfg_v2(int port_id, int copp_idx,
 	struct audproc_mfc_param_media_fmt mfc_cfg;
 	struct param_hdr_v3 param_hdr;
 	u16 *chmixer_params = NULL;
-	int rc = 0, i = 0, j = 0, param_index = 0, param_size = 0;
+	int rc = 0, i  = 0, j = 0, param_index = 0, param_size = 0;
 	struct adm_device_endpoint_payload ep_payload = {0, 0, 0, {0} };
 	int in_channels, out_channels;
 
@@ -3055,12 +3108,12 @@ static int adm_copp_set_ec_ref_mfc_cfg_v2(int port_id, int copp_idx,
 				__func__, i, ep_payload.dev_channel_mapping[i]);
 		}
 	} else {
-		rc = adm_arrange_mch_ep2_map_v8(&ep_payload, out_channels);
-		if (rc < 0) {
-			pr_err("%s: unable to get map for out channels=%d\n",
-					__func__, out_channels);
-			return -EINVAL;
-		}
+	rc = adm_arrange_mch_ep2_map_v8(&ep_payload, out_channels);
+	if (rc < 0) {
+		pr_err("%s: unable to get map for out channels=%d\n",
+				__func__, out_channels);
+		return -EINVAL;
+	}
 	}
 
 	for (i = 0; i < out_channels; i++)
@@ -3107,11 +3160,11 @@ static int adm_copp_set_ec_ref_mfc_cfg_v2(int port_id, int copp_idx,
 				__func__, i, ep_payload.dev_channel_mapping[i]);
 		}
 	} else {
-		rc = adm_arrange_mch_ep2_map_v8(&ep_payload, in_channels);
-		if (rc < 0) {
-			pr_err("%s: unable to get in channal map\n", __func__);
-			goto exit;
-		}
+	rc = adm_arrange_mch_ep2_map_v8(&ep_payload, in_channels);
+	if (rc < 0) {
+		pr_err("%s: unable to get in channal map\n", __func__);
+		goto exit;
+	}
 	}
 	for (i = 0; i < in_channels; i++)
 		chmixer_params[param_index++] =
@@ -3125,7 +3178,7 @@ static int adm_copp_set_ec_ref_mfc_cfg_v2(int port_id, int copp_idx,
 		}
 
 	rc = adm_pack_and_set_one_pp_param(port_id, copp_idx,
-				param_hdr, (uint8_t *) chmixer_params);
+					   param_hdr, (uint8_t *) chmixer_params);
 	if (rc)
 		pr_err("%s: Failed to set chmixer params, err %d\n",
 				 __func__, rc);
@@ -3399,6 +3452,9 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 					(void *)this_adm.outband_memmap.paddr,
 					(uint32_t)this_adm.outband_memmap.size);
 			}
+			ADM_TRACE_MAP(this_adm.outband_memmap.paddr,
+				atomic_read(&this_adm.mem_map_handles[ADM_SRS_TRUMEDIA]),
+				this_adm.outband_memmap.size);
 		}
 
 
@@ -3510,9 +3566,9 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 				} else {
 					ret = adm_arrange_mch_ep2_map_v8(
 						&ep2_payload,
-						ep2_payload.dev_num_channel);
-					if (ret)
-						return ret;
+					ep2_payload.dev_num_channel);
+				if (ret)
+					return ret;
 				}
 				ep2_payload_size = 8 +
 					roundup(ep2_payload.dev_num_channel, 4);
@@ -3566,7 +3622,7 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 			open.endpoint_id_2 = 0xFFFF;
 
 			if (this_adm.ec_ref_rx && (path != 1) &&
-			(afe_get_port_type(tmp_port) == MSM_AFE_PORT_TYPE_TX)) {
+			    (afe_get_port_type(tmp_port) == MSM_AFE_PORT_TYPE_TX)) {
 				open.endpoint_id_2 = this_adm.ec_ref_rx;
 			}
 
@@ -3657,15 +3713,15 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 				__func__, ret);
 		}
 	} else {
-		if (path != ADM_PATH_PLAYBACK &&
-			this_adm.num_ec_ref_rx_chans_downmixed != 0 &&
+	if (path != ADM_PATH_PLAYBACK &&
+		this_adm.num_ec_ref_rx_chans_downmixed != 0 &&
 			this_adm.num_ec_ref_rx_chans !=
 				this_adm.num_ec_ref_rx_chans_downmixed) {
-			ret = adm_copp_set_ec_ref_mfc_cfg(port_id, copp_idx,
+		ret = adm_copp_set_ec_ref_mfc_cfg(port_id, copp_idx,
 				rate, bit_width, this_adm.num_ec_ref_rx_chans,
 				this_adm.num_ec_ref_rx_chans_downmixed);
-			this_adm.num_ec_ref_rx_chans_downmixed = 0;
-			if (ret)
+		this_adm.num_ec_ref_rx_chans_downmixed = 0;
+		if (ret)
 				pr_err("%s: set EC REF MFC cfg failed, err %d\n",
 					__func__, ret);
 		}
@@ -4105,6 +4161,9 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 		if ((!perf_mode) && (this_adm.outband_memmap.paddr != 0) &&
 		    (atomic_read(&this_adm.copp.topology[port_idx][copp_idx]) ==
 			SRS_TRUMEDIA_TOPOLOGY_ID)) {
+			ADM_TRACE_UNMAP(this_adm.outband_memmap.paddr,
+				atomic_read(&this_adm.mem_map_handles[ADM_SRS_TRUMEDIA]),
+				this_adm.outband_memmap.size);
 			atomic_set(&this_adm.mem_map_index,
 				ADM_SRS_TRUMEDIA);
 			ret = adm_memory_unmap_regions();
@@ -4120,6 +4179,9 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 
 		if ((afe_get_port_type(port_id) == MSM_AFE_PORT_TYPE_TX) &&
 		    this_adm.sourceTrackingData.memmap.paddr) {
+		    	ADM_TRACE_ST_UNMAP(this_adm.sourceTrackingData.memmap.paddr,
+				atomic_read(&this_adm.mem_map_handles[ADM_MEM_MAP_INDEX_SOURCE_TRACKING]),
+				this_adm.sourceTrackingData.memmap.size);
 			atomic_set(&this_adm.mem_map_index,
 				   ADM_MEM_MAP_INDEX_SOURCE_TRACKING);
 			ret = adm_memory_unmap_regions();
@@ -4203,6 +4265,7 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 						 *  end of handset/speaker usecase.
 						 */
 						if (cal_block->map_data.q6map_handle != 0) {
+							ADM_TRACE_UNMAP_CAL(cal_block);
 							atomic_set(&this_adm.mem_map_handles[cal_index],
 									cal_block->map_data.q6map_handle);
 							atomic_set(&this_adm.mem_map_index, cal_index);
@@ -4270,6 +4333,7 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 				}
 				/* call unmap CMA before hyp unassign during end of handset/speaker usecase */
 				if (cal_block->map_data.q6map_handle != 0) {
+					ADM_TRACE_UNMAP_CAL(cal_block);
 					atomic_set(&this_adm.mem_map_handles[cal_index],
 							cal_block->map_data.q6map_handle);
 					atomic_set(&this_adm.mem_map_index, cal_index);
@@ -4426,6 +4490,7 @@ int adm_map_rtac_block(struct rtac_cal_block_data *cal_block)
 
 	cal_block->map_data.map_handle = atomic_read(
 		&this_adm.mem_map_handles[ADM_RTAC_APR_CAL]);
+	dsp_trace_map_rtac("adm rtac block", cal_block);
 done:
 	return result;
 }
@@ -4459,6 +4524,7 @@ int adm_unmap_rtac_block(uint32_t *mem_map_handle)
 			   *mem_map_handle);
 	}
 
+	dsp_trace_unmap("adm rtac block", *mem_map_handle);
 	/* valid port ID needed for callback use primary I2S */
 	atomic_set(&this_adm.mem_map_index, ADM_RTAC_APR_CAL);
 	result = adm_memory_unmap_regions();
@@ -4627,14 +4693,41 @@ static int adm_map_cal_data(int32_t cal_type,
 	}
 	cal_block->map_data.q6map_handle = atomic_read(&this_adm.
 		mem_map_handles[cal_index]);
+
+	ADM_TRACE_MAP_CAL(cal_index, cal_block);
+
 done:
 	return ret;
+}
+
+static int adm_umap_cal_data_wrap(int32_t cal_index,
+	struct cal_block_data *cal_block)
+{
+	int ret;
+
+	pr_debug("%s:\n", __func__);
+
+	if (!cal_block || (cal_block->map_data.q6map_handle == 0))
+		return 0;
+
+	ADM_TRACE_UNMAP_CAL(cal_block);
+	atomic_set(&this_adm.mem_map_handles[cal_index],
+		cal_block->map_data.q6map_handle);
+	atomic_set(&this_adm.mem_map_index, cal_index);
+	ret = adm_memory_unmap_regions();
+	if (ret < 0) {
+		pr_err("%s: unmap did not work! cal_type %i ret %d\n",
+			__func__, cal_index, ret);
+		return -ENODEV;
+	}
+
+	cal_block->map_data.q6map_handle = 0;
+	return 0;
 }
 
 static int adm_unmap_cal_data(int32_t cal_type,
 			struct cal_block_data *cal_block)
 {
-	int ret = 0;
 	int cal_index;
 
 	pr_debug("%s:\n", __func__);
@@ -4643,35 +4736,10 @@ static int adm_unmap_cal_data(int32_t cal_type,
 	if (cal_index < 0) {
 		pr_err("%s: could not get cal index %d!\n",
 			__func__, cal_index);
-		ret = -EINVAL;
-		goto done;
+		return -EINVAL;
 	}
 
-	if (cal_block == NULL) {
-		pr_err("%s: Cal block is NULL!\n",
-						__func__);
-		goto done;
-	}
-
-	if (cal_block->map_data.q6map_handle == 0) {
-		pr_err("%s: Map handle is NULL, nothing to unmap\n",
-				__func__);
-		goto done;
-	}
-
-	atomic_set(&this_adm.mem_map_handles[cal_index],
-		cal_block->map_data.q6map_handle);
-	atomic_set(&this_adm.mem_map_index, cal_index);
-	ret = adm_memory_unmap_regions();
-	if (ret < 0) {
-		pr_err("%s: unmap did not work! cal_type %i ret %d\n",
-			__func__, cal_index, ret);
-		ret = -ENODEV;
-		goto done;
-	}
-	cal_block->map_data.q6map_handle = 0;
-done:
-	return ret;
+	return adm_umap_cal_data_wrap(cal_index, cal_block);
 }
 
 static void adm_delete_cal_data(void)
@@ -5670,6 +5738,10 @@ static int adm_source_tracking_alloc_map_memory(void)
 		ret = -EINVAL;
 		goto done;
 	}
+	ADM_TRACE_ST_MAP(this_adm.sourceTrackingData.memmap.paddr,
+		atomic_read(&this_adm.mem_map_handles[ADM_MEM_MAP_INDEX_SOURCE_TRACKING]),
+		this_adm.sourceTrackingData.memmap.size);
+
 	ret = 0;
 	pr_debug("%s: paddr = 0x%pK, size = %d, mem_map_handle = 0x%x\n",
 		  __func__, (void *)this_adm.sourceTrackingData.memmap.paddr,
@@ -5869,6 +5941,30 @@ done:
 }
 EXPORT_SYMBOL(adm_get_doa_tracking_mon);
 
+static void get_ec_hal_en_flag()
+{
+	struct device_node *hw_audio_node = NULL;
+	struct device_node *sub_node = NULL;
+
+	hw_audio_node = of_find_compatible_node(NULL, NULL, "hw,hw_audio_info");
+	if (hw_audio_node == NULL) {
+		pr_warn("%s: Cannot find hw audio node\n", __func__);
+		this_adm.get_hal_ec_en = false;
+	} else {
+		sub_node = of_get_child_by_name(hw_audio_node, "hardware_info");
+		if (sub_node == NULL) {
+			pr_warn("%s: hardware_info not existed, skip\n",
+				__func__);
+			this_adm.get_hal_ec_en = false;
+			return;
+		}
+		this_adm.get_hal_ec_en = of_property_read_bool(sub_node,
+				"get_ec_in_hal");
+		pr_info("%s: get_hal_ec_en is %s\n", __func__,
+				this_adm.get_hal_ec_en ? "ture" : "false");
+	}
+}
+
 int __init adm_init(void)
 {
 	int i = 0, j;
@@ -5900,6 +5996,7 @@ int __init adm_init(void)
 	this_adm.sourceTrackingData.memmap.kvaddr = NULL;
 	this_adm.sourceTrackingData.memmap.paddr = 0;
 	this_adm.sourceTrackingData.apr_cmd_status = -1;
+	get_ec_hal_en_flag();
 
 	return 0;
 }

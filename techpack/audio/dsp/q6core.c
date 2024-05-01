@@ -22,6 +22,7 @@
 #include <soc/snd_event.h>
 #include <ipc/apr.h>
 #include "adsp_err.h"
+#include "dsp_trace_utils.h"
 
 #define TIMEOUT_MS 1000
 /*
@@ -1461,6 +1462,9 @@ int q6core_map_memory_regions(phys_addr_t *buf_add, uint32_t mempool_id,
 	}
 
 	*map_handle = q6core_lcl.mem_map_cal_handle;
+
+	dsp_trace_map("q6core memory", MEM_TRACE_MAP, *buf_add,
+		*map_handle, *bufsz);
 done:
 	kfree(mmap_region_cmd);
 	return ret;
@@ -1556,6 +1560,9 @@ int q6core_map_mdf_memory_regions(uint64_t *buf_add, uint32_t mempool_id,
 	}
 
 	*map_handle = q6core_lcl.mdf_mem_map_cal_handle;
+
+	dsp_trace_map("q6core mdf", MEM_TRACE_MAP, *buf_add,
+		*map_handle, *bufsz);
 done:
 	kfree(mmap_region_cmd);
 	mutex_unlock(&q6core_lcl.cmd_lock);
@@ -1588,6 +1595,7 @@ int q6core_memory_unmap_regions(uint32_t mem_map_handle)
 	pr_debug("%s: unmap regions map handle %d\n",
 		__func__, mem_map_handle);
 
+	dsp_trace_unmap("q6core", mem_map_handle);
 	ret = apr_send_pkt(q6core_lcl.core_handle_q, (uint32_t *)
 		&unmap_regions);
 	if (ret < 0) {

@@ -48,6 +48,8 @@
 #define TX_MACRO_DMIC_HPF_DELAY_MS	300
 #define TX_MACRO_AMIC_HPF_DELAY_MS	300
 
+static u32 g_hpf_delay;
+
 static int tx_amic_unmute_delay = TX_MACRO_AMIC_UNMUTE_DELAY_MS;
 module_param(tx_amic_unmute_delay, int, 0664);
 MODULE_PARM_DESC(tx_amic_unmute_delay, "delay to unmute the tx amic path");
@@ -1093,7 +1095,10 @@ static int tx_macro_enable_dec(struct snd_soc_dapm_widget *w,
 						CF_MIN_3DB_150HZ << 5);
 
 		if (is_smic_enabled(component, decimator)) {
-			hpf_delay = TX_MACRO_AMIC_HPF_DELAY_MS;
+			if (!g_hpf_delay)
+				hpf_delay = TX_MACRO_AMIC_HPF_DELAY_MS;
+			else
+				hpf_delay = g_hpf_delay;
 			unmute_delay = TX_MACRO_AMIC_UNMUTE_DELAY_MS;
 			if (unmute_delay < tx_amic_unmute_delay)
 				unmute_delay = tx_amic_unmute_delay;
@@ -3388,6 +3393,20 @@ static int tx_macro_probe(struct platform_device *pdev)
 	u32 disable_afe_wakeup_event_listener = 0;
 	const char *disable_afe_wakeup_event_listener_dt =
 			"qcom,disable-afe-wakeup-event-listener";
+	const char *hpf_delay_ms_dt = "qcom,hpf_delay_ms";
+
+	ret = of_property_read_u32(pdev->dev.of_node, hpf_delay_ms_dt,
+			    &g_hpf_delay);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"%s: could not find g_hpf_delay entry in dt\n",
+			__func__);
+			g_hpf_delay = 0;
+	} else {
+		dev_err(&pdev->dev,
+			"%s: find g_hpf_delay is %u dt\n",
+			__func__, g_hpf_delay);
+	}
 
 	if (!bolero_is_va_macro_registered(&pdev->dev)) {
 		dev_err(&pdev->dev,

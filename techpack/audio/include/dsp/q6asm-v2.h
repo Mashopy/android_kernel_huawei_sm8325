@@ -257,6 +257,12 @@ struct q6asm_cal_info {
 	int app_type;
 };
 
+struct asm_buffer_node {
+	struct list_head list;
+	phys_addr_t buf_phys_addr;
+	uint32_t  mmap_hdl;
+};
+
 void q6asm_audio_client_free(struct audio_client *ac);
 
 struct audio_client *q6asm_audio_client_alloc(app_cb cb, void *priv);

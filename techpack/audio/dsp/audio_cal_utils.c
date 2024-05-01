@@ -768,34 +768,6 @@ static int realloc_memory(struct cal_block_data *cal_block)
 	return ret;
 }
 
-static int map_memory(struct cal_type_data *cal_type,
-			struct cal_block_data *cal_block)
-{
-	int ret = 0;
-
-
-	if (cal_type->info.cal_util_callbacks.map_cal != NULL) {
-		if ((cal_block->map_data.ion_map_handle < 0) ||
-			(cal_block->map_data.map_size <= 0) ||
-			(cal_block->map_data.q6map_handle != 0)) {
-			goto done;
-		}
-
-		pr_debug("%s: cal type %d call map\n",
-			__func__, cal_type->info.reg.cal_type);
-		ret = cal_type->info.cal_util_callbacks.
-			map_cal(cal_type->info.reg.cal_type, cal_block);
-		if (ret < 0) {
-			pr_err("%s: map_cal failed, cal type %d, ret = %d!\n",
-				__func__, cal_type->info.reg.cal_type,
-				ret);
-			goto done;
-		}
-	}
-done:
-	return ret;
-}
-
 static int unmap_memory(struct cal_type_data *cal_type,
 			struct cal_block_data *cal_block)
 {
@@ -894,9 +866,6 @@ int cal_utils_alloc_cal(size_t data_size, void *data,
 		}
 	}
 
-	ret = map_memory(cal_type, cal_block);
-	if (ret < 0)
-		goto err;
 err:
 	mutex_unlock(&cal_type->lock);
 done:
@@ -1045,10 +1014,6 @@ int cal_utils_set_cal(size_t data_size, void *data,
 		}
 	}
 
-	ret = map_memory(cal_type, cal_block);
-	if (ret < 0)
-		goto err;
-
 	cal_block->cal_data.size = basic_data->cal_data.cal_size;
 
 	if (client_info_size > 0) {
@@ -1090,7 +1055,7 @@ int __init cal_utils_init(void)
 }
 /**
  * cal_utils_is_cal_stale
- *
+ *unmap_memory
  * @cal_block: pointer to cal block
  *
  * Returns true if cal block is stale, false otherwise
@@ -1104,9 +1069,8 @@ bool cal_utils_is_cal_stale(struct cal_block_data *cal_block)
 		pr_err("%s: cal_block is Null", __func__);
 		goto unlock;
 	}
-
 	if (cal_block->cal_stale)
-	    ret = true;
+		ret = true;
 
 unlock:
 	mutex_unlock(&cal_lock);

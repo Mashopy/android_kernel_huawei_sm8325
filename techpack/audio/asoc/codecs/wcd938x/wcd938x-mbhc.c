@@ -839,6 +839,60 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.bcs_enable = wcd938x_mbhc_bcs_enable,
 };
 
+static int wcd938x_get_headset_loop_status(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+			snd_soc_kcontrol_component(kcontrol);
+	struct wcd938x_mbhc *wcd938x_mbhc = wcd938x_soc_get_mbhc(component);
+	struct wcd_mbhc *mbhc = NULL;
+
+	if (!wcd938x_mbhc) {
+		dev_err(component->dev, "%s: mbhc not initialized!\n", __func__);
+		return -EINVAL;
+	}
+
+	mbhc = &wcd938x_mbhc->wcd_mbhc;
+	if (!mbhc) {
+		dev_err(component->dev, "%s: mbhc is invalid!\n", __func__);
+		return -EINVAL;
+	}
+
+	ucontrol->value.integer.value[0] = (u32) mbhc->is_headset_loop;
+	dev_info(component->dev, "%s: headset_loop: %d\n", __func__, mbhc->is_headset_loop);
+
+	return 0;
+}
+
+static int wcd938x_put_headset_loop_status(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+			snd_soc_kcontrol_component(kcontrol);
+	struct wcd938x_mbhc *wcd938x_mbhc = wcd938x_soc_get_mbhc(component);
+	struct wcd_mbhc *mbhc = NULL;
+
+	if (!wcd938x_mbhc) {
+		dev_err(component->dev, "%s: mbhc not initialized!\n", __func__);
+		return -EINVAL;
+	}
+	mbhc = &wcd938x_mbhc->wcd_mbhc;
+	if (!mbhc) {
+		dev_err(component->dev, "%s: mbhc is invalid!\n", __func__);
+		return -EINVAL;
+	}
+
+	mbhc->is_headset_loop = ucontrol->value.integer.value[0];
+	dev_info(component->dev, "%s: headset_loop: %d\n", __func__, mbhc->is_headset_loop);
+
+	return 0;
+}
+
+static const struct snd_kcontrol_new wcd938x_mbhc_custom_controls[] = {
+	SOC_SINGLE_EXT("HEADSET_LOOP STATUS", SND_SOC_NOPM, 0, 1, 0,
+			wcd938x_get_headset_loop_status, wcd938x_put_headset_loop_status),
+};
+
 static int wcd938x_get_hph_type(struct snd_kcontrol *kcontrol,
 			      struct snd_ctl_elem_value *ucontrol)
 {
@@ -1108,6 +1162,8 @@ int wcd938x_mbhc_init(struct wcd938x_mbhc **mbhc,
 				   ARRAY_SIZE(impedance_detect_controls));
 	snd_soc_add_component_controls(component, hph_type_detect_controls,
 				   ARRAY_SIZE(hph_type_detect_controls));
+	snd_soc_add_component_controls(component, wcd938x_mbhc_custom_controls,
+				ARRAY_SIZE(wcd938x_mbhc_custom_controls));
 
 	return 0;
 err:

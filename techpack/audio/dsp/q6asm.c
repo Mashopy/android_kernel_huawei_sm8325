@@ -41,7 +41,10 @@
 #include <dsp/q6audio-v2.h>
 #include <dsp/q6common.h>
 #include <dsp/q6core.h>
+#include <soc/qcom/subsystem_restart.h>
 #include "adsp_err.h"
+#include "dsp_trace_utils.h"
+#include "voice_bigdata.h"
 
 #define TIMEOUT_MS  1000
 #define TRUE        0x01
@@ -49,6 +52,8 @@
 #define SESSION_MAX 8
 
 #define ENC_FRAMES_PER_BUFFER 0x01
+
+#define DSM_AUDIO_ADSP_SETUP_FAIL_ERROR_NO 921001013
 
 enum {
 	ASM_TOPOLOGY_CAL = 0,
@@ -106,11 +111,6 @@ struct audio_session {
 /* session id: 0 reserved */
 static struct audio_session session[ASM_ACTIVE_STREAMS_ALLOWED + 1];
 
-struct asm_buffer_node {
-	struct list_head list;
-	phys_addr_t buf_phys_addr;
-	uint32_t  mmap_hdl;
-};
 static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv);
 static int32_t q6asm_callback(struct apr_client_data *data, void *priv);
 static void q6asm_add_hdr(struct audio_client *ac, struct apr_hdr *hdr,
@@ -807,6 +807,8 @@ static int remap_cal_data(int32_t cal_type, struct cal_block_data *cal_block)
 				__func__, cal_block->map_data.map_size, ret);
 			goto done;
 		}
+		ASM_TRACE_MAP_CAL(cal_type, cal_block);
+		ret = 0;
 	}
 done:
 	return ret;
@@ -841,7 +843,7 @@ static int q6asm_unmap_cal_memory(int32_t cal_type,
 			goto done;
 		}
 	}
-
+	ASM_TRACE_UNMAP_CAL(cal_block);
 	common_client.port[IN].buf->phys = cal_block->cal_data.paddr;
 
 	result2 = q6asm_memory_unmap_regions(&common_client, IN);
@@ -1120,6 +1122,7 @@ int q6asm_map_rtac_block(struct rtac_cal_block_data *cal_block)
 			break;
 		}
 	}
+	dsp_trace_map_rtac("asm rtac block", cal_block);
 done:
 	return result;
 }
@@ -1153,7 +1156,7 @@ int q6asm_unmap_rtac_block(uint32_t *mem_map_handle)
 		}
 	}
 
-
+	dsp_trace_unmap("asm rtac block", *mem_map_handle);
 	result2 = q6asm_memory_unmap_regions(&common_client, OUT);
 	if (result2 < 0) {
 		pr_err("%s: unmap failed, err %d\n",
@@ -1192,6 +1195,7 @@ int q6asm_audio_client_buf_free(unsigned int dir,
 		cnt = port->max_buf_cnt - 1;
 
 		if (cnt >= 0) {
+			ASM_TRACE_CLIENT_BUF_UNMAP(ac, dir);
 			rc = q6asm_memory_unmap_regions(ac, dir);
 			if (rc < 0)
 				pr_err("%s: Memory_unmap_regions failed %d\n",
@@ -1244,6 +1248,7 @@ int q6asm_audio_client_buf_free_contiguous(unsigned int dir,
 	cnt = port->max_buf_cnt - 1;
 
 	if (cnt >= 0) {
+		ASM_TRACE_CLIENT_CBUF_UNMAP(ac, dir);
 		rc = q6asm_memory_unmap(ac, port->buf[0].phys, dir);
 		if (rc < 0)
 			pr_err("%s: Memory_unmap_regions failed %d\n",
@@ -1680,6 +1685,7 @@ int q6asm_audio_client_buf_alloc(unsigned int dir,
 				__func__, rc, bufsz);
 			goto fail;
 		}
+		ASM_TRACE_CLIENT_BUF_MAP(ac, dir);
 	}
 	return 0;
 fail:
@@ -1796,6 +1802,7 @@ int q6asm_audio_client_buf_alloc_contiguous(unsigned int dir,
 			__func__, rc, bufsz);
 		goto fail;
 	}
+	ASM_TRACE_CLIENT_CBUF_MAP(ac, dir);
 	return 0;
 fail:
 	q6asm_audio_client_buf_free_contiguous(dir, ac);
@@ -1841,9 +1848,9 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 				buf_node = list_entry(ptr,
 						struct asm_buffer_node,
 						list);
-				list_del(&buf_node->list);
-				kfree(buf_node);
-			}
+					list_del(&buf_node->list);
+					kfree(buf_node);
+				}
 			pr_debug("%s: Clearing custom topology\n", __func__);
 		}
 
@@ -2142,9 +2149,9 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 		case ASM_STREAM_CMD_SET_PP_PARAMS_V3:
 			//cmd_state_pp : wait=-1 , non wait=0
 			if (atomic_read(&ac->cmd_state_pp) != -1) {
-				if (rtac_make_asm_callback(ac->session, payload,
+			if (rtac_make_asm_callback(ac->session, payload,
 					data->payload_size))
-					break;
+				break;
 			}
 		case ASM_SESSION_CMD_PAUSE:
 		case ASM_SESSION_CMD_SUSPEND:
@@ -8625,6 +8632,7 @@ int q6asm_memory_map(struct audio_client *ac, phys_addr_t buf_add, int dir,
 	list_add_tail(&buffer_node->list, &ac->port[dir].mem_map_handle);
 	ac->port[dir].tmp_hdl = 0;
 	rc = 0;
+	ASM_TRACE_AIO_MAP(buf_add, bufsz, buffer_node->mmap_hdl);
 
 fail_cmd:
 	kfree(mmap_region_cmd);
@@ -8683,6 +8691,8 @@ int q6asm_memory_unmap(struct audio_client *ac, phys_addr_t buf_add, int dir)
 		rc = 0;
 		goto fail_cmd;
 	}
+
+	ASM_TRACE_AIO_UNMAP(buf_add, 0, mem_unmap.mem_map_handle);
 	rc = apr_send_pkt(ac->mmap_apr, (uint32_t *) &mem_unmap);
 	if (rc < 0) {
 		pr_err("%s: mem_unmap op[0x%x]rc[%d]\n", __func__,
@@ -8850,7 +8860,17 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 			 ac->port[dir].tmp_hdl),
 			msecs_to_jiffies(TIMEOUT_MS));
 	if (!rc) {
+#ifdef CONFIG_HUAWEI_DSM_AUDIO
+			audio_dsm_report_info(AUDIO_CODEC,
+				DSM_AUDIO_ADSP_SETUP_FAIL_ERROR_NO,
+				"%s:  waited for memory_map(%d)\n", __func__, rc);
+#endif
+#ifdef DBG_AUDIO_QCOM
+		panic("%s: timeout. waited for memory_map\n", __func__);
+#else
 		pr_err("%s: timeout. waited for memory_map\n", __func__);
+		subsystem_restart("adsp");
+#endif /* DBG_AUDIO_QCOM */
 		rc = -ETIMEDOUT;
 		kfree(buffer_node);
 		buffer_node = NULL;
@@ -11351,10 +11371,10 @@ static int q6asm_get_asm_topology_apptype(struct q6asm_cal_info *cal_info, struc
 		if (cal_block == NULL) {
 			pr_debug("%s: Couldn't find cal_block with buf_number, re-routing "
 				"search using CAL type only\n", __func__);
-			cal_block = cal_utils_get_only_cal_block(cal_data[ASM_TOPOLOGY_CAL]);
+	cal_block = cal_utils_get_only_cal_block(cal_data[ASM_TOPOLOGY_CAL]);
 		}
 		if (cal_block == NULL || cal_utils_is_cal_stale(cal_block))
-			goto unlock;
+		goto unlock;
 	}
 	cal_info->topology_id = ((struct audio_cal_info_asm_top *)
 		cal_block->cal_info)->topology;
@@ -11418,11 +11438,11 @@ int q6asm_send_cal(struct audio_client *ac)
 		pr_debug("%s: Couldn't find cal_block with buf_number, re-routing "
 			"search using app_type only\n", __func__);
 		cal_block = q6asm_find_cal_by_app_type(ASM_AUDSTRM_CAL, ac->app_type);
-		if (cal_block == NULL) {
-			pr_err("%s: cal_block is NULL\n",
-				__func__);
-			goto unlock;
-		}
+	if (cal_block == NULL) {
+		pr_err("%s: cal_block is NULL\n",
+			__func__);
+		goto unlock;
+	}
 	}
 	if (cal_utils_is_cal_stale(cal_block)) {
 		rc = 0; /* not error case */
@@ -11460,13 +11480,15 @@ int q6asm_send_cal(struct audio_client *ac)
 	rc = q6asm_set_pp_params(ac, &mem_hdr, NULL, payload_size);
 	if (rc) {
 		pr_err("%s: audio audstrm cal send failed\n", __func__);
-		goto unlock;
+		goto unmap;
 	}
 
 	if (cal_block)
 		cal_utils_mark_cal_used(cal_block);
 	rc = 0;
 
+unmap:
+	q6asm_unmap_cal_memory(ASM_AUDSTRM_CAL_TYPE, cal_block);
 unlock:
 	mutex_unlock(&cal_data[ASM_AUDSTRM_CAL]->lock);
 done:

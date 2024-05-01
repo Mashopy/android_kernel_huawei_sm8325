@@ -619,6 +619,12 @@ struct wcd_mbhc {
 	bool force_linein;
 	struct device_node *fsa_np;
 	struct notifier_block fsa_nb;
+	int typec_uart_switch;
+	bool is_factory_mode;
+	bool is_headset_loop;
+	bool disable_elect_insert_irq;
+	unsigned int delay_for_headset_reverse_insertion;
+	int micbias2_ao;
 };
 
 void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
@@ -634,5 +640,6 @@ int wcd_cancel_btn_work(struct wcd_mbhc *mbhc);
 int wcd_mbhc_get_button_mask(struct wcd_mbhc *mbhc);
 void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			enum snd_jack_types jack_type);
+void wcd_mbhc_set_and_turnoff_hph_padac(struct wcd_mbhc *mbhc);
 
 #endif /* __WCD_MBHC_V2_H__ */

@@ -26,6 +26,7 @@
 #include <dsp/q6common.h>
 #include <dsp/audio_cal_utils.h>
 #include "adsp_err.h"
+#include "dsp_trace_utils.h"
 
 #define APR_TIMEOUT	(HZ)
 #define LSM_SAMPLE_RATE 16000
@@ -1852,6 +1853,9 @@ static int q6lsm_memory_map_regions(struct lsm_client *client,
 
 	pr_debug("%s: leave %d\n", __func__, rc);
 	kfree(mmap_region_cmd);
+
+	dsp_trace_map("q6lsm", MEM_TRACE_MAP, dma_addr_p,
+		*mmap_p, dma_buf_sz);
 	return rc;
 }
 
@@ -1873,6 +1877,7 @@ static int q6lsm_memory_unmap_regions(struct lsm_client *client,
 	unmap.mem_map_handle = handle;
 
 	pr_debug("%s: unmap handle 0x%x\n", __func__, unmap.mem_map_handle);
+	dsp_trace_unmap("q6lsm", handle);
 	rc = q6lsm_apr_send_pkt(client, client->mmap_apr, &unmap, true,
 				NULL);
 	if (rc)

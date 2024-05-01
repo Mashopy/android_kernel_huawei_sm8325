@@ -126,6 +126,11 @@ enum {
 	VOC_SET_PARAM_TOKEN_MAX
 };
 
+enum {
+	VOC_GENERIC_GET_PARAM_TOKEN = 1,
+	VOC_GET_PARAM_TOKEN_MAX
+};
+
 struct voice_dev_route_state {
 	u16 rx_route_flag;
 	u16 tx_route_flag;
@@ -459,6 +464,27 @@ struct vss_icommon_cmd_set_param {
 	 * Bit size of payload must be a multiple of 4.
 	 */
 	uint8_t param_data[0];
+} __packed;
+
+struct voice_cmd_get_param_data {
+    unsigned int module_id;
+
+    unsigned short instance_id;
+
+    unsigned short reserved;
+
+    unsigned int param_id;
+} __packed;
+
+struct vss_icommon_cmd_get_param {
+  /* APR Header */
+  struct apr_hdr apr_hdr;
+
+  /* The memory mapping header to be used when sending outband */
+  struct vss_icommon_mem_mapping_hdr mem_hdr;
+
+  /* < Size of the memory in bytes to hold the parameter. */
+  uint16_t mem_size;
 } __packed;
 
 /* TO MVM commands */
@@ -1835,6 +1861,9 @@ struct share_memory_info {
 	struct mem_map_table	memtbl;
 };
 
+#define VSS_IVOCPROC_CMD_CUSTOMIZE_SET_PARAM ( 0x11110001 )
+#define VSS_IVOCPROC_CMD_CUSTOMIZE_GET_PARAM ( 0x11110002 )
+
 #define VSS_ISOUNDFOCUS_CMD_SET_SECTORS     0x00013133
 #define VSS_ISOUNDFOCUS_CMD_GET_SECTORS     0x00013134
 #define VSS_ISOUNDFOCUS_RSP_GET_SECTORS     0x00013135
@@ -1945,7 +1974,8 @@ struct voice_data {
 
 	uint32_t ecns_enable;
 	uint32_t ecns_module_id;
-
+	unsigned char *custom_msg_rp;
+	unsigned int custom_rp_len;
 };
 
 #define MAX_VOC_SESSIONS 8
@@ -2146,4 +2176,8 @@ int voc_get_sound_focus(struct sound_focus_param *soundFocusData);
 int voc_get_source_tracking(struct source_tracking_param *sourceTrackingData);
 int voc_set_afe_sidetone(uint32_t session_id, bool sidetone_enable);
 bool voc_get_afe_sidetone(void);
+int voice_pack_and_set_customize_param(uint32_t module_id, uint32_t param_id,
+                                                            uint32_t param_size, uint8_t *param_data);
+int voice_pack_and_get_customize_param(uint32_t module_id, uint32_t param_id,
+                                                            uint32_t param_size, uint8_t *param_data);
 #endif

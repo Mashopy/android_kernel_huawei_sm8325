@@ -2,7 +2,7 @@
 /*
  * Copyright (c) 2018-2020, The Linux Foundation. All rights reserved.
  */
-
+#define DEBUG
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
@@ -41,6 +41,8 @@
 #define ADC_MODE_VAL_ULP2     0x0B
 
 #define NUM_ATTEMPTS 5
+
+extern void adm_set_viop_ec_enable(bool is_enable);
 
 #define DAPM_MICBIAS1_STANDALONE "MIC BIAS1 Standalone"
 #define DAPM_MICBIAS2_STANDALONE "MIC BIAS2 Standalone"
@@ -779,7 +781,7 @@ static int wcd938x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	int hph_mode = wcd938x->hph_mode;
 
-	dev_dbg(component->dev, "%s wname: %s event: %d\n", __func__,
+	dev_info(component->dev, "%s wname: %s event: %d\n", __func__,
 		w->name, event);
 
 	switch (event) {
@@ -915,7 +917,7 @@ static int wcd938x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	int hph_mode = wcd938x->hph_mode;
 
-	dev_dbg(component->dev, "%s wname: %s event: %d\n", __func__,
+	dev_info(component->dev, "%s wname: %s event: %d\n", __func__,
 		w->name, event);
 
 	switch (event) {
@@ -1504,7 +1506,7 @@ int wcd938x_mbhc_micb_adjust_voltage(struct snd_soc_component *component,
 		goto exit;
 	}
 
-	dev_dbg(component->dev, "%s: micb_num: %d, cur_mv: %d, req_mv: %d, micb_en: %d\n",
+	dev_info(component->dev, "%s: micb_num: %d, cur_mv: %d, req_mv: %d, micb_en: %d\n",
 		 __func__, micb_num, WCD_VOUT_CTL_TO_MICB(cur_vout_ctl),
 		 req_volt, micb_en);
 
@@ -1906,6 +1908,9 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 	int post_dapm_on = 0;
 	int ret = 0;
 
+	dev_info(component->dev, "%s: req:%d, is_dapm:%d\n",
+		__func__, req, is_dapm);
+
 	if ((micb_index < 0) || (micb_index > WCD938X_MAX_MICBIAS - 1)) {
 		dev_err(component->dev,
 			"%s: Invalid micbias index, micb_ind:%d\n",
@@ -2043,7 +2048,7 @@ int wcd938x_micbias_control(struct snd_soc_component *component,
 		break;
 	};
 
-	dev_dbg(component->dev,
+	dev_info(component->dev,
 		"%s: micb_num:%d, micb_ref: %d, pullup_ref: %d\n",
 		__func__, micb_num, wcd938x->micb_ref[micb_index],
 		wcd938x->pullup_ref[micb_index]);
@@ -2116,6 +2121,8 @@ static int wcd938x_event_notify(struct notifier_block *block,
 	struct wcd938x_priv *wcd938x = dev_get_drvdata((struct device *)data);
 	struct snd_soc_component *component = wcd938x->component;
 	struct wcd_mbhc *mbhc;
+
+	dev_info(component->dev, "%s event: %d\n", __func__, event);
 
 	switch (event) {
 	case BOLERO_SLV_EVT_TX_CH_HOLD_CLEAR:
@@ -2788,6 +2795,31 @@ static int wcd938x_ldoh_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static int wcd938x_voip_ec_get(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+			snd_soc_kcontrol_component(kcontrol);
+	struct wcd938x_priv *wcd938x = snd_soc_component_get_drvdata(component);
+
+	ucontrol->value.integer.value[0] = wcd938x->is_voip_ec_enable;
+
+	return 0;
+}
+
+static int wcd938x_voip_ec_put(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+				snd_soc_kcontrol_component(kcontrol);
+	struct wcd938x_priv *wcd938x = snd_soc_component_get_drvdata(component);
+
+	wcd938x->is_voip_ec_enable = ucontrol->value.integer.value[0];
+	adm_set_viop_ec_enable(wcd938x->is_voip_ec_enable);
+
+	return 0;
+}
+
 const char * const tx_master_ch_text[] = {
 	"ZERO", "SWRM_TX1_CH1", "SWRM_TX1_CH2", "SWRM_TX1_CH3", "SWRM_TX1_CH4",
 	"SWRM_TX2_CH1", "SWRM_TX2_CH2", "SWRM_TX2_CH3", "SWRM_TX2_CH4",
@@ -3004,6 +3036,9 @@ static const struct snd_kcontrol_new wcd938x_snd_controls[] = {
 		wcd938x_get_compander, wcd938x_set_compander),
 	SOC_SINGLE_EXT("LDOH Enable", SND_SOC_NOPM, 0, 1, 0,
 		wcd938x_ldoh_get, wcd938x_ldoh_put),
+
+	SOC_SINGLE_EXT("VOIP_EC Enable", SND_SOC_NOPM, 0, 1, 0,
+		wcd938x_voip_ec_get, wcd938x_voip_ec_put),
 
 	SOC_SINGLE_EXT("ADC2_BCS Disable", SND_SOC_NOPM, 0, 1, 0,
 		wcd938x_bcs_get, wcd938x_bcs_put),

@@ -41,7 +41,10 @@ LINUXINCLUDE    += \
                 -I$(srctree)/techpack/audio/include/uapi \
                 -I$(srctree)/techpack/audio/include/uapi/audio \
                 -I$(srctree)/techpack/audio/include/asoc \
-                -I$(srctree)/techpack/audio/include
+                -I$(srctree)/techpack/audio/include \
+                -I$(srctree)/../../vendor/huawei/chipset_common/plugins/kernel/include/hwpower/wireless_charge \
+                -I$(srctree)/drivers/devkit/audiokit \
+                -I$(srctree)/drivers/devkit/audiokit/headset_debug
 
 ifeq ($(CONFIG_QTI_QUIN_GVM), y)
 LINUXINCLUDE    += \
