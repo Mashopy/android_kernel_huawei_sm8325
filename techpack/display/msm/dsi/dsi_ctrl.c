@@ -19,8 +19,12 @@
 #include "dsi_pwr.h"
 #include "dsi_catalog.h"
 #include "dsi_panel.h"
-
 #include "sde_dbg.h"
+#ifdef CONFIG_LCD_KIT_DRIVER
+#include "lcd_kit_drm_panel.h"
+#endif
+
+#include "lcd_kit_drm_panel.h"
 
 #define DSI_CTRL_DEFAULT_LABEL "MDSS DSI CTRL"
 
@@ -48,6 +52,10 @@ struct dsi_ctrl_list_item {
 
 static LIST_HEAD(dsi_ctrl_list);
 static DEFINE_MUTEX(dsi_ctrl_list_lock);
+
+#ifdef CONFIG_HUAWEI_DSM
+extern struct dsm_client *lcd_dclient;
+#endif
 
 static const enum dsi_ctrl_version dsi_ctrl_v1_4 = DSI_CTRL_VERSION_1_4;
 static const enum dsi_ctrl_version dsi_ctrl_v2_0 = DSI_CTRL_VERSION_2_0;
@@ -372,6 +380,8 @@ static void dsi_ctrl_flush_cmd_dma_queue(struct dsi_ctrl *dsi_ctrl)
 	 */
 	if (atomic_read(&dsi_ctrl->dma_irq_trig)) {
 		cancel_work_sync(&dsi_ctrl->dma_cmd_wait);
+		dsi_ctrl->pending_cmd = false;
+		SDE_EVT32(SDE_EVTLOG_FUNC_CASE1);
 	} else {
 		flush_workqueue(dsi_ctrl->dma_cmd_workq);
 		SDE_EVT32(SDE_EVTLOG_FUNC_CASE2);
@@ -385,17 +395,12 @@ static void dsi_ctrl_dma_cmd_wait_for_done(struct work_struct *work)
 	u32 status;
 	u32 mask = DSI_CMD_MODE_DMA_DONE;
 	struct dsi_ctrl_hw_ops dsi_hw_ops;
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
 	dsi_ctrl = container_of(work, struct dsi_ctrl, dma_cmd_wait);
 	dsi_hw_ops = dsi_ctrl->hw.ops;
 	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY);
-
-	/*
-	 * This atomic state will be set if ISR has been triggered,
-	 * so the wait is not needed.
-	 */
-	if (atomic_read(&dsi_ctrl->dma_irq_trig))
-		goto done;
 
 	ret = wait_for_completion_timeout(
 			&dsi_ctrl->irq_info.cmd_dma_done,
@@ -411,13 +416,21 @@ static void dsi_ctrl_dma_cmd_wait_for_done(struct work_struct *work)
 		} else {
 			DSI_CTRL_ERR(dsi_ctrl,
 					"Command transfer failed\n");
+			panel_id = lcd_get_active_panel_id();
+			pinfo = lcm_get_panel_info(panel_id);
+			if (!pinfo) {
+				DSI_ERR("pinfo is null!\n");
+				return;
+			}
+			if (pinfo->display->panel->sync_broadcast_en)
+				pinfo->need_reboot = 1;
 		}
 		dsi_ctrl_disable_status_interrupt(dsi_ctrl,
 					DSI_SINT_CMD_MODE_DMA_DONE);
 	}
-
-done:
+	dsi_ctrl->pending_cmd = false;
 	dsi_ctrl->dma_wait_queued = false;
+	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_EXIT);
 }
 
 static int dsi_ctrl_check_state(struct dsi_ctrl *dsi_ctrl,
@@ -1352,13 +1365,23 @@ static void dsi_kickoff_msg_tx(struct dsi_ctrl *dsi_ctrl,
 {
 	u32 hw_flags = 0;
 	struct dsi_ctrl_hw_ops dsi_hw_ops = dsi_ctrl->hw.ops;
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
 	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, flags,
 		msg->flags);
 
-	if (dsi_ctrl->hw.reset_trig_ctrl)
-		dsi_hw_ops.reset_trig_ctrl(&dsi_ctrl->hw,
+	panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (!pinfo) {
+		DSI_ERR("pinfo is null!\n");
+		return;
+	}
+	if (pinfo->display->panel->sync_broadcast_en) {
+		if (dsi_hw_ops.init_cmddma_trig_ctrl)
+			dsi_hw_ops.init_cmddma_trig_ctrl(&dsi_ctrl->hw,
 				&dsi_ctrl->host_config.common_config);
+	}
 
 	/*
 	 * Always enable DMA scheduling for video mode panel.
@@ -1387,6 +1410,7 @@ static void dsi_kickoff_msg_tx(struct dsi_ctrl *dsi_ctrl,
 		hw_flags |= DSI_CTRL_CMD_LAST_COMMAND;
 
 	if (flags & DSI_CTRL_CMD_DEFER_TRIGGER) {
+		dsi_ctrl->pending_cmd = true;
 		if (flags & DSI_CTRL_CMD_FETCH_MEMORY) {
 			if (flags & DSI_CTRL_CMD_NON_EMBEDDED_MODE) {
 				dsi_hw_ops.kickoff_command_non_embedded_mode(
@@ -1414,6 +1438,7 @@ static void dsi_kickoff_msg_tx(struct dsi_ctrl *dsi_ctrl,
 		dsi_ctrl_enable_status_interrupt(dsi_ctrl,
 					DSI_SINT_CMD_MODE_DMA_DONE, NULL);
 		reinit_completion(&dsi_ctrl->irq_info.cmd_dma_done);
+		dsi_ctrl->pending_cmd = true;
 
 		if (flags & DSI_CTRL_CMD_FETCH_MEMORY) {
 			if (flags & DSI_CTRL_CMD_NON_EMBEDDED_MODE) {
@@ -1523,6 +1548,7 @@ static void dsi_ctrl_clear_slave_dma_status(struct dsi_ctrl *dsi_ctrl, u32 flags
 						status);
 		SDE_EVT32(dsi_ctrl->cell_index, status);
 	}
+	dsi_ctrl->pending_cmd = false;
 }
 
 static int dsi_message_tx(struct dsi_ctrl *dsi_ctrl,
@@ -1554,10 +1580,7 @@ static int dsi_message_tx(struct dsi_ctrl *dsi_ctrl,
 
 	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, *flags, dsi_ctrl->cmd_len);
 
-	if (dsi_ctrl->dma_wait_queued)
-		dsi_ctrl_flush_cmd_dma_queue(dsi_ctrl);
-
-	if (!(*flags & DSI_CTRL_CMD_BROADCAST_MASTER))
+	if (dsi_ctrl->pending_cmd)
 		dsi_ctrl_clear_slave_dma_status(dsi_ctrl, *flags);
 
 	if (*flags & DSI_CTRL_CMD_NON_EMBEDDED_MODE) {
@@ -2294,7 +2317,11 @@ struct dsi_ctrl *dsi_ctrl_get(struct device_node *of_node)
 	}
 
 	mutex_lock(&ctrl->ctrl_lock);
+#ifdef CONFIG_LCD_KIT_DRIVER
+	if (ctrl->refcount == 1 && lcd_kit_get_product_type() != LCD_SINGLE_DSI_MULTIPLEX_TYPE) {
+#else
 	if (ctrl->refcount == 1) {
+#endif
 		DSI_CTRL_ERR(ctrl, "Device in use\n");
 		mutex_unlock(&ctrl->ctrl_lock);
 		ctrl = ERR_PTR(-EBUSY);
@@ -2701,6 +2728,10 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 				unsigned long error)
 {
 	struct dsi_event_cb_info cb_info;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	uint32_t panel_id = lcd_get_active_panel_id();
+	struct qcom_panel_info *panel_info = lcm_get_panel_info(panel_id);
+#endif
 
 	cb_info = dsi_ctrl->irq_info.irq_err_cb;
 
@@ -2762,6 +2793,13 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 						dsi_ctrl->cell_index,
 						0, 0, 0, 0);
 		}
+#if (defined CONFIG_LCD_KIT_DRIVER && defined CONFIG_HUAWEI_DSM)
+		if (panel_info != NULL && panel_info->underflow_support &&
+			lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
+			dsm_client_record(lcd_dclient, "Qcom UNDERFLOW ERROR\n");
+			dsm_client_notify(lcd_dclient, DSM_LCD_LDI_UNDERFLOW_ERROR_NO);
+		}
+#endif
 	}
 
 	/* DSI PLL UNLOCK error */
@@ -2894,6 +2932,11 @@ static irqreturn_t dsi_ctrl_isr(int irq, void *ptr)
 static int _dsi_ctrl_setup_isr(struct dsi_ctrl *dsi_ctrl)
 {
 	int irq_num, rc;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	uint32_t intr_idx;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	struct qcom_panel_info *panel_info = lcm_get_panel_info(panel_id);
+#endif
 
 	if (!dsi_ctrl)
 		return -EINVAL;
@@ -2904,6 +2947,26 @@ static int _dsi_ctrl_setup_isr(struct dsi_ctrl *dsi_ctrl)
 	init_completion(&dsi_ctrl->irq_info.vid_frame_done);
 	init_completion(&dsi_ctrl->irq_info.cmd_frame_done);
 	init_completion(&dsi_ctrl->irq_info.bta_done);
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+	/*
+	* If there is an unbalanced refcount for any interrupt, irq_stat_mask
+	* remain non zero on suspend. Due to this, enable_irq does not get
+	* called on resume, leading to ctrl ISR permanently disabled.
+	*/
+	if (panel_info != NULL && panel_info->dump_support) {
+		for (intr_idx = 0; intr_idx < DSI_STATUS_INTERRUPT_COUNT; intr_idx++) {
+			if (dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]) {
+				DSI_CTRL_ERR(dsi_ctrl,
+					"refcount mismatch, intr_idx %d\n", intr_idx);
+				SDE_EVT32(intr_idx, dsi_ctrl->irq_info.irq_stat_mask,
+				dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]);
+				SDE_DBG_DUMP("all", "dbg_bus", "dsi_dbg_bus",
+					"vbif_dbg_bus", "panic");
+			}
+		}
+	}
+#endif
 
 	irq_num = platform_get_irq(dsi_ctrl->pdev, 0);
 	if (irq_num < 0) {
@@ -2939,6 +3002,7 @@ static void _dsi_ctrl_destroy_isr(struct dsi_ctrl *dsi_ctrl)
 		devm_free_irq(&dsi_ctrl->pdev->dev,
 				dsi_ctrl->irq_info.irq_num, dsi_ctrl);
 		dsi_ctrl->irq_info.irq_num = -1;
+		dsi_ctrl->irq_info.irq_stat_mask = 0;
 	}
 }
 
@@ -2951,10 +3015,7 @@ void dsi_ctrl_enable_status_interrupt(struct dsi_ctrl *dsi_ctrl,
 			intr_idx >= DSI_STATUS_INTERRUPT_COUNT)
 		return;
 
-	SDE_EVT32(dsi_ctrl->cell_index, intr_idx,
-		dsi_ctrl->irq_info.irq_num, dsi_ctrl->irq_info.irq_stat_mask,
-		dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]);
-
+	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, intr_idx);
 	spin_lock_irqsave(&dsi_ctrl->irq_info.irq_lock, flags);
 
 	if (dsi_ctrl->irq_info.irq_stat_refcount[intr_idx] == 0) {
@@ -2987,10 +3048,7 @@ void dsi_ctrl_disable_status_interrupt(struct dsi_ctrl *dsi_ctrl,
 	if (!dsi_ctrl || intr_idx >= DSI_STATUS_INTERRUPT_COUNT)
 		return;
 
-	SDE_EVT32_IRQ(dsi_ctrl->cell_index, intr_idx,
-		dsi_ctrl->irq_info.irq_num, dsi_ctrl->irq_info.irq_stat_mask,
-		dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]);
-
+	SDE_EVT32_IRQ(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, intr_idx);
 	spin_lock_irqsave(&dsi_ctrl->irq_info.irq_lock, flags);
 
 	if (dsi_ctrl->irq_info.irq_stat_refcount[intr_idx])
@@ -3370,6 +3428,16 @@ int dsi_ctrl_validate_timing(struct dsi_ctrl *dsi_ctrl,
 	return rc;
 }
 
+void dsi_ctrl_reset_trigger_control(struct dsi_ctrl *dsi_ctrl) {
+	struct dsi_ctrl_hw_ops dsi_hw_ops = dsi_ctrl->hw.ops;
+	if (dsi_ctrl->dma_wait_queued)
+		dsi_ctrl_flush_cmd_dma_queue(dsi_ctrl);
+
+	if (dsi_ctrl->hw.reset_trig_ctrl)
+		dsi_hw_ops.reset_trig_ctrl(&dsi_ctrl->hw,
+			&dsi_ctrl->host_config.common_config);
+}
+
 /**
  * dsi_ctrl_cmd_transfer() - Transfer commands on DSI link
  * @dsi_ctrl:             DSI controller handle.
@@ -3389,12 +3457,27 @@ int dsi_ctrl_cmd_transfer(struct dsi_ctrl *dsi_ctrl,
 			  u32 *flags)
 {
 	int rc = 0;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	int i = 0;
+	char temp;
+#endif
 
 	if (!dsi_ctrl || !msg) {
 		DSI_CTRL_ERR(dsi_ctrl, "Invalid params\n");
 		return -EINVAL;
 	}
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+	DSI_DEBUG("channel = 0x%x\n", msg->channel);
+	DSI_DEBUG("type = 0x%x\n", msg->type);
+	DSI_DEBUG("flags = 0x%x\n", msg->flags);
+	DSI_DEBUG("ctrl = 0x%x\n", msg->ctrl);
+	DSI_DEBUG("wait_ms = 0x%x\n", msg->wait_ms);
+	DSI_DEBUG("tx_len = 0x%x\n", msg->tx_len);
+	for (; i < msg->tx_len; i++) {
+		temp = ((char *)(msg->tx_buf))[i];
+		DSI_DEBUG("tx_buf[%d] = 0x%x\n", i, temp);
+	}
+#endif
 	mutex_lock(&dsi_ctrl->ctrl_lock);
 
 	rc = dsi_ctrl_check_state(dsi_ctrl, DSI_CTRL_OP_CMD_TX, 0x0);

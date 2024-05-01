@@ -19,6 +19,10 @@
 
 #include "sde_dbg.h"
 
+#ifdef CONFIG_LCD_KIT_DRIVER
+#include "lcd_kit_drm_panel.h"
+#endif
+
 #define DSI_PHY_DEFAULT_LABEL "MDSS PHY CTRL"
 
 #define BITS_PER_BYTE	8
@@ -387,6 +391,7 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	const struct dsi_ver_spec_info *ver_info;
 	int rc = 0;
 	u32 index = 0;
+	u32 temp = 0;
 
 	if (!pdev || !pdev->dev.of_node) {
 		DSI_ERR("pdev not found\n");
@@ -438,6 +443,36 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 		DSI_PHY_ERR(dsi_phy, "failed to parse voltage supplies, rc = %d\n",
 				rc);
 		goto fail_regmap;
+	}
+
+	rc = of_property_read_u32(pdev->dev.of_node, "qcom,dsi-drive-adjustment", &temp);
+	if (rc) {
+		DSI_PHY_DBG(dsi_phy, "cell dsi-drive-adjustment not set, default to 0\n");
+		temp = 0;
+	}
+	dsi_phy->hw.dsi_drive_adjustment = temp;
+
+	if (dsi_phy->hw.dsi_drive_adjustment) {
+		rc = of_property_read_u32(pdev->dev.of_node, "qcom,glbl-str-swi-cal-sel-ctrl", &temp);
+		if (rc) {
+			DSI_PHY_DBG(dsi_phy, "cell glbl-str-swi-cal-sel-ctrl not set, default to 0\n");
+			temp = 0;
+		}
+		dsi_phy->hw.glbl_str_swi_cal_sel_ctrl = temp;
+
+		rc = of_property_read_u32(pdev->dev.of_node, "qcom,glbl-hstx-str-ctrl-0", &temp);
+		if (rc) {
+			DSI_PHY_DBG(dsi_phy, "cell glbl-hstx-str-ctrl-0 not set, default to 0x88\n");
+			temp = 0x88;
+		}
+		dsi_phy->hw.glbl_hstx_str_ctrl_0 = temp;
+
+		rc = of_property_read_u32(pdev->dev.of_node, "qcom,vreg-ctrl-0", &temp);
+		if (rc) {
+			DSI_PHY_DBG(dsi_phy, "cell vreg-ctrl-0 not set, default to 0x53\n");
+			temp = 0x53;
+		}
+		dsi_phy->hw.vreg_ctrl_0 = temp;
 	}
 
 	rc = dsi_catalog_phy_setup(&dsi_phy->hw, ver_info->version,
@@ -596,7 +631,11 @@ struct msm_dsi_phy *dsi_phy_get(struct device_node *of_node)
 	}
 
 	mutex_lock(&phy->phy_lock);
+#ifdef CONFIG_LCD_KIT_DRIVER
+	if (phy->refcount > 0 && lcd_kit_get_product_type() != LCD_SINGLE_DSI_MULTIPLEX_TYPE) {
+#else
 	if (phy->refcount > 0) {
+#endif
 		DSI_PHY_ERR(phy, "Device under use\n");
 		phy = ERR_PTR(-EINVAL);
 	} else {

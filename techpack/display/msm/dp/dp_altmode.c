@@ -16,6 +16,8 @@
 #include "dp_debug.h"
 #include "sde_dbg.h"
 
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
+#include <chipset_common/hwusb/hw_dp/dp_interface.h>
 
 #define ALTMODE_CONFIGURE_MASK (0x3f)
 #define ALTMODE_HPD_STATE_MASK (0x40)
@@ -110,6 +112,7 @@ static void dp_altmode_send_pan_ack(struct altmode_client *amclient,
 static int dp_altmode_notify(void *priv, void *data, size_t len)
 {
 	int rc = 0;
+	int connected = 0;
 	struct dp_altmode_private *altmode =
 			(struct dp_altmode_private *) priv;
 	u8 port_index, dp_data, orientation;
@@ -125,20 +128,23 @@ static int dp_altmode_notify(void *priv, void *data, size_t len)
 	hpd_state = (dp_data & ALTMODE_HPD_STATE_MASK) >> 6;
 	hpd_irq = (dp_data & ALTMODE_HPD_IRQ_MASK) >> 7;
 
+	qcom_dp_set_pd_event(altmode->dp_altmode.base.hpd_high,
+		altmode->connected, dp_data, orientation);
+
 	altmode->dp_altmode.base.hpd_high = !!hpd_state;
 	altmode->dp_altmode.base.hpd_irq = !!hpd_irq;
 	altmode->dp_altmode.base.multi_func = force_multi_func ? true :
 		!(pin == DPAM_HPD_C || pin == DPAM_HPD_E ||
 		pin == DPAM_HPD_OUT);
 
-	DP_DEBUG("payload=0x%x\n", dp_data);
-	DP_DEBUG("port_index=%d, orientation=%d, pin=%d, hpd_state=%d\n",
+	DP_INFO("payload=0x%x\n", dp_data);
+	DP_INFO("port_index=%d, orientation=%d, pin=%d, hpd_state=%d\n",
 			port_index, orientation, pin, hpd_state);
-	DP_DEBUG("multi_func=%d, hpd_high=%d, hpd_irq=%d\n",
+	DP_INFO("multi_func=%d, hpd_high=%d, hpd_irq=%d\n",
 			altmode->dp_altmode.base.multi_func,
 			altmode->dp_altmode.base.hpd_high,
 			altmode->dp_altmode.base.hpd_irq);
-	DP_DEBUG("connected=%d\n", altmode->connected);
+	DP_INFO("connected=%d\n", altmode->connected);
 	SDE_EVT32_EXTERNAL(dp_data, port_index, orientation, pin, hpd_state,
 			altmode->dp_altmode.base.multi_func,
 			altmode->dp_altmode.base.hpd_high,
@@ -150,8 +156,10 @@ static int dp_altmode_notify(void *priv, void *data, size_t len)
 			altmode->connected = false;
 			altmode->dp_altmode.base.alt_mode_cfg_done = false;
 			altmode->dp_altmode.base.orientation = ORIENTATION_NONE;
-			if (altmode->dp_cb && altmode->dp_cb->disconnect)
+			if (altmode->dp_cb && altmode->dp_cb->disconnect) {
 				altmode->dp_cb->disconnect(altmode->dev);
+				power_event_bnc_notify(POWER_BNT_HW_USB, POWER_NE_HW_DP_STATE, &connected);
+			}
 		}
 		goto ack;
 	}
@@ -181,11 +189,14 @@ static int dp_altmode_notify(void *priv, void *data, size_t len)
 
 		rc = dp_altmode_release_ss_lanes(altmode,
 				altmode->dp_altmode.base.multi_func);
-		if (rc)
-			goto ack;
+			if (rc)
+				goto ack;
 
-		if (altmode->dp_cb && altmode->dp_cb->configure)
+		if (altmode->dp_cb && altmode->dp_cb->configure) {
 			altmode->dp_cb->configure(altmode->dev);
+			connected = 1;
+			power_event_bnc_notify(POWER_BNT_HW_USB, POWER_NE_HW_DP_STATE, &connected);
+		}
 		goto ack;
 	}
 

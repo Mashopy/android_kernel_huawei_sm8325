@@ -7,6 +7,8 @@
 #include "dsi_ctrl_reg.h"
 #include "dsi_hw.h"
 #include "dsi_catalog.h"
+#include "sde_dbg.h"
+#include "lcd_kit_drm_panel.h"
 
 #define DISP_CC_MISC_CMD_REG_OFF 0x00
 
@@ -246,14 +248,30 @@ void dsi_ctrl_hw_22_reset_trigger_controls(struct dsi_ctrl_hw *ctrl,
 	u32 reg = 0;
 	const u8 trigger_map[DSI_TRIGGER_MAX] = {
 		0x0, 0x2, 0x1, 0x4, 0x5, 0x6 };
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
-	reg |= (cfg->te_mode == DSI_TE_ON_EXT_PIN) ? BIT(31) : 0;
-	reg |= (trigger_map[cfg->dma_cmd_trigger] & 0x7);
-	reg |= (trigger_map[cfg->mdp_cmd_trigger] & 0x7) << 4;
+	panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (!pinfo) {
+		DSI_ERR("pinfo is null!\n");
+		return;
+	}
+	if (pinfo->display->panel->sync_broadcast_en) {
+		reg = DSI_R32(ctrl, DSI_TRIG_CTRL);
+		reg &= ~BIT(16); /* Reset DMA_TRG_MUX */
+		reg &= ~(0xF); /* Reset DMA_TRIGGER_SEL */
+		reg |= (trigger_map[cfg->dma_cmd_trigger] & 0xF);
+	} else {
+		reg |= (cfg->te_mode == DSI_TE_ON_EXT_PIN) ? BIT(31) : 0;
+		reg |= (trigger_map[cfg->dma_cmd_trigger] & 0x7);
+		reg |= (trigger_map[cfg->mdp_cmd_trigger] & 0x7) << 4;
+	}
 	DSI_W32(ctrl, DSI_TRIG_CTRL, reg);
 	DSI_W32(ctrl, DSI_DMA_SCHEDULE_CTRL2, 0x0);
 	DSI_W32(ctrl, DSI_DMA_SCHEDULE_CTRL, 0x0);
 	ctrl->reset_trig_ctrl = false;
+	SDE_EVT32(ctrl->index);
 }
 
 /**

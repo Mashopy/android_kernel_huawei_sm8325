@@ -12,6 +12,8 @@
 #include "dp_debug.h"
 #include "sde_dbg.h"
 
+#include <chipset_common/hwusb/hw_dp/dp_interface.h>
+
 #define DP_MST_DEBUG(fmt, ...) DP_DEBUG(fmt, ##__VA_ARGS__)
 
 #define DP_CTRL_INTR_READY_FOR_VIDEO     BIT(0)
@@ -390,6 +392,12 @@ static int dp_ctrl_link_training_1(struct dp_ctrl_private *ctrl)
 		}
 
 		DP_DEBUG("clock recovery not done, adjusting vx px\n");
+		if (huawei_dp_factory_mode_is_enable()) {
+			huawei_dp_factory_link_cr_or_ch_eq_fail(true);
+			DP_ERR("not support reduce rate by cr verify in factory mode!\n");
+			ret = -EINVAL;
+			break;
+		}
 
 		ctrl->link->adjust_levels(ctrl->link, link_status);
 	}
@@ -517,6 +525,12 @@ static int dp_ctrl_link_training_2(struct dp_ctrl_private *ctrl)
 		}
 		tries++;
 
+		if (huawei_dp_factory_mode_is_enable()) {
+			huawei_dp_factory_link_cr_or_ch_eq_fail(false);
+			DP_ERR("not support reduce rate by eq verify in factory mode!\n");
+			ret = -EINVAL;
+			break;
+		}
 		ctrl->link->adjust_levels(ctrl->link, link_status);
 	}
 
@@ -592,6 +606,7 @@ end:
 static int dp_ctrl_setup_main_link(struct dp_ctrl_private *ctrl)
 {
 	int ret = 0;
+	int i;
 
 	if (ctrl->link->sink_request & DP_TEST_LINK_PHY_TEST_PATTERN)
 		goto end;
@@ -608,7 +623,12 @@ static int dp_ctrl_setup_main_link(struct dp_ctrl_private *ctrl)
 				0x01);
 
 	ret = dp_ctrl_link_train(ctrl);
+	if (ret)
+		huawei_dp_imonitor_set_param(DP_PARAM_LINK_TRAINING_FAILED, &ret);
 
+	for (i = 0; i < ctrl->link->link_params.lane_count; i++)
+		huawei_dp_imonitor_set_param_vs_pe(i, &(ctrl->link->phy_params.v_level),
+			&(ctrl->link->phy_params.p_level));
 end:
 	return ret;
 }

@@ -45,12 +45,12 @@
 #define LUTDMA_1_DEBUG_BUS_STATUS	0x5ec
 
 /* offsets from sde top address for the debug buses */
-#define DBGBUS_SSPP0		0x188
-#define DBGBUS_AXI_INTF		0x194
-#define DBGBUS_SSPP1		0x298
-#define DBGBUS_DSPP		0x348
+#define DBGBUS_SSPP0	0x188
+#define DBGBUS_AXI_INTF	0x194
+#define DBGBUS_SSPP1	0x298
+#define DBGBUS_DSPP	0x348
 #define DBGBUS_DSPP_STATUS	0x34C
-#define DBGBUS_PERIPH		0x418
+#define DBGBUS_PERIPH	0x418
 
 /* offsets from DSI CTRL base address for the DSI debug buses */
 #define DSI_DEBUG_BUS_CTRL	0x0124
@@ -490,7 +490,7 @@ static void _sde_dump_reg(const char *dump_name, u32 reg_dump_flag,
 	*dump_mem = dbg_base->reg_dump_addr;
 	dbg_base->reg_dump_addr += len_padded;
 
-	dump_addr = *dump_mem;
+			dump_addr = *dump_mem;
 	SDE_DBG_LOG_DUMP_ADDR(dump_name, dump_addr, len_padded, (unsigned long)(addr - base_addr));
 
 	if (_sde_power_check(sde_dbg_base.dump_mode)) {
@@ -859,7 +859,7 @@ static void _sde_dbg_dump_vbif_err_info(void __iomem *mem_base)
 	reg1 = readl_relaxed(mem_base + MMSS_VBIF_PND_ERR);
 	reg2 = readl_relaxed(mem_base + MMSS_VBIF_SRC_ERR);
 	dev_err(sde_dbg_base.dev, "xin halt:0x%lx, pnd err:0x%lx, src err:0x%lx\n",
-				reg, reg1, reg2);
+			reg, reg1, reg2);
 	reg >>= 16;
 	reg &= ~(reg1 | reg2);
 	for (i = 0; i < MMSS_VBIF_CLIENT_NUM; i++) {
@@ -870,7 +870,7 @@ static void _sde_dbg_dump_vbif_err_info(void __iomem *mem_base)
 			d0 = readl_relaxed(mem_base + MMSS_VBIF_ERR_INFO);
 			d1 = readl_relaxed(mem_base + MMSS_VBIF_ERR_INFO_1);
 			dev_err(sde_dbg_base.dev, "Client:%d, errinfo=0x%x, errinfo1=0x%x\n",
-						i, d0, d1);
+					i, d0, d1);
 		}
 		reg >>= 1;
 	}
@@ -936,7 +936,7 @@ static void _sde_dbg_dump_bus_entry(struct sde_dbg_sde_debug_bus *bus,
 					*dump_addr++ = i;
 					*dump_addr++ = j;
 					*dump_addr++ = status;
-				}
+	}
 
 				if (entry->analyzer)
 					entry->analyzer(entry->wr_addr, i, j, status);
@@ -965,7 +965,7 @@ static void _sde_dbg_dump_sde_dbg_bus(struct sde_dbg_sde_debug_bus *bus)
 		return;
 	}
 
-	mem_base = reg_base->base;
+			mem_base = reg_base->base;
 	if (!strcmp(bus->cmn.name, DBGBUS_NAME_SDE))
 		mem_base += bus->top_blk_off;
 
@@ -991,12 +991,12 @@ static void _sde_dbg_dump_sde_dbg_bus(struct sde_dbg_sde_debug_bus *bus)
 	if (in_mem && (!(*dump_mem))) {
 		*dump_mem = devm_kzalloc(sde_dbg_base.dev, list_size, GFP_KERNEL);
 		bus->cmn.content_size = list_size / sizeof(u32);
-	}
+		}
 
 	if (sde_mini_dump_add_region(bus->cmn.name, list_size, *dump_mem) < 0)
 		pr_err("minidump add %s failed\n", bus->cmn.name);
 
-	dump_addr = *dump_mem;
+			dump_addr = *dump_mem;
 	SDE_DBG_LOG_DUMP_ADDR(bus->cmn.name, dump_addr, list_size, 0);
 
 	_sde_dbg_dump_bus_entry(bus, entries, bus_size, mem_base, dump_addr);
@@ -1039,7 +1039,7 @@ static void _sde_dbg_dump_dsi_dbg_bus(struct sde_dbg_sde_debug_bus *bus)
 	if (in_mem && (!(*dump_mem))) {
 		*dump_mem = devm_kzalloc(sde_dbg_base.dev, list_size, GFP_KERNEL);
 		bus->cmn.content_size = list_size / sizeof(u32);
-	}
+		}
 
 	if (sde_mini_dump_add_region(bus->cmn.name, list_size, *dump_mem) < 0)
 		pr_err("minidump add %s failed\n", bus->cmn.name);
@@ -1392,9 +1392,13 @@ static ssize_t sde_evtlog_dump_read(struct file *file, char __user *buff,
 static ssize_t sde_evtlog_dump_write(struct file *file,
 	const char __user *user_buf, size_t count, loff_t *ppos)
 {
+#ifdef CONFIG_LCD_KIT_DRIVER
+	_sde_dump_array(NULL, 0, false, "dump_debugfs",true, true, true, true,
+		false);
+#else
 	_sde_dump_array(NULL, 0, sde_dbg_base.panic_on_err, "dump_debugfs",
 		true, true, true, true, false);
-
+#endif
 	return count;
 }
 

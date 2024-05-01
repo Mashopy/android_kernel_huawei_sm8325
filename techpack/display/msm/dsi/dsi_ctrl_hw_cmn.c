@@ -15,6 +15,7 @@
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
 #include "sde_vdc_helper.h"
+#include "lcd_kit_drm_panel.h"
 
 #define MMSS_MISC_CLAMP_REG_OFF           0x0014
 #define DSI_CTRL_DYNAMIC_FORCE_ON         (0x23F|BIT(8)|BIT(9)|BIT(11)|BIT(21))
@@ -89,10 +90,28 @@ static void dsi_setup_trigger_controls(struct dsi_ctrl_hw *ctrl,
 	u32 reg = 0;
 	const u8 trigger_map[DSI_TRIGGER_MAX] = {
 		0x0, 0x2, 0x1, 0x4, 0x5, 0x6 };
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
-	reg |= (cfg->te_mode == DSI_TE_ON_EXT_PIN) ? BIT(31) : 0;
-	reg |= (trigger_map[cfg->dma_cmd_trigger] & 0x7);
-	reg |= (trigger_map[cfg->mdp_cmd_trigger] & 0x7) << 4;
+	panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (!pinfo) {
+		DSI_ERR("pinfo is null!\n");
+		return;
+	}
+	if (pinfo->display->panel->sync_broadcast_en) {
+		reg = DSI_R32(ctrl, DSI_TRIG_CTRL);
+		if (cfg->te_mode == DSI_TE_ON_EXT_PIN)
+			reg |= BIT(31);
+		else
+			reg &= ~BIT(31);
+		reg &= ~(0x7 << 4);
+	} else {
+		reg |= (cfg->te_mode == DSI_TE_ON_EXT_PIN) ? BIT(31) : 0;
+		reg |= (trigger_map[cfg->dma_cmd_trigger] & 0x7);
+		reg |= (trigger_map[cfg->mdp_cmd_trigger] & 0x7) << 4;
+	}
+
 	DSI_W32(ctrl, DSI_TRIG_CTRL, reg);
 }
 
@@ -760,8 +779,6 @@ void dsi_ctrl_hw_cmn_kickoff_command(struct dsi_ctrl_hw *ctrl,
 
 	if (!(flags & DSI_CTRL_HW_CMD_WAIT_FOR_TRIGGER))
 		DSI_W32(ctrl, DSI_CMD_MODE_DMA_SW_TRIGGER, 0x1);
-
-	SDE_EVT32(ctrl->index, cmd->length, flags);
 }
 
 /**
@@ -1738,3 +1755,19 @@ bool dsi_ctrl_hw_cmn_vid_engine_busy(struct dsi_ctrl_hw *ctrl)
 
 	return false;
 }
+
+void dsi_ctrl_hw_cmn_init_cmddma_trig_ctrl(struct dsi_ctrl_hw *ctrl,
+					   struct dsi_host_common_cfg *cfg)
+{
+	u32 reg;
+	const u8 trigger_map[DSI_TRIGGER_MAX] = {
+		0x0, 0x2, 0x1, 0x4, 0x5, 0x6 };
+
+	/* Initialize the default trigger used for Command Mode DMA path. */
+	reg = DSI_R32(ctrl, DSI_TRIG_CTRL);
+	reg &= ~BIT(16); /* Reset DMA_TRG_MUX */
+	reg &= ~(0xF); /* Reset DMA_TRIGGER_SEL */
+	reg |= (trigger_map[cfg->dma_cmd_trigger] & 0xF);
+	DSI_W32(ctrl, DSI_TRIG_CTRL, reg);
+}
+

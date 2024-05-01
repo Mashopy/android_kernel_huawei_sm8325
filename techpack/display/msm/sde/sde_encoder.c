@@ -42,6 +42,7 @@
 #include "sde_hw_qdss.h"
 #include "sde_encoder_dce.h"
 #include "sde_vm.h"
+#include "lcd_kit_displayengine.h"
 
 #define SDE_DEBUG_ENC(e, fmt, ...) SDE_DEBUG("enc%d " fmt,\
 		(e) ? (e)->base.base.id : -1, ##__VA_ARGS__)
@@ -267,13 +268,11 @@ static int _sde_encoder_wait_timeout(int32_t drm_id, int32_t hw_id,
 	return rc;
 }
 
-bool sde_encoder_is_primary_display(struct drm_encoder *drm_enc)
+u32 sde_encoder_get_display_type(struct drm_encoder *drm_enc)
 {
 	struct sde_encoder_virt *sde_enc = to_sde_encoder_virt(drm_enc);
 
-	return sde_enc &&
-		(sde_enc->disp_info.display_type ==
-		SDE_CONNECTOR_PRIMARY);
+	return sde_enc ? sde_enc->disp_info.display_type : 0;
 }
 
 bool sde_encoder_is_dsi_display(struct drm_encoder *drm_enc)
@@ -1958,7 +1957,8 @@ static int _sde_encoder_rc_idle(struct drm_encoder *drm_enc,
 		goto end;
 	} else if (sde_crtc_frame_pending(sde_enc->crtc) ||
 			sde_crtc->kickoff_in_progress ||
-			sde_enc->delay_kickoff) {
+			sde_enc->delay_kickoff ||
+			display_engine_brightness_is_fingerprint_hbm_enabled()) {
 		SDE_DEBUG_ENC(sde_enc, "skip idle entry");
 		SDE_EVT32(DRMID(drm_enc), sw_event, sde_enc->rc_state,
 			sde_crtc_frame_pending(sde_enc->crtc),
@@ -2285,7 +2285,7 @@ static int sde_encoder_virt_modeset_rc(struct drm_encoder *drm_enc,
 		intf_mode = sde_encoder_get_intf_mode(drm_enc);
 		if ((msm_is_mode_seamless_dms(adj_mode) ||
 				msm_is_mode_seamless_dyn_clk(adj_mode)) &&
-				 is_cmd_mode) {
+				is_cmd_mode) {
 			/* restore resource state before releasing them */
 			ret = sde_encoder_resource_control(drm_enc,
 					SDE_ENC_RC_EVENT_PRE_MODESET);
@@ -3805,6 +3805,46 @@ bool sde_encoder_check_curr_mode(struct drm_encoder *drm_enc, u32 mode)
 
 	return (disp_info->curr_panel_mode == mode);
 }
+
+void sde_encoder_trigger_rsc_state_change(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc = NULL;
+	int ret = 0;
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	if (!sde_enc)
+		return;
+
+	mutex_lock(&sde_enc->rc_lock);
+	/*
+	 * In dual display case when secondary comes out of
+	 * idle make sure RSC solver mode is disabled before
+	 * setting CTL_PREPARE.
+	 */
+	if (!sde_enc->cur_master ||
+		!sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_CMD_MODE) ||
+		sde_enc->disp_info.display_type == SDE_CONNECTOR_PRIMARY ||
+		sde_enc->rc_state != SDE_ENC_RC_STATE_IDLE)
+		goto end;
+
+	/* enable all the clks and resources */
+	ret = _sde_encoder_resource_control_helper(drm_enc, true);
+	if (ret) {
+		SDE_ERROR_ENC(sde_enc, "rc in state %d\n", sde_enc->rc_state);
+		SDE_EVT32(DRMID(drm_enc), sde_enc->rc_state, SDE_EVTLOG_ERROR);
+		goto end;
+	}
+
+	_sde_encoder_update_rsc_client(drm_enc, true);
+
+	SDE_EVT32(DRMID(drm_enc), sde_enc->rc_state, SDE_ENC_RC_STATE_ON);
+	sde_enc->rc_state = SDE_ENC_RC_STATE_ON;
+
+end:
+	mutex_unlock(&sde_enc->rc_lock);
+}
+
 
 void sde_encoder_trigger_kickoff_pending(struct drm_encoder *drm_enc)
 {

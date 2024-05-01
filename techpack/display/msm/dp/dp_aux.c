@@ -9,6 +9,10 @@
 #include "dp_aux.h"
 #include "dp_hpd.h"
 #include "dp_debug.h"
+#include "linux/ana_hs.h"
+#include "dp_aux_switch.h"
+
+#include <chipset_common/hwusb/hw_dp/dp_interface.h>
 
 #define DP_AUX_ENUM_STR(x)		#x
 
@@ -594,8 +598,10 @@ static ssize_t dp_aux_transfer(struct drm_dp_aux *drm_aux,
 			aux->catalog->update_aux_cfg(aux->catalog,
 				aux->cfg, PHY_AUX_CFG1);
 		aux->catalog->reset(aux->catalog);
-		goto unlock_exit;
-	} else if (ret < 0) {
+	}
+	if (ret < 0) {
+		huawei_dp_imonitor_set_param_aux_rw(aux->read, aux->native,
+			msg->address, msg->size, ret);
 		goto unlock_exit;
 	}
 
@@ -761,7 +767,8 @@ static int dp_aux_configure_aux_switch(struct dp_aux *dp_aux,
 {
 	struct dp_aux_private *aux;
 	int rc = 0;
-	enum fsa_function event = FSA_USBC_DISPLAYPORT_DISCONNECTED;
+	enum fsa_function fsa4480_event = FSA_USBC_DISPLAYPORT_DISCONNECTED;
+	enum ana_hs_state ana_hs_event = DP_PLUG_OUT;
 
 	if (!dp_aux) {
 		DP_ERR("invalid input\n");
@@ -780,10 +787,14 @@ static int dp_aux_configure_aux_switch(struct dp_aux *dp_aux,
 	if (enable) {
 		switch (orientation) {
 		case ORIENTATION_CC1:
-			event = FSA_USBC_ORIENTATION_CC1;
+			fsa4480_event = FSA_USBC_ORIENTATION_CC1;
+			ana_hs_event = DP_PLUG_IN;
+			dp_switch_orient_cc1();
 			break;
 		case ORIENTATION_CC2:
-			event = FSA_USBC_ORIENTATION_CC2;
+			fsa4480_event = FSA_USBC_ORIENTATION_CC2;
+			ana_hs_event = DP_PLUG_IN_CROSS;
+			dp_switch_orient_cc2();
 			break;
 		default:
 			DP_ERR("invalid orientation\n");
@@ -792,12 +803,13 @@ static int dp_aux_configure_aux_switch(struct dp_aux *dp_aux,
 		}
 	}
 
-	DP_DEBUG("enable=%d, orientation=%d, event=%d\n",
-			enable, orientation, event);
+	DP_DEBUG("enable=%d, orientation=%d, fsa4480_event=%d\n",
+			enable, orientation, fsa4480_event);
+	DP_DEBUG("enable=%d, orientation=%d, ana_hs_event=%d\n",
+			enable, orientation, ana_hs_event);
 
-	rc = fsa4480_switch_event(aux->aux_switch_node, event);
-	if (rc)
-		DP_ERR("failed to configure fsa4480 i2c device (%d)\n", rc);
+	fsa4480_switch_event(aux->aux_switch_node, fsa4480_event);
+	ana_hs_plug_handle(ana_hs_event);
 end:
 	return rc;
 }

@@ -356,6 +356,11 @@ static void dsi_phy_hw_dphy_enable(struct dsi_phy_hw *phy,
 		glbl_rescode_bot_ctrl = 0x3c;
 	}
 
+	if (phy->dsi_drive_adjustment) {
+		glbl_str_swi_cal_sel_ctrl = phy->glbl_str_swi_cal_sel_ctrl;
+		glbl_hstx_str_ctrl_0 = phy->glbl_hstx_str_ctrl_0;
+		vreg_ctrl_0 = phy->vreg_ctrl_0;
+	}
 	/* de-assert digital and pll power down */
 	data = BIT(6) | BIT(5);
 	DSI_W32(phy, DSIPHY_CMN_CTRL_0, data);

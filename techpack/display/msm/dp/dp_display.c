@@ -13,6 +13,7 @@
 #include <linux/usb/phy.h>
 #include <linux/jiffies.h>
 
+#include "dp_aux_switch.h"
 #include "sde_connector.h"
 
 #include "msm_drv.h"
@@ -30,6 +31,8 @@
 #include "dp_debug.h"
 #include "dp_pll.h"
 #include "sde_dbg.h"
+
+#include <chipset_common/hwusb/hw_dp/dp_interface.h>
 
 #define DP_MST_DEBUG(fmt, ...) DP_DEBUG(fmt, ##__VA_ARGS__)
 
@@ -66,6 +69,9 @@ enum dp_display_states {
 	DP_STATE_SRC_PWRDN              = BIT(10),
 	DP_STATE_TUI_ACTIVE             = BIT(11),
 };
+
+#define MAX_DIFF_SOURCE_H_SIZE     1920
+#define MAX_DIFF_SOURCE_V_SIZE     1080
 
 static char *dp_display_state_name(enum dp_display_states state)
 {
@@ -198,6 +204,7 @@ struct dp_display_private {
 	u32 tot_dsc_blks_in_use;
 
 	bool process_hpd_connect;
+	bool same_mode;
 
 	struct notifier_block usb_nb;
 };
@@ -1026,6 +1033,7 @@ static int dp_display_host_init(struct dp_display_private *dp)
 	rc = dp->power->init(dp->power, flip);
 	if (rc) {
 		DP_WARN("Power init failed.\n");
+		huawei_dp_imonitor_set_param(DP_PARAM_DSS_PWRON_FAILED, NULL);
 		SDE_EVT32_EXTERNAL(SDE_EVTLOG_FUNC_CASE1, dp->state);
 		return rc;
 	}
@@ -1060,7 +1068,7 @@ static int dp_display_host_ready(struct dp_display_private *dp)
 	if (!dp_display_state_is(DP_STATE_INITIALIZED)) {
 		rc = dp_display_host_init(dp);
 		if (rc) {
-			dp_display_state_show("[not initialized]");
+		dp_display_state_show("[not initialized]");
 			return rc;
 		}
 	}
@@ -1158,6 +1166,7 @@ static int dp_display_process_hpd_high(struct dp_display_private *dp)
 	}
 
 	dp_display_state_add(DP_STATE_CONNECTED);
+	huawei_dp_imonitor_set_param(DP_PARAM_TIME_START, NULL);
 
 	dp->dp_display.max_pclk_khz = min(dp->parser->max_pclk_khz,
 					dp->debug->max_pclk_khz);
@@ -1333,6 +1342,8 @@ static int dp_display_process_hpd_low(struct dp_display_private *dp)
 
 	dp->panel->video_test = false;
 
+	huawei_dp_imonitor_set_param(DP_PARAM_TIME_STOP, NULL);
+
 	return rc;
 }
 
@@ -1369,6 +1380,7 @@ static int dp_display_usbpd_configure_cb(struct device *dev)
 
 	dp_display_state_remove(DP_STATE_ABORTED);
 	dp_display_state_add(DP_STATE_CONFIGURED);
+	dp_aux_switch_enable(true);
 
 	rc = dp_display_host_init(dp);
 	if (rc) {
@@ -1561,6 +1573,8 @@ static int dp_display_usbpd_disconnect_cb(struct device *dev)
 	dp_display_host_deinit(dp);
 	dp_display_state_remove(DP_STATE_CONFIGURED);
 	mutex_unlock(&dp->session_lock);
+
+	dp_aux_switch_enable(false);
 
 	if (!dp->debug->sim_mode && !dp->parser->no_aux_switch
 	    && !dp->parser->gpio_aux_switch)
@@ -1804,6 +1818,9 @@ static void dp_display_connect_work(struct work_struct *work)
 	}
 
 	rc = dp_display_process_hpd_high(dp);
+	if (rc < 0)
+		DP_ERR("dp hotplug fail\n");
+	huawei_dp_imonitor_set_param(DP_PARAM_HOTPLUG_RETVAL, &rc);
 
 	if (!rc && dp->panel->video_test)
 		dp->link->send_test_response(dp->link);
@@ -2245,6 +2262,7 @@ static int dp_display_prepare(struct dp_display *dp_display, void *panel)
 			dp_panel->dsc_en, true);
 	if (rc)
 		goto end;
+	qcom_dp_set_basic_info(dp->panel, dp->link, dp->catalog);
 
 end:
 	mutex_unlock(&dp->session_lock);
@@ -2865,6 +2883,12 @@ static enum drm_mode_status dp_display_validate_mode(
 	if (!debug)
 		goto end;
 
+#ifndef DP_FACTORY_VERSION
+	/* Limit refresh rate 50fps to 70fps */
+	if ((mode->vrefresh < 50) || (mode->vrefresh > 70))
+		goto end;
+#endif /* DP_FACTORY_VERSION */
+
 	dp_display->convert_to_dp_mode(dp_display, panel, mode, &dp_mode);
 
 	rc = dp_display_validate_link_clock(dp, mode, dp_mode);
@@ -2885,6 +2909,13 @@ static enum drm_mode_status dp_display_validate_mode(
 	if (!use_default)
 		goto end;
 
+	dp->same_mode = huawei_dp_get_current_dp_source_mode();
+	if (!dp->same_mode) {
+		if (mode->hdisplay > MAX_DIFF_SOURCE_H_SIZE ||
+			mode->vdisplay > MAX_DIFF_SOURCE_V_SIZE)
+			goto end;
+	}
+
 	if (debug->debug_en && (mode->hdisplay != debug->hdisplay ||
 			mode->vdisplay != debug->vdisplay ||
 			mode->vrefresh != debug->vrefresh ||
@@ -2892,6 +2923,8 @@ static enum drm_mode_status dp_display_validate_mode(
 		goto end;
 
 	mode_status = MODE_OK;
+	huawei_dp_imonitor_set_param_timing(mode->hdisplay,
+		mode->vdisplay, mode->vrefresh);
 end:
 	mutex_unlock(&dp->session_lock);
 	DP_DEBUG("[%s] mode is %s\n", mode->name,
@@ -3550,6 +3583,33 @@ static void dp_display_wakeup_phy_layer(struct dp_display *dp_display,
 		hpd->wakeup_phy(hpd, wakeup);
 }
 
+int dpu_dptx_switch_source(void)
+{
+	struct dp_display_private *dp = container_of(g_dp_display,
+		struct dp_display_private, dp_display);
+
+	if (!dp) {
+		DP_ERR("dp not found\n");
+		return -ENODEV;
+	}
+
+	if (dp->same_mode == huawei_dp_get_current_dp_source_mode()) {
+		DP_INFO("don't switch source when the dest mode is same as current\n");
+		return 0;
+	}
+	dp->same_mode = huawei_dp_get_current_dp_source_mode();
+
+	if ((dp->panel->pinfo.h_active <= MAX_DIFF_SOURCE_H_SIZE) &&
+		(dp->panel->pinfo.v_active <= MAX_DIFF_SOURCE_V_SIZE)) {
+		DP_INFO("don't need to switch source\n");
+		return 0;
+	}
+
+	dp_display_disconnect_sync(dp);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(dpu_dptx_switch_source);
+
 static int dp_display_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -3572,6 +3632,7 @@ static int dp_display_probe(struct platform_device *pdev)
 
 	dp->pdev = pdev;
 	dp->name = "drm_dp";
+	dp->same_mode = true;
 
 	memset(&dp->mst, 0, sizeof(dp->mst));
 

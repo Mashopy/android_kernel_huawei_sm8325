@@ -547,6 +547,7 @@ struct sde_connector {
 	bool hdr_supported;
 
 	u32 color_enc_fmt;
+	u32 lm_mask;
 
 	u8 hdr_plus_app_ver;
 	u32 qsync_mode;
@@ -1102,5 +1103,8 @@ int sde_connector_get_panel_vfp(struct drm_connector *connector,
  * @connector: Pointer to DRM connector object
  */
 int sde_connector_esd_status(struct drm_connector *connector);
+
+void _sde_connector_report_panel_dead(struct sde_connector *conn,
+	bool skip_pre_kickoff);
 
 #endif /* _SDE_CONNECTOR_H_ */

@@ -11,6 +11,8 @@
 #include "sde_dsc_helper.h"
 #include <drm/drm_edid.h>
 
+#include <chipset_common/hwusb/hw_dp/dp_interface.h>
+
 #define DP_KHZ_TO_HZ 1000
 #define DP_PANEL_DEFAULT_BPP 24
 #define DP_MAX_DS_PORT_COUNT 1
@@ -231,7 +233,7 @@ static void get_sdp_colorimetry_range(struct dp_panel_private *panel,
 	switch (colorspace) {
 	case DRM_MODE_COLORIMETRY_BT2020_RGB:
 		*colorimetry = ITU_R_BT_2020_RGB;
-		*dynamic_range = CEA;
+		*dynamic_range = VESA;
 		break;
 	case DRM_MODE_COLORIMETRY_DCI_P3_RGB_D65:
 	case DRM_MODE_COLORIMETRY_DCI_P3_RGB_THEATER:
@@ -1601,8 +1603,8 @@ end:
 static int dp_panel_set_default_link_params(struct dp_panel *dp_panel)
 {
 	struct drm_dp_link *link_info;
-	const int default_bw_code = 162000;
-	const int default_num_lanes = 1;
+	const int default_bw_code = 540000;
+	const int default_num_lanes = 4;
 
 	if (!dp_panel) {
 		DP_ERR("invalid input\n");
@@ -1847,8 +1849,10 @@ static int dp_panel_read_sink_caps(struct dp_panel *dp_panel,
 	rc = dp_panel_read_edid(dp_panel, connector);
 	if (rc) {
 		DP_ERR("panel edid read failed, set failsafe mode\n");
+		huawei_dp_imonitor_set_param(DP_PARAM_READ_EDID_FAILED, &rc);
 		return rc;
 	}
+	qcom_dp_set_sink_caps(dp_panel);
 
 skip_edid:
 	dp_panel->widebus_en = panel->parser->has_widebus;
@@ -1993,6 +1997,7 @@ static int dp_panel_get_modes(struct dp_panel *dp_panel,
 	struct drm_connector *connector, struct dp_display_mode *mode)
 {
 	struct dp_panel_private *panel;
+	bool safe_mode = false;
 
 	if (!dp_panel) {
 		DP_ERR("invalid input\n");
@@ -2011,6 +2016,7 @@ static int dp_panel_get_modes(struct dp_panel *dp_panel,
 	/* fail-safe mode */
 	memcpy(&mode->timing, &fail_safe,
 		sizeof(fail_safe));
+	huawei_dp_imonitor_set_param(DP_PARAM_SAFE_MODE, &safe_mode);
 	return 1;
 }
 
@@ -2500,6 +2506,9 @@ static void dp_panel_setup_colorimetry_sdp(struct dp_panel *dp_panel,
 
 	get_sdp_colorimetry_range(panel, cspace, &colorimetry,
 		&dynamic_range);
+
+	DP_DEBUG("cspace=%u, colorimetry=%u, dynamic_range=%u\n", cspace,
+		colorimetry, dynamic_range);
 
 	/* VSC SDP Payload for DB16 */
 	hdr_colorimetry->data[16] = (RGB << 4) | colorimetry;
@@ -3036,7 +3045,7 @@ struct dp_panel *dp_panel_get(struct dp_panel_in *in)
 	panel->parser = in->parser;
 
 	dp_panel = &panel->dp_panel;
-	dp_panel->max_bw_code = DP_LINK_BW_8_1;
+	dp_panel->max_bw_code = DP_LINK_BW_5_4;
 	dp_panel->spd_enabled = true;
 	dp_panel->link_bw_code = 0;
 	dp_panel->lane_count = 0;

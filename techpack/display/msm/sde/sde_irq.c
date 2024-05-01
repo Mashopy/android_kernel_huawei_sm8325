@@ -23,6 +23,9 @@ void sde_irq_update(struct msm_kms *msm_kms, bool enable)
 		return;
 	}
 
+	if (sde_kms->irq_num < 0)
+		return;
+
 	sde_kms->irq_enabled = enable;
 
 	if (enable)

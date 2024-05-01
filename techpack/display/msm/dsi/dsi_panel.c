@@ -9,6 +9,8 @@
 #include <linux/of_gpio.h>
 #include <linux/pwm.h>
 #include <video/mipi_display.h>
+#include <drm/drm_fb_helper.h>
+#include <platform/trace/events/zerohung.h>
 
 #include "dsi_panel.h"
 #include "dsi_ctrl_hw.h"
@@ -16,7 +18,9 @@
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
 #include "sde_vdc_helper.h"
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+#include "lcd_kit_drm_panel.h"
+#endif
 /**
  * topology is currently defined by a set of following 3 values:
  * 1. num of layer mixers
@@ -35,6 +39,8 @@
 #define DEFAULT_PANEL_PREFILL_LINES	25
 #define HIGH_REFRESH_RATE_THRESHOLD_TIME_US	500
 #define MIN_PREFILL_LINES      40
+
+DEFINE_TRACE(hung_wp_screen_setbl);
 
 static void dsi_dce_prepare_pps_header(char *buf, u32 pps_delay_ms)
 {
@@ -69,6 +75,7 @@ static int dsi_vdc_create_pps_buf_cmd(struct msm_display_vdc_info *vdc,
 			size);
 }
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 static int dsi_panel_vreg_get(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -95,6 +102,7 @@ error_put:
 	}
 	return rc;
 }
+#endif
 
 static int dsi_panel_vreg_put(struct dsi_panel *panel)
 {
@@ -107,6 +115,7 @@ static int dsi_panel_vreg_put(struct dsi_panel *panel)
 	return rc;
 }
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 static int dsi_panel_gpio_request(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -167,6 +176,7 @@ error_release_reset:
 error:
 	return rc;
 }
+#endif
 
 static int dsi_panel_gpio_release(struct dsi_panel *panel)
 {
@@ -307,8 +317,11 @@ static int dsi_panel_reset(struct dsi_panel *panel)
 exit:
 	return rc;
 }
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
+#else
 static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
+#endif
 {
 	int rc = 0;
 	struct pinctrl_state *state;
@@ -331,7 +344,6 @@ static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
 
 	return rc;
 }
-
 
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
@@ -408,8 +420,14 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 
 	return rc;
 }
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
+	enum dsi_cmd_set_type type)
+#else
 static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 				enum dsi_cmd_set_type type)
+#endif
 {
 	int rc = 0, i = 0;
 	ssize_t len;
@@ -441,8 +459,11 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 
 		if (cmds->last_command)
 			cmds->msg.flags |= MIPI_DSI_MSG_LASTCOMMAND;
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+		if (type == DSI_CMD_SET_VID_TO_CMD_SWITCH || type == DSI_CMD_SET_FOLD || type == DSI_CMD_SET_UNFOLD)
+#else
 		if (type == DSI_CMD_SET_VID_TO_CMD_SWITCH)
+#endif
 			cmds->msg.flags |= MIPI_DSI_MSG_ASYNC_OVERRIDE;
 
 		len = ops->transfer(panel->host, &cmds->msg);
@@ -532,6 +553,7 @@ static int dsi_panel_wled_register(struct dsi_panel *panel,
 	return 0;
 }
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
@@ -562,6 +584,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 
 	return rc;
 }
+#endif
 
 static int dsi_panel_update_pwm_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
@@ -618,23 +641,42 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
+	uint32_t panel_id = lcd_kit_get_current_panel_id(panel);
 
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
+	DSI_INFO("panel_id-%u:backlight type:%d lvl:%d\n", panel_id, bl->type, bl_lvl);
 
-	DSI_DEBUG("backlight type:%d lvl:%d\n", bl->type, bl_lvl);
+	trace_hung_wp_screen_setbl(bl_lvl);
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+	lcd_kit_esd_recover_bl(panel, &bl_lvl);
+#endif
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
 		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
 		break;
 	case DSI_BACKLIGHT_DCS:
+#ifdef CONFIG_LCD_KIT_DRIVER
+		rc = lcd_kit_dsi_panel_update_backlight(panel, bl_lvl);
+#else
 		rc = dsi_panel_update_backlight(panel, bl_lvl);
+#endif
 		break;
 	case DSI_BACKLIGHT_EXTERNAL:
 		break;
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_update_pwm_backlight(panel, bl_lvl);
 		break;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	case DSI_BACKLIGHT_I2C_IC:
+		rc = lcd_kit_bl_ic_set_backlight(bl_lvl);
+		break;
+	case DSI_BACKLIGHT_DCS_I2C_IC:
+		rc = lcd_kit_dsi_panel_update_backlight(panel, bl_lvl);
+		rc = lcd_kit_bl_ic_set_backlight(bl_lvl);
+		break;
+#endif
 	default:
 		DSI_ERR("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
@@ -722,6 +764,12 @@ static int dsi_panel_bl_register(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_PWM:
 		rc = dsi_panel_pwm_register(panel);
 		break;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	case DSI_BACKLIGHT_I2C_IC:
+		break;
+	case DSI_BACKLIGHT_DCS_I2C_IC:
+		break;
+#endif
 	default:
 		DSI_ERR("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
@@ -757,6 +805,12 @@ static int dsi_panel_bl_unregister(struct dsi_panel *panel)
 	case DSI_BACKLIGHT_PWM:
 		dsi_panel_pwm_unregister(panel);
 		break;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	case DSI_BACKLIGHT_I2C_IC:
+		break;
+	case DSI_BACKLIGHT_DCS_I2C_IC:
+		break;
+#endif
 	default:
 		DSI_ERR("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
@@ -1740,6 +1794,10 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
+	"qcom,mdss-dsi-fold-command",
+	"qcom,mdss-dsi-unfold-command",
+	"qcom,mdss-panel-high-voltage-command",
+	"qcom,mdss-panel-low-voltage-command",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1766,6 +1824,10 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
+	"qcom,mdss-dsi-fold-command-state",
+	"qcom,mdss-dsi-unfold-command-state",
+	"qcom,mdss-panel-high-voltage-command-state",
+	"qcom,mdss-panel-low-voltage-command-state",
 };
 
 int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -1967,6 +2029,7 @@ static int dsi_panel_parse_cmd_sets(
 	return rc;
 }
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -2037,6 +2100,7 @@ error_free_arr_32:
 error:
 	return rc;
 }
+#endif
 
 static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 {
@@ -2067,6 +2131,14 @@ static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 
 	panel->reset_gpio_always_on = utils->read_bool(utils->data,
 			"qcom,platform-reset-gpio-always-on");
+
+	panel->tp_suspend_before_lcd = utils->read_bool(utils->data,
+			"qcom,tp-suspend-before-lcd");
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+	panel->apaod_lp2_need_sendcmd = utils->read_bool(utils->data,
+			"qcom,apaod-lp2-need-sendcmd");
+#endif
 
 	panel->spr_info.enable = false;
 	panel->spr_info.pack_type = MSM_DISPLAY_SPR_TYPE_MAX;
@@ -2211,9 +2283,10 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 		reset_gpio_name = "qcom,platform-sec-reset-gpio";
 		mode_set_gpio_name = "qcom,panel-sec-mode-gpio";
 	}
-
+#ifndef CONFIG_LCD_KIT_DRIVER
 	panel->reset_config.reset_gpio = utils->get_named_gpio(utils->data,
 					      reset_gpio_name, 0);
+	DSI_ERR("[%s] get reset gpio %d\n", panel->name, panel->reset_config.reset_gpio);
 	if (!gpio_is_valid(panel->reset_config.reset_gpio) &&
 		!panel->host_config.ext_bridge_mode) {
 		rc = panel->reset_config.reset_gpio;
@@ -2242,7 +2315,7 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 		DSI_DEBUG("mode gpio not specified\n");
 
 	DSI_DEBUG("mode gpio=%d\n", panel->reset_config.lcd_mode_sel_gpio);
-
+#endif
 	data = utils->get_property(utils->data,
 		"qcom,mdss-dsi-mode-sel-gpio-state", NULL);
 	if (data) {
@@ -2262,7 +2335,7 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 		/* Set default mode as SPLIT mode */
 		panel->reset_config.mode_sel_state = MODE_SEL_DUAL_PORT;
 	}
-
+#ifndef CONFIG_LCD_KIT_DRIVER
 	/* TODO:  release memory */
 	rc = dsi_panel_parse_reset_sequence(panel);
 	if (rc) {
@@ -2279,6 +2352,7 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 			 __LINE__);
 
 error:
+#endif
 	return rc;
 }
 
@@ -2349,6 +2423,77 @@ error:
 	return rc;
 }
 
+#ifdef CONFIG_LCD_KIT_DRIVER
+static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
+{
+	int rc = 0;
+	const char *bl_type = NULL;
+	const char *data = NULL;
+	struct dsi_parser_utils *utils = &panel->utils;
+	char *bl_name = NULL;
+	u32 panel_id = lcd_kit_get_current_panel_id(panel);
+
+	if (!strcmp(panel->type, "primary"))
+		bl_name = "qcom,mdss-dsi-bl-pmic-control-type";
+	else
+		bl_name = "qcom,mdss-dsi-sec-bl-pmic-control-type";
+
+	bl_type = utils->get_property(utils->data, bl_name, NULL);
+	if (!bl_type) {
+		panel->bl_config.type = DSI_BACKLIGHT_UNKNOWN;
+	} else if (!strcmp(bl_type, "bl_ctrl_pwm")) {
+		panel->bl_config.type = DSI_BACKLIGHT_PWM;
+	} else if (!strcmp(bl_type, "bl_ctrl_wled")) {
+		panel->bl_config.type = DSI_BACKLIGHT_WLED;
+	} else if (!strcmp(bl_type, "bl_ctrl_dcs")) {
+		panel->bl_config.type = DSI_BACKLIGHT_DCS;
+	} else if (!strcmp(bl_type, "bl_ctrl_external")) {
+		panel->bl_config.type = DSI_BACKLIGHT_EXTERNAL;
+	} else if (!strcmp(bl_type, "bl_ctrl_i2c_ic")) {
+		panel->bl_config.type = DSI_BACKLIGHT_I2C_IC;
+	} else if (!strcmp(bl_type, "bl_ctrl_dcs_i2c_ic")) {
+		panel->bl_config.type = DSI_BACKLIGHT_DCS_I2C_IC;
+	}else {
+		DSI_DEBUG("[%s] bl-pmic-control-type unknown-%s\n",
+			 panel->name, bl_type);
+		panel->bl_config.type = DSI_BACKLIGHT_UNKNOWN;
+	}
+
+	data = utils->get_property(utils->data, "qcom,bl-update-flag", NULL);
+	if (!data) {
+		panel->bl_config.bl_update = BL_UPDATE_NONE;
+	} else if (!strcmp(data, "delay_until_first_frame")) {
+		panel->bl_config.bl_update = BL_UPDATE_DELAY_UNTIL_FIRST_FRAME;
+	} else {
+		DSI_DEBUG("[%s] No valid bl-update-flag: %s\n",
+			panel->name, data);
+		panel->bl_config.bl_update = BL_UPDATE_NONE;
+	}
+
+	panel->bl_config.bl_scale = MAX_BL_SCALE_LEVEL;
+	panel->bl_config.bl_scale_sv = MAX_SV_BL_SCALE_LEVEL;
+
+	panel->bl_config.bl_min_level = common_info->bl_level_min;
+	panel->bl_config.bl_max_level = common_info->bl_level_max;
+	panel->bl_config.brightness_max_level = common_info->bl_level_max;
+	panel->bl_config.bl_default_level = common_info->bl_default_level;
+
+	panel->bl_config.bl_inverted_dbv = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-bl-inverted-dbv");
+
+	if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
+		rc = dsi_panel_parse_bl_pwm_config(panel);
+		if (rc) {
+			DSI_ERR("[%s] failed to parse pwm config, rc=%d\n",
+			       panel->name, rc);
+			goto error;
+		}
+	}
+
+error:
+	return rc;
+}
+#else
 static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -2465,6 +2610,7 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 error:
 	return rc;
 }
+#endif
 
 static int dsi_panel_parse_phy_timing(struct dsi_display_mode *mode,
 		struct dsi_parser_utils *utils)
@@ -3342,11 +3488,13 @@ error:
 static int dsi_panel_parse_esd_config(struct dsi_panel *panel)
 {
 	int rc = 0;
+	u32 dsi_ctrl_count;
 	const char *string;
 	struct drm_panel_esd_config *esd_config;
 	struct dsi_parser_utils *utils = &panel->utils;
 	u8 *esd_mode = NULL;
 
+	dsi_ctrl_count = utils->count_u32_elems(utils->data, "qcom,dsi-ctrl-num");
 	esd_config = &panel->esd_config;
 	esd_config->status_mode = ESD_MODE_MAX;
 	esd_config->esd_enabled = utils->read_bool(utils->data,
@@ -3354,6 +3502,29 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel)
 
 	if (!esd_config->esd_enabled)
 		return 0;
+	esd_config->esd_only_gpio_detect = utils->read_bool(utils->data,
+		"qcom,esd-only-gpio-detect");
+	esd_config->gpio_detect_support = utils->read_bool(utils->data,
+                "qcom,esd-gpio-detect-support");
+	if (esd_config->gpio_detect_support) {
+		esd_config->tp_esd_event = utils->read_bool(utils->data,
+			"qcom,tp-esd-gpio-event");
+		rc = utils->read_u32(utils->data, "lcd-kit,panel-gpio-offset",
+			&esd_config->gpio_offset);
+		rc = utils->read_u32(utils->data, "qcom,esd-gpio-detect-num0",
+			&esd_config->esd_gpio_num0);
+		rc = utils->read_u32(utils->data, "qcom,esd-gpio-normal-value0",
+			&esd_config->gpio_normal_value0);
+		esd_config->esd_gpio_num0 += esd_config->gpio_offset;
+		/* 2:detect two gpio */
+		if (dsi_ctrl_count == 2) {
+			rc = utils->read_u32(utils->data, "qcom,esd-gpio-detect-num1",
+				&esd_config->esd_gpio_num1);
+			rc = utils->read_u32(utils->data, "qcom,esd-gpio-normal-value1",
+				&esd_config->gpio_normal_value1);
+			esd_config->esd_gpio_num1 += esd_config->gpio_offset;
+		}
+	}
 
 	rc = utils->read_string(utils->data,
 			"qcom,mdss-dsi-panel-status-check-mode", &string);
@@ -3442,7 +3613,9 @@ static void dsi_panel_setup_vm_ops(struct dsi_panel *panel, bool trusted_vm_env)
 		panel->panel_ops.parse_power_cfg = dsi_panel_vm_stub;
 	} else {
 		panel->panel_ops.pinctrl_init = dsi_panel_pinctrl_init;
+#ifndef CONFIG_LCD_KIT_DRIVER
 		panel->panel_ops.gpio_request = dsi_panel_gpio_request;
+#endif
 		panel->panel_ops.pinctrl_deinit = dsi_panel_pinctrl_deinit;
 		panel->panel_ops.gpio_release = dsi_panel_gpio_release;
 		panel->panel_ops.bl_register = dsi_panel_bl_register;
@@ -3482,6 +3655,11 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (!panel->name)
 		panel->name = DSI_PANEL_DEFAULT_LABEL;
 
+#ifdef CONFIG_LCD_KIT_DRIVER
+	rc = lcd_kit_init(panel);
+	if (rc != 0)
+		DSI_ERR("lcd kit init fail\n");
+#endif
 	/*
 	 * Set panel type to LCD as default.
 	 */
@@ -3568,7 +3746,9 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 		DSI_DEBUG("failed to parse esd config, rc=%d\n", rc);
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 	rc = dsi_panel_vreg_get(panel);
+#endif
 	if (rc) {
 		DSI_ERR("[%s] failed to get panel regulators, rc=%d\n",
 		       panel->name, rc);
@@ -3637,12 +3817,14 @@ int dsi_panel_drv_init(struct dsi_panel *panel,
 		goto exit;
 	}
 
+#ifndef CONFIG_LCD_KIT_DRIVER
 	rc = panel->panel_ops.gpio_request(panel);
 	if (rc) {
 		DSI_ERR("[%s] failed to request gpios, rc=%d\n", panel->name,
 		       rc);
 		goto error_pinctrl_deinit;
 	}
+#endif
 
 	rc = panel->panel_ops.bl_register(panel);
 	if (rc) {
@@ -3655,8 +3837,10 @@ int dsi_panel_drv_init(struct dsi_panel *panel,
 	goto exit;
 
 error_gpio_release:
+#ifndef CONFIG_LCD_KIT_DRIVER
 	(void)dsi_panel_gpio_release(panel);
 error_pinctrl_deinit:
+#endif
 	(void)dsi_panel_pinctrl_deinit(panel);
 exit:
 	mutex_unlock(&panel->panel_lock);
@@ -4265,10 +4449,16 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 		panel->power_mode != SDE_MODE_DPMS_LP2)
 		dsi_pwr_panel_regulator_mode_set(&panel->power_info,
 			"ibb", REGULATOR_MODE_IDLE);
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
-	if (rc)
-		DSI_ERR("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
-		       panel->name, rc);
+	DSI_INFO("enter DSI_CMD_SET_LP1 power_mode = %d apaod_lp2_need_sendcmd= %d\n",
+		panel->power_mode, panel->apaod_lp2_need_sendcmd);
+	if (panel->apaod_lp2_need_sendcmd ||
+		(!panel->apaod_lp2_need_sendcmd && panel->power_mode != SDE_MODE_DPMS_LP2)) {
+		DSI_INFO("enter DSI_CMD_SET_LP1\n");
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
+		if (rc)
+			DSI_ERR("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
+				panel->name, rc);
+	}
 exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -4609,7 +4799,14 @@ int dsi_panel_switch(struct dsi_panel *panel)
 	}
 
 	mutex_lock(&panel->panel_lock);
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+	if (panel->power_mode == SDE_MODE_DPMS_LP1 ||
+		panel->power_mode == SDE_MODE_DPMS_LP2) {
+		DSI_INFO("panel is in alpm mode\n");
+		mutex_unlock(&panel->panel_lock);
+		return rc;
+	}
+#endif
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_TIMING_SWITCH);
 	if (rc)
 		DSI_ERR("[%s] failed to send DSI_CMD_SET_TIMING_SWITCH cmds, rc=%d\n",
@@ -4794,3 +4991,105 @@ error:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
+
+int dsi_panel_switch_to_fold(struct dsi_panel *panel)
+{
+	int rc = 0;
+
+	if (!panel) {
+		DSI_ERR("Invalid params\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized) {
+		DSI_INFO("Panel not initialized\n");
+		mutex_unlock(&panel->panel_lock);
+		return rc;
+	}
+
+	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_FOLD);
+	if (rc)
+		DSI_ERR("[%s] failed to send DSI_CMD_SET_FOLD cmds, rc=%d\n",
+		       panel->name, rc);
+
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+int dsi_panel_switch_to_unfold(struct dsi_panel *panel)
+{
+	int rc = 0;
+
+	if (!panel) {
+		DSI_ERR("Invalid params\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized) {
+		DSI_INFO("Panel not initialized\n");
+		mutex_unlock(&panel->panel_lock);
+		return rc;
+	}
+
+	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_UNFOLD);
+	if (rc)
+		DSI_ERR("[%s] failed to send DSI_CMD_SET_UNFOLD cmds, rc=%d\n",
+		       panel->name, rc);
+
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+int dsi_panel_set_high_voltage(struct dsi_panel *panel)
+{
+	int rc = 0;
+
+	if (!panel) {
+		DSI_ERR("Invalid params\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized) {
+		DSI_INFO("Panel not initialized\n");
+		mutex_unlock(&panel->panel_lock);
+		return rc;
+	}
+
+	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_HIGH_VOLTAGE);
+	if (rc)
+		DSI_ERR("[%s] failed to send DSI_CMD_SET_HIGH_VOLTAGE cmds, rc=%d\n",
+		       panel->name, rc);
+
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+int dsi_panel_set_low_voltage(struct dsi_panel *panel)
+{
+	int rc = 0;
+
+	if (!panel) {
+		DSI_ERR("Invalid params\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized) {
+		DSI_INFO("Panel not initialized\n");
+		mutex_unlock(&panel->panel_lock);
+		return rc;
+	}
+
+	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LOW_VOLTAGE);
+	if (rc)
+		DSI_ERR("[%s] failed to send DSI_CMD_SET_LOW_VOLTAGE cmds, rc=%d\n",
+		       panel->name, rc);
+
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(hung_wp_screen_setbl);

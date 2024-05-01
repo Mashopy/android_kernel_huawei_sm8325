@@ -368,6 +368,11 @@ struct dsi_phy_hw {
 	enum dsi_phy_version version;
 	void __iomem *phy_clamp_base;
 
+	u32 dsi_drive_adjustment;
+	u32 glbl_str_swi_cal_sel_ctrl;
+	u32 glbl_hstx_str_ctrl_0;
+	u32 vreg_ctrl_0;
+
 	DECLARE_BITMAP(feature_map, DSI_PHY_MAX_FEATURES);
 	struct dsi_phy_hw_ops ops;
 };

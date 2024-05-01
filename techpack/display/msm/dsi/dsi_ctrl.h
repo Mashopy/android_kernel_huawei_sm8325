@@ -34,6 +34,7 @@
  * @DSI_CTRL_CMD_ASYNC_WAIT: Command flag to indicate that the wait for done
  *			for this command is asynchronous and must be queued.
  */
+#define DSI_CTRL_CMD_WRITE            0xFFFE
 #define DSI_CTRL_CMD_READ             0x1
 #define DSI_CTRL_CMD_BROADCAST        0x2
 #define DSI_CTRL_CMD_BROADCAST_MASTER 0x4
@@ -311,6 +312,7 @@ struct dsi_ctrl {
 	u32 cmd_trigger_frame;
 	u32 cmd_success_line;
 	u32 cmd_success_frame;
+	bool pending_cmd;
 };
 
 /**
@@ -561,6 +563,8 @@ int dsi_ctrl_set_roi(struct dsi_ctrl *dsi_ctrl, struct dsi_rect *roi,
  * Return: error code.
  */
 int dsi_ctrl_set_tpg_state(struct dsi_ctrl *dsi_ctrl, bool on);
+
+void dsi_ctrl_reset_trigger_control(struct dsi_ctrl *dsi_ctrl);
 
 /**
  * dsi_ctrl_cmd_transfer() - Transfer commands on DSI link

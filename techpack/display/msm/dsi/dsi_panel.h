@@ -50,6 +50,10 @@ enum dsi_backlight_type {
 	DSI_BACKLIGHT_DCS,
 	DSI_BACKLIGHT_EXTERNAL,
 	DSI_BACKLIGHT_UNKNOWN,
+#ifdef CONFIG_LCD_KIT_DRIVER
+	DSI_BACKLIGHT_I2C_IC,
+	DSI_BACKLIGHT_DCS_I2C_IC,
+#endif
 	DSI_BACKLIGHT_MAX,
 };
 
@@ -124,6 +128,7 @@ struct dsi_backlight_config {
 	u32 bl_level;
 	u32 bl_scale;
 	u32 bl_scale_sv;
+	u32 bl_default_level;
 	bool bl_inverted_dbv;
 
 	int en_gpio;
@@ -166,10 +171,18 @@ enum esd_check_status_mode {
 
 struct drm_panel_esd_config {
 	bool esd_enabled;
+	bool gpio_detect_support;
+	u32 gpio_offset;
 
 	enum esd_check_status_mode status_mode;
 	struct dsi_panel_cmd_set status_cmd;
 	u32 *status_cmds_rlen;
+	u32 esd_gpio_num0;
+	u32 gpio_normal_value0;
+	u32 esd_gpio_num1;
+	u32 gpio_normal_value1;
+	bool tp_esd_event;
+	bool esd_only_gpio_detect;
 	u32 *status_valid_params;
 	u32 *status_value;
 	u8 *return_buf;
@@ -242,6 +255,7 @@ struct dsi_panel {
 	bool ulps_suspend_enabled;
 	bool allow_phy_power_off;
 	bool reset_gpio_always_on;
+	bool tp_suspend_before_lcd;
 	atomic_t esd_recovery_pending;
 
 	bool panel_initialized;
@@ -265,6 +279,9 @@ struct dsi_panel {
 	u32 tlmm_gpio_count;
 
 	struct dsi_panel_ops panel_ops;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	int apaod_lp2_need_sendcmd;
+#endif
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -367,6 +384,12 @@ int dsi_panel_pre_mode_switch_to_cmd(struct dsi_panel *panel);
 int dsi_panel_mode_switch_to_cmd(struct dsi_panel *panel);
 int dsi_panel_mode_switch_to_vid(struct dsi_panel *panel);
 
+int dsi_panel_switch_to_fold(struct dsi_panel *panel);
+int dsi_panel_switch_to_unfold(struct dsi_panel *panel);
+
+int dsi_panel_set_high_voltage(struct dsi_panel *panel);
+int dsi_panel_set_low_voltage(struct dsi_panel *panel);
+
 int dsi_panel_switch(struct dsi_panel *panel);
 
 int dsi_panel_post_switch(struct dsi_panel *panel);
@@ -400,4 +423,11 @@ int dsi_panel_create_cmd_packets(const char *data, u32 length, u32 count,
 void dsi_panel_destroy_cmd_packets(struct dsi_panel_cmd_set *set);
 
 void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
+
+#ifdef CONFIG_LCD_KIT_DRIVER
+int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable);
+int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
+	enum dsi_cmd_set_type type);
+#endif
+
 #endif /* _DSI_PANEL_H_ */

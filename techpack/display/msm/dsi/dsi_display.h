@@ -297,6 +297,10 @@ struct dsi_display {
 	struct dsi_panel_cmd_set cmd_set;
 
 	bool enabled;
+#ifdef CONFIG_LCD_KIT_DRIVER
+	ktime_t lp_to_on_time;
+	u32 frame_number;
+#endif
 };
 
 int dsi_display_dev_probe(struct platform_device *pdev);
@@ -793,10 +797,14 @@ int dsi_display_get_panel_vfp(void *display,
  */
 int dsi_display_dump_clks_state(struct dsi_display *display);
 
+int dsi_host_alloc_cmd_tx_buffer(struct dsi_display *display);
+int dsi_display_cmd_engine_enable(struct dsi_display *display);
+int dsi_display_cmd_engine_disable(struct dsi_display *display);
+int dsi_display_broadcast_cmd(struct dsi_display *display,
+	const struct mipi_dsi_msg *msg);
 /**
  * dsi_display_dfps_update_parent() - update dsi clock parent to src clock
  * @display:         Handle to display
  */
 void dsi_display_dfps_update_parent(struct dsi_display *display);
-
 #endif /* _DSI_DISPLAY_H_ */

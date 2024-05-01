@@ -25,6 +25,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_flip_work.h>
+#include <huawei_platform/fingerprint_interface/fingerprint_interface.h>
 
 #include "sde_kms.h"
 #include "sde_hw_lm.h"
@@ -41,6 +42,8 @@
 #include "sde_core_perf.h"
 #include "sde_trace.h"
 #include "sde_vm.h"
+#include "lcd_kit_drm_panel.h"
+#include "lcd_kit_displayengine.h"
 
 #define SDE_PSTATES_MAX (SDE_STAGE_MAX * 4)
 #define SDE_MULTIRECT_PLANE_MAX (SDE_STAGE_MAX * 2)
@@ -111,6 +114,28 @@ static inline struct sde_kms *_sde_crtc_get_kms(struct drm_crtc *crtc)
 	}
 
 	return to_sde_kms(priv->kms);
+}
+
+static void sde_crtc_fingerprint_handle_esd(struct sde_crtc_state *crtc_state,
+	enum sde_crtc_fingerprint_state finger_state)
+{
+	int i;
+	bool is_enable_esd = true;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	struct qcom_panel_info *panel_info = lcm_get_panel_info(panel_id);
+	if (!crtc_state || !panel_info) {
+		SDE_ERROR("invalid crtc_state or panel_info\n");
+		return;
+	}
+
+	if (!panel_info->finger_handle_esd_support) {
+		return;
+	}
+
+	is_enable_esd = (finger_state == FINGERPRINT_OFF);
+	SDE_INFO("fingerprint handle esd, is_enable_esd is %u\n", is_enable_esd);
+	for (i = 0; i < crtc_state->num_connectors; i++)
+		sde_connector_schedule_status_work(crtc_state->connectors[i], is_enable_esd);
 }
 
 /**
@@ -3303,6 +3328,7 @@ static void sde_crtc_atomic_begin(struct drm_crtc *crtc,
 		if (encoder->crtc != crtc)
 			continue;
 
+		sde_encoder_trigger_rsc_state_change(encoder);
 		/* encoder will trigger pending mask now */
 		sde_encoder_trigger_kickoff_pending(encoder);
 	}
@@ -3367,6 +3393,9 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 	struct sde_crtc_state *cstate;
 	struct sde_kms *sde_kms;
 	int i;
+	static enum sde_crtc_fingerprint_state last_fingerprint_state =
+		FINGERPRINT_OFF;
+	enum sde_crtc_fingerprint_state fingerprint_state;
 
 	if (!crtc || !crtc->dev || !crtc->dev->dev_private) {
 		SDE_ERROR("invalid crtc\n");
@@ -3404,6 +3433,20 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 	else
 		sde_crtc_static_img_control(crtc, CACHE_STATE_NORMAL, false);
 
+	display_engine_brightness_handle_mode_change();
+	if (display_engine_brightness_should_do_fingerprint() && crtc->index == 0) {
+		fingerprint_state = sde_crtc_get_property(cstate, CRTC_PROP_FINGERPRINT_STATE);
+		if (fingerprint_state != last_fingerprint_state) {
+			SDE_INFO("[fingerprint] state +, %d\n", fingerprint_state);
+			/* Avoid conflicts between fingerprint and esd check */
+			sde_crtc_fingerprint_handle_esd(cstate, fingerprint_state);
+			panel_drm_hbm_set_for_fingerprint(
+				fingerprint_state == FINGERPRINT_ON);
+			SDE_INFO("[fingerprint] state -, %d\n", fingerprint_state);
+		}
+		last_fingerprint_state = fingerprint_state;
+	}
+
 	/*
 	 * If no mixers has been allocated in sde_crtc_atomic_check(),
 	 * it means we are trying to flush a CRTC whose state is disabled:
@@ -3413,7 +3456,9 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 		return;
 
 	SDE_ATRACE_BEGIN("sde_crtc_atomic_flush");
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+	lcd_kit_set_fold_info();
+#endif
 	/*
 	 * For planes without commit update, drm framework will not add
 	 * those planes to current state since hardware update is not
@@ -3429,7 +3474,9 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 
 	drm_atomic_crtc_for_each_plane(plane, crtc) {
 		sde_plane_restore(plane);
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+		lcd_kit_crtc_info_store(plane);
+#endif
 		for (i = 0; i < SDE_SYS_CACHE_MAX; i++) {
 			if (sde_plane_is_cache_required(plane, i))
 				sde_crtc->new_perf.llcc_active[i] = true;
@@ -3459,7 +3506,11 @@ static void sde_crtc_atomic_flush(struct drm_crtc *crtc,
 			sde_plane_set_error(plane, true);
 		sde_plane_flush(plane);
 	}
-
+#ifdef CONFIG_LCD_KIT_DRIVER
+	lcd_kit_esd_recover_bl_after_frame();
+	lcd_kit_record_frame_number();
+	lcd_kit_fold_lp_handle();
+#endif
 	/* Kickoff will be scheduled by outer layer */
 	SDE_ATRACE_END("sde_crtc_atomic_flush");
 }
@@ -3476,6 +3527,9 @@ static void sde_crtc_destroy_state(struct drm_crtc *crtc,
 	struct sde_crtc_state *cstate;
 	struct drm_encoder *enc;
 	struct sde_kms *sde_kms;
+	u32 encoder_mask;
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
 	if (!crtc || !state) {
 		SDE_ERROR("invalid argument(s)\n");
@@ -3491,10 +3545,23 @@ static void sde_crtc_destroy_state(struct drm_crtc *crtc,
 		return;
 	}
 
-	SDE_DEBUG("crtc%d\n", crtc->base.id);
-
-	drm_for_each_encoder_mask(enc, crtc->dev, state->encoder_mask)
-		sde_rm_release(&sde_kms->rm, enc, true);
+	panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (!pinfo) {
+		DSI_ERR("pinfo is null!\n");
+		return;
+	}
+	if (pinfo->display->panel->sync_broadcast_en) {
+		encoder_mask = state->encoder_mask ? state->encoder_mask :
+		crtc->state->encoder_mask;
+		SDE_DEBUG("crtc%d\n, encoder_mask=%d", crtc->base.id, encoder_mask);
+		drm_for_each_encoder_mask(enc, crtc->dev, encoder_mask)
+			sde_rm_release(&sde_kms->rm, enc, true);
+	} else {
+		SDE_DEBUG("crtc%d\n", crtc->base.id);
+		drm_for_each_encoder_mask(enc, crtc->dev, state->encoder_mask)
+			sde_rm_release(&sde_kms->rm, enc, true);
+	}
 
 	__drm_atomic_helper_crtc_destroy_state(state);
 
@@ -5098,10 +5165,10 @@ end:
  *				on primary connector
  * @crtc: Pointer to DRM crtc object
  * @virtual_conn: Pointer to DRM connector object of WB in CWB case
- * @crtc_state:	Pointer to DRM crtc state
+ * @crtc_state: Pointer to DRM crtc state
  */
 int sde_crtc_get_num_datapath(struct drm_crtc *crtc,
-	struct drm_connector *virtual_conn, struct drm_crtc_state *crtc_state)
+		struct drm_connector *virtual_conn, struct drm_crtc_state *crtc_state)
 {
 	struct sde_crtc *sde_crtc = to_sde_crtc(crtc);
 	struct drm_connector *conn, *primary_conn = NULL;
@@ -5121,7 +5188,7 @@ int sde_crtc_get_num_datapath(struct drm_crtc *crtc,
 	drm_connector_list_iter_begin(crtc->dev, &conn_iter);
 	drm_for_each_connector_iter(conn, &conn_iter) {
 		if ((drm_connector_mask(conn) & crtc_state->connector_mask)
-			 && conn != virtual_conn) {
+			&& conn != virtual_conn) {
 			sde_conn_state = to_sde_connector_state(conn->state);
 			primary_conn = conn;
 			break;
@@ -5396,6 +5463,11 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 		{VM_REQ_ACQUIRE, "vm_req_acquire"},
 	};
 
+	static const struct drm_prop_enum_list e_fingerprint_state[] = {
+		{FINGERPRINT_OFF, "fingerpirnt_off"},
+		{FINGERPRINT_ON, "fingerpirnt_on"},
+	};
+
 	SDE_DEBUG("\n");
 
 	if (!crtc || !catalog) {
@@ -5410,7 +5482,7 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 		return;
 	}
 
-	info = kzalloc(sizeof(struct sde_kms_info), GFP_KERNEL);
+	info = vzalloc(sizeof(struct sde_kms_info));
 	if (!info) {
 		SDE_ERROR("failed to allocate info memory\n");
 		return;
@@ -5463,6 +5535,12 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 			ARRAY_SIZE(e_secure_level), 0,
 			CRTC_PROP_SECURITY_LEVEL);
 
+	msm_property_install_enum(&sde_crtc->property_info,
+			"fingerprint_state",
+			0x0, 0, e_fingerprint_state,
+			ARRAY_SIZE(e_fingerprint_state), 0,
+			CRTC_PROP_FINGERPRINT_STATE);
+
 	if (catalog->syscache_supported)
 		msm_property_install_enum(&sde_crtc->property_info, "cache_state",
 			0x0, 0, e_cache_state,
@@ -5494,7 +5572,7 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 			info->data, SDE_KMS_INFO_DATALEN(info),
 			CRTC_PROP_INFO);
 
-	kfree(info);
+	vfree(info);
 }
 
 static int _sde_crtc_get_output_fence(struct drm_crtc *crtc,
@@ -5556,6 +5634,8 @@ static int sde_crtc_atomic_set_property(struct drm_crtc *crtc,
 	int idx, ret;
 	uint64_t fence_user_fd;
 	uint64_t __user prev_user_fd;
+	static enum sde_crtc_fingerprint_state last_fingerprint_state = FINGERPRINT_OFF;
+	enum sde_crtc_fingerprint_state fingerprint_state;
 
 	if (!crtc || !state || !property) {
 		SDE_ERROR("invalid argument(s)\n");
@@ -5644,6 +5724,15 @@ static int sde_crtc_atomic_set_property(struct drm_crtc *crtc,
 				goto exit;
 			}
 		}
+		break;
+	case CRTC_PROP_FINGERPRINT_STATE:
+		fingerprint_state = sde_crtc_get_property(cstate, CRTC_PROP_FINGERPRINT_STATE);
+		if (fingerprint_state != last_fingerprint_state) {
+			display_engine_brightness_set_alpha_bypass(
+				fingerprint_state == FINGERPRINT_ON);
+			sde_cp_crtc_update_pcc(crtc);
+		}
+		last_fingerprint_state = fingerprint_state;
 		break;
 	default:
 		/* nothing to do */

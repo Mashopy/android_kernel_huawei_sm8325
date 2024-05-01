@@ -2750,7 +2750,6 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 				!vm_ops->vm_acquire)
 		return -EINVAL;
 
-
 	for_each_oldnew_crtc_in_state(state, crtc, old_cstate, new_cstate, i) {
 		struct sde_crtc_state *old_state = NULL, *new_state = NULL;
 
@@ -2772,7 +2771,6 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 		if (old_vm_req || new_vm_req) {
 			if (!vm_req_active)
 				sde_vm_lock(sde_kms);
-
 			rc = vm_ops->vm_request_valid(sde_kms,
 					old_vm_req, new_vm_req);
 			if (rc) {
@@ -2888,7 +2886,6 @@ static int sde_kms_check_vm_request(struct msm_kms *kms,
 end:
 	if (vm_req_active)
 		sde_vm_unlock(sde_kms);
-
 	return rc;
 }
 
@@ -3493,9 +3490,9 @@ static bool sde_kms_check_for_splash(struct msm_kms *kms, struct drm_crtc *crtc)
 		return sde_kms->splash_data.num_splash_displays;
 
 	drm_for_each_encoder_mask(encoder, crtc->dev,
-			crtc->state->encoder_mask) {
-		if (sde_encoder_in_cont_splash(encoder))
-			return true;
+	crtc->state->encoder_mask) {
+	if (sde_encoder_in_cont_splash(encoder))
+		return true;
 	}
 
 	return false;
@@ -3820,6 +3817,7 @@ retry:
 				DRM_ERROR("failed to get crtc %d state\n",
 						conn->state->crtc->base.id);
 				drm_connector_list_iter_end(&conn_iter);
+				ret = -EINVAL;
 				goto unlock;
 			}
 
@@ -3858,6 +3856,12 @@ unlock:
 		drm_modeset_backoff(&ctx);
 		goto retry;
 	}
+
+	if ((ret || !num_crtcs) && sde_kms->suspend_state) {
+		drm_atomic_state_put(sde_kms->suspend_state);
+		sde_kms->suspend_state = NULL;
+	}
+
 	drm_modeset_drop_locks(&ctx);
 	drm_modeset_acquire_fini(&ctx);
 
@@ -3896,7 +3900,8 @@ static int sde_kms_pm_resume(struct device *dev)
 
 	SDE_EVT32(sde_kms->suspend_state != NULL);
 
-	drm_mode_config_reset(ddev);
+	if (sde_kms->suspend_state)
+		drm_mode_config_reset(ddev);
 
 	drm_modeset_acquire_init(&ctx, 0);
 retry:
@@ -4795,6 +4800,7 @@ struct msm_kms *sde_kms_init(struct drm_device *dev)
 
 	msm_kms_init(&sde_kms->base, &kms_funcs);
 	sde_kms->dev = dev;
+	sde_kms->irq_num = -1;
 
 	return &sde_kms->base;
 }

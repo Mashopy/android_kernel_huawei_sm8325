@@ -9,6 +9,8 @@
 #include "sde_core_irq.h"
 #include "sde_formats.h"
 #include "sde_trace.h"
+#include "lcd_kit_displayengine.h"
+#include "lcd_kit_drm_panel.h"
 
 #define SDE_DEBUG_CMDENC(e, fmt, ...) SDE_DEBUG("enc%d intf%d " fmt, \
 		(e) && (e)->base.parent ? \
@@ -282,6 +284,8 @@ static void sde_encoder_phys_cmd_te_rd_ptr_irq(void *arg, int irq_idx)
 
 	atomic_add_unless(&cmd_enc->pending_vblank_cnt, -1, 0);
 	wake_up_all(&cmd_enc->pending_vblank_wq);
+	display_engine_brightness_handle_vblank(
+		te_timestamp ? te_timestamp->timestamp : ktime_get());
 	SDE_ATRACE_END("rd_ptr_irq");
 }
 
@@ -1520,6 +1524,8 @@ static int _sde_encoder_phys_cmd_wait_for_wr_ptr(
 	struct sde_hw_ctl *ctl;
 	unsigned long lock_flags;
 	int ret, timeout_ms;
+	struct qcom_panel_info *pinfo = NULL;
+	u32 panel_id;
 
 	if (!phys_enc || !phys_enc->hw_ctl || !phys_enc->connector) {
 		SDE_ERROR("invalid argument(s)\n");
@@ -1532,7 +1538,14 @@ static int _sde_encoder_phys_cmd_wait_for_wr_ptr(
 	if (c_conn->lp_mode == SDE_MODE_DPMS_LP1 ||
 		c_conn->lp_mode == SDE_MODE_DPMS_LP2)
 		timeout_ms = (KICKOFF_TIMEOUT_MS) * 2;
-
+	panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (pinfo != NULL && pinfo->display != NULL && pinfo->display->panel != NULL) {
+		if ((c_conn->lp_mode == SDE_MODE_DPMS_LP1 ||
+			c_conn->lp_mode == SDE_MODE_DPMS_LP2) &&
+			(pinfo->display->panel->sync_broadcast_en))
+			timeout_ms = (KICKOFF_TIMEOUT_MS) * 8;
+	}
 	wait_info.wq = &phys_enc->pending_kickoff_wq;
 	wait_info.atomic_cnt = &phys_enc->pending_retire_fence_cnt;
 	wait_info.timeout_ms = timeout_ms;
@@ -1615,6 +1628,7 @@ static int _sde_encoder_phys_cmd_handle_wr_ptr_timeout(
 	bool switch_te;
 	int ret = -ETIMEDOUT;
 	unsigned long lock_flags;
+	struct sde_connector *c_conn = NULL;
 
 	switch_te = _sde_encoder_phys_cmd_needs_vsync_change(
 				phys_enc, profile_timestamp);
@@ -1641,6 +1655,10 @@ static int _sde_encoder_phys_cmd_handle_wr_ptr_timeout(
 	if (ret == -ETIMEDOUT) {
 		SDE_ERROR_CMDENC(cmd_enc,
 			"wr_ptr_irq wait failed, switch_te:%d\n", switch_te);
+		c_conn = to_sde_connector(phys_enc->connector);
+		if (c_conn->lp_mode == SDE_MODE_DPMS_LP1 ||
+			c_conn->lp_mode == SDE_MODE_DPMS_LP2)
+			lcd_kit_trigger_reboot();
 		SDE_EVT32(DRMID(phys_enc->parent), switch_te, SDE_EVTLOG_ERROR);
 
 		if (sde_encoder_phys_cmd_is_master(phys_enc) &&
