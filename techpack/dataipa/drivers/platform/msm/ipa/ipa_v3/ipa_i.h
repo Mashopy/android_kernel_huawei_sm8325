@@ -2155,6 +2155,7 @@ struct ipa3_context {
 	bool modem_load_ipa_fw;
 	bool fnr_stats_not_supported;
 	bool is_device_crashed;
+	bool support_ignore_vote_wifionly;
 };
 
 struct ipa3_plat_drv_res {
@@ -2228,6 +2229,7 @@ struct ipa3_plat_drv_res {
 	bool is_bw_monitor_supported;
 	bool modem_load_ipa_fw;
 	bool fnr_stats_not_supported;
+	bool support_ignore_vote_wifionly;
 };
 
 /**

@@ -6692,6 +6692,11 @@ static int ipa3_post_init(const struct ipa3_plat_drv_res *resource_p,
 
 	ipa_ut_module_init();
 
+	if (ipa3_ctx->support_ignore_vote_wifionly) {
+		pr_info("IPA support_ignore_vote_wifionly set\n");
+		ipa3_proxy_clk_unvote();
+	}
+
 	pr_info("IPA driver initialization was successful.\n");
 
 	return 0;
@@ -7302,6 +7307,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	ipa3_ctx->max_num_smmu_cb = resource_p->max_num_smmu_cb;
 	ipa3_ctx->hw_type_index = ipa3_get_hw_type_index();
 	ipa3_ctx->fnr_stats_not_supported = resource_p->fnr_stats_not_supported;
+	ipa3_ctx->support_ignore_vote_wifionly = resource_p->support_ignore_vote_wifionly;
 
 	if (resource_p->gsi_fw_file_name) {
 		ipa3_ctx->gsi_fw_file_name =
@@ -8117,6 +8123,7 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	ipa_drv_res->is_bw_monitor_supported = false;
 	ipa_drv_res->modem_load_ipa_fw = false;
 	ipa_drv_res->fnr_stats_not_supported = false;
+	ipa_drv_res->support_ignore_vote_wifionly = false;
 
 	/* Get IPA HW Version */
 	result = of_property_read_u32(pdev->dev.of_node, "qcom,ipa-hw-ver",
@@ -8709,6 +8716,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	else
 		IPADBG(": found ipa_drv_res->max_num_smmu_cb = %d\n",
 			ipa_drv_res->max_num_smmu_cb);
+
+	ipa_drv_res->support_ignore_vote_wifionly =
+			of_property_read_bool(pdev->dev.of_node,
+			"support_ignore_vote_wifionly");
+	pr_info("ipa support_ignore_vote_wifionly = %s\n",
+			ipa_drv_res->support_ignore_vote_wifionly
+			? "True" : "False");
 
 	return 0;
 }
