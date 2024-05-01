@@ -1119,11 +1119,7 @@ export mod_compress_cmd
 
 ifdef CONFIG_MODULE_SIG_ALL
 $(eval $(call config_filename,MODULE_SIG_KEY))
-ifneq ($(CONFIG_MODULE_SIG_KEY),"huawei_signing_key.pem")
 mod_sign_cmd = scripts/sign-file $(CONFIG_MODULE_SIG_HASH) $(MODULE_SIG_KEY_SRCPREFIX)$(CONFIG_MODULE_SIG_KEY) certs/signing_key.x509
-else
-mod_sign_cmd = $(CONFIG_SHELL) $(srctree)/../../vendor/huawei/chipset_common/build/signkernel/sign-kernel.sh
-endif
 else
 mod_sign_cmd = true
 endif
