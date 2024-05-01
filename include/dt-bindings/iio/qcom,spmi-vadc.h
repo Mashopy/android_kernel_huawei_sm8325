@@ -274,6 +274,7 @@
 #define ADC7_GPIO3_100K_PU			0x4c
 #define ADC7_GPIO4_100K_PU			0x4d
 #define ADC7_CC1_ID_100K_PU			0x53
+#define ADC7_GPIO4_100K_PU_BATT_ID		0x4d
 
 /* 400k pull-up3 */
 #define ADC7_AMUX_THM1_400K_PU			0x64
