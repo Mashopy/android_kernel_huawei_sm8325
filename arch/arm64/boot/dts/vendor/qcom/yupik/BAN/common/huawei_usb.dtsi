@@ -4,3 +4,8 @@
 	otg_ocp_check_enable = <1>;
 	cc_dynamic_protect = <2>;
 };
+
+&huawei_usb_adsp {
+        ibus_limit = <1>;
+        status = "ok";
+};

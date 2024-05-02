@@ -38,4 +38,12 @@
 		compatible = "infineon,sle95250_1";
 		status = "disabled";
 	};
+	fm1230: fm1230 {
+		compatible = "fdw,fm1230";
+		status = "disabled";
+	};
+	fm1230_swi: fm1230_swi {
+		compatible = "fdw,fm1230_swi";
+		status = "disabled";
+	};
 };

@@ -19,4 +19,8 @@
 		compatible = "huawei,usb_misc";
 		status = "disabled";
 	};
+        huawei_usb_adsp: huawei_usb_adsp {
+                compatible = "huawei,usb_adsp";
+                status = "disabled";
+        };
 };

@@ -114,6 +114,7 @@
 	huawei_thp@10 {
 		compatible = "huawei,thp";
 		status = "ok";
+		platform_type = <1>;
 		/* SPI Config */
 		spi-max-frequency = <20000000>;
 		spi-bus-id = <13>;

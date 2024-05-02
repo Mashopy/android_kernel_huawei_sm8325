@@ -1,0 +1,7 @@
+#include "../../common/huawei_camera/huawei_camera_et5907.dtsi"
+#include "../../common/huawei_camera/huawei_camera_wl2868c.dtsi"
+#include "../../common/huawei_camera/huawei_camera_xpmic.dtsi"
+
+&dev_detect {
+    laser = <2>;
+};

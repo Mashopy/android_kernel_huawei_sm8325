@@ -227,6 +227,7 @@
 	scp_work_on_charger = <1>;
 	init_delt_vset = <400>;
 	standard_cable_full_path_res_max = <330>;
+	max_current_for_none_standard_cable = <3300>;
 	first_cc_stage_timer_in_min = <5>;
 	stage_need_to_jump = "1";
 	low_temp_hysteresis = <5>;
@@ -251,7 +252,7 @@
 	vstep = <20>;
 	min_dc_bat_vol = <3450>;
 	max_dc_bat_vol = <4380>;
-	max_current_for_none_standard_cable = <6000>;
+	max_current_for_none_standard_cable = <6600>;
 	adaptor_antifake_check_enable = <1>;
 	adaptor_antifake_key_index = <2>;
 	support_multi_ic = <1>;
@@ -264,19 +265,19 @@
 		"4180", "6400", "5000",
 		"4300", "5000", "4300",
 		"4450", "4300", "3000",
-		"4470", "3000", "1200";
+		"4470", "3000", "1400";
 	volt_para1 =
 		"4180", "11800", "8600",
 		"4300", "8600", "6400",
 		"4380", "6400", "5100",
 		"4450", "5100", "4300",
-		"4470", "4300", "1200";
+		"4470", "4300", "1400";
 	volt_para2 =
 		"4180", "11800", "8600",
 		"4300", "8600", "6400",
 		"4380", "6400", "5100",
 		"4450", "5100", "4300",
-		"4470", "4300", "1200";
+		"4470", "4300", "1400";
 	time_para =
 		"600", "6600",
 		"240", "9000",
@@ -316,7 +317,7 @@
 		"10", "46", "12800",
 		"46", "32767", "0";
 	resist_para =
-		"0", "260", "6000",
+		"0", "260", "6600",
 		"260", "450", "4000";
 	std_resist_para =
 		"0", "300", "0",
@@ -333,6 +334,16 @@
 		"3000", "105",
 		"3000", "105";
 	status = "ok";
+};
+
+&direct_charge_turbo {
+	status = "ok";
+	time_para =
+		"840", "6800",
+		"540", "7500",
+		"300", "9000",
+		"180", "11000",
+		"0", "12000";
 };
 
 &huawei_battery_temp {
@@ -419,6 +430,7 @@
 &huawei_batt_info {
         status = "ok";
         shield_ct_sign = <3>;
+        support_io_check = <0>;
         battery_checker@0 {
                 matchable = <&sle95250>;
                 status = "ok";
@@ -453,8 +465,9 @@
 		pinctrl-0 = <&rt9426_irq_pins_default>;
 		rt9426,gpio-intb = <&tlmm 24 0x0>;
 		need_reset_version = <9>;
-		rt_config_ver = <12>;
+		rt_config_ver = <14>;
 		ntc_compensation_is = <1>;
+		support_fcc_modify = <1>;
 		ntc_temp_compensation_para =
 			"11000", "110",
 			"10000", "100",

@@ -591,17 +591,34 @@
 };
 
 &i2c_freq_1Mhz_cci0 {
-	hw-thigh = <9>;
-	hw-tlow = <29>;
-	hw-tsu-sto = <17>;
-	hw-tsu-sta = <18>;
-	hw-thd-dat = <16>;
-	hw-thd-sta = <15>;
-	hw-tbuf = <24>;
+	hw-tlow = <26>;
 	hw-scl-stretch-en = <1>;
-	hw-trdhld = <3>;
-	hw-tsp = <3>;
-	cci-clk-src = <37500000>;
+	status = "ok";
+};
+
+&i2c_freq_100Khz_cci0 {
+	hw-scl-stretch-en = <1>;
+	status = "ok";
+};
+
+&i2c_freq_400Khz_cci0 {
+	hw-scl-stretch-en = <1>;
+	status = "ok";
+};
+
+&i2c_freq_1Mhz_cci1 {
+	hw-tlow = <26>;
+	hw-scl-stretch-en = <1>;
+	status = "ok";
+};
+
+&i2c_freq_100Khz_cci1 {
+	hw-scl-stretch-en = <1>;
+	status = "ok";
+};
+
+&i2c_freq_400Khz_cci1 {
+	hw-scl-stretch-en = <1>;
 	status = "ok";
 };
 
@@ -855,7 +872,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <0>; /* CAMERA_POSITION_REAR */
 		status = "ok";
 	};
 
@@ -918,7 +934,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <2>; /* CAMERA_POSITION_REAR_SECOND */
 		status = "ok";
 	};
 
@@ -974,7 +989,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <2>; /* CAMERA_POSITION_REAR_SECOND */
 		status = "ok";
 	};
 };
@@ -1054,7 +1068,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <1>; /* CAMERA_POSITION_FORE */
 		status = "ok";
 	};
 
@@ -1108,7 +1121,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <1>; /* CAMERA_POSITION_FORE */
 		status = "ok";
 	};
 };

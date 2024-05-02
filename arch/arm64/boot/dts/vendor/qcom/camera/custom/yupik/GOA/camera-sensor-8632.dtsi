@@ -1,0 +1,55 @@
+#include "camera-sensor-8631.dtsi"
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front main senosr */
+	qcom,cam-sensor5 {
+		cam_vana-supply = <&xpmic_ldo7>; /* mcam avdd 2.85v */
+		cam_vdig-supply = <&xpmic_ldo1>; /* mcam dvdd 1.14v */
+	};
+
+	/* front swing senosr */
+	qcom,cam-sensor8 {
+		cam_vana-supply = <&xpmic_ldo7>; /* mcam avdd 2.85v */
+		cam_vdig-supply = <&xpmic_ldo1>; /* mcam dvdd 1.14v */
+	};
+
+	/* front tel eeprom */
+	qcom,eeprom7 {
+		cam_vio-supply = <&xpmic_ldo5>;
+	};
+
+	/* front tel sensor */
+	qcom,cam-sensor7 {
+		cam_vana-supply = <&xpmic_ldo3>; /* mcam avdd 2.85v */
+		cam_vio-supply = <&xpmic_ldo5>; /* mcam iovdd 1.8v */
+		cam_vdig-supply = <&xpmic_ldo1>; /* mcam dvdd 1.14v */
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear main eeprrom */
+	qcom,eeprom4 {
+		cam_vio-supply = <&xpmic_ldo5>;
+	};
+
+	/* rear main sensor */
+	qcom,cam-sensor4 {
+		cam_vana-supply = <&xpmic_ldo4>; /* mcam avdd 2.85v */
+		cam_vio-supply = <&xpmic_ldo5>; /* mcam iovdd 1.8v */
+		cam_vdig-supply = <&xpmic_ldo2>; /* mcam dvdd 1.14v */
+		cam_vana1-supply = <&xpmic_ldo6>; /* mcam avdd 1.8v */
+	};
+
+	/* rear wide eeprom */
+	qcom,eeprom6 {
+		cam_vio-supply = <&xpmic_ldo5>;
+	};
+
+	/* rear wide sensor */
+	qcom,cam-sensor6 {
+		cam_vana-supply = <&xpmic_ldo3>; /* mcam avdd 2.85v */
+		cam_vio-supply = <&xpmic_ldo5>; /* mcam iovdd 1.8v */
+	};
+};

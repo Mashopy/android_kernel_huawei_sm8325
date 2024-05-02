@@ -1,0 +1,53 @@
+#include "camera-sensor.dtsi"
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front main actuator */
+	qcom,actuator5 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* front main senosr */
+	qcom,cam-sensor5 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* front tel actuator */
+	qcom,actuator7 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* front tel senosr */
+	qcom,cam-sensor7 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear main actuator */
+	qcom,actuator4 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* rear VAAF actuator */
+	qcom,va {
+		cam_vaf-supply = <&pm8350c_l11>;
+	};
+
+	/* rear main senosr */
+	qcom,cam-sensor4 {
+		cam_vana-supply = <&xpmic_ldo4>; /* mcam avdd 2.85v */
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* rear wide actuator */
+	qcom,actuator6 {
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+	};
+
+	/* rear wide senosr */
+	qcom,cam-sensor6 {
+		cam_vaf-supply = <&pm8350c_l11>; /* mcam afvdd 3.1v */
+	};
+};

@@ -2,4 +2,5 @@
 	src_vbus = <3>; /* pmic */
 	cc_dynamic_protect = <2>;
 	otg_ocp_check_enable = <1>;
+	quirks_fix_flag = <1>;
 };

@@ -1,0 +1,7 @@
+&battery_ui_capacity {
+	shutdown_vth = <3570>; /* distinguish cn/oversea */
+};
+
+&low_power {
+	ecm_vbat_gsm = <3400>; /* unit:mV, distinguish cn/oversea */
+};

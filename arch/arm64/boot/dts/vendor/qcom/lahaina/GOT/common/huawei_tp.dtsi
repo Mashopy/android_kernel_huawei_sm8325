@@ -168,7 +168,7 @@
 			thp_queue_buf_len = <8192>;
 			support_dual_chip_arch = <1>;
 			send_bt_status_to_fw = <1>;
-			send_adsorption_status_to_fw = <1>;
+			send_adsorption_status_to_fw = <0>;
 			lcd_esd_event_upload = <1>;
 			support_stylus3_plam_suppression = <1>;
 			unsupported_stylus = <1>;

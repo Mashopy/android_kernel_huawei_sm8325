@@ -1,0 +1,70 @@
+&direct_charger_sc {
+	adaptor_antifake_check_enable = <1>;
+};
+
+&tlmm {
+	hl7136_irq_pins_default: hl7136_irq_pins_default {
+		mux {
+			pins = "gpio84";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio84";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+&qupv3_se0_i2c {
+	sc8546@6E {
+		status = "disabled";
+	};
+};
+
+&qupv3_se13_i2c {
+	status = "ok";
+	sc8546@6E {
+		compatible = "sc8546";
+		reg = <0x6E>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sc8546_irq_pins_default>;
+		intr_gpio_num = <84>; /* direct defined GPIO num */
+		intr_gpio = <&tlmm 84 0>;
+		fcp_support = <1>;
+		scp_support = <1>;
+		ufcs_support = <1>;
+		sense_r_actual = <20>;
+		i2c_recovery = <1>;
+		i2c_recovery_addr = <0x6F>;
+		switching_frequency = <850>;
+		switching_frequency_shift = <1>;
+		sc_para =
+			"default", "7000", "4800",
+			"sc8546", "7000", "4800";
+		ic_role = <0>;
+		status = "ok";
+	};
+
+	hl7136@4E {
+		compatible = "hl7136";
+		reg = <0x4E>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hl7136_irq_pins_default>;
+		intr_gpio_num = <84>; /* direct defined GPIO num */
+		intr_gpio = <&tlmm 84 0>;
+		sense_r_actual = <15>;
+		sense_r_config = <10>;
+		fcp_support = <1>;
+		scp_support = <1>;
+		ufcs_support = <1>;
+		switching_frequency = <500>;
+		sc_para =
+			"default", "7000", "4550",
+			"hl7136", "7000", "4550";
+		ic_role = <0>;
+		ignore_get_cable_info = <1>;
+		status = "ok";
+	};
+};

@@ -26,6 +26,8 @@
 			tx_ant_gpio = <&tlmm 166 0x00>;
 			tcxo_pwr_gpio = <&tlmm 188 0x00>;
 			/* Feature Config */
+			cpu-affinity-offset = <0>;
+			cpu-affinity-mask = <112>;
 		};
 	};
 };

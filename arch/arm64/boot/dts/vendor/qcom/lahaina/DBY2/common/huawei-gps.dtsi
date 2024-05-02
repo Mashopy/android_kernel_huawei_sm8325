@@ -1,0 +1,57 @@
+
+&tlmm {
+	qupv3_se2_default_tx:
+		qupv3_se2_default_tx {
+		mux {
+			pins = "gpio14";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio14";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-low;
+		};
+	};
+
+	qupv3_se2_default_cts:
+		qupv3_se2_default_cts {
+		mux {
+			pins = "gpio12";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio12";
+			drive-strength = <2>;
+			bias-pull-down;
+			output-low;
+		};
+	};
+};
+
+&qupv3_se2_4uart{
+	pinctrl-names = "default", "active", "sleep", "shutdown";
+	pinctrl-0 = <&qupv3_se2_default_cts>,
+		<&qupv3_se2_default_rtsrx>, <&qupv3_se2_default_tx>;
+	pinctrl-1 = <&qupv3_se2_ctsrx>, <&qupv3_se2_rts>,
+						<&qupv3_se2_tx>;
+	pinctrl-2 = <&qupv3_se2_ctsrx>, <&qupv3_se2_rts>,
+						<&qupv3_se2_tx>;
+	pinctrl-3 = <&qupv3_se2_default_cts>,
+		<&qupv3_se2_default_rtsrx>, <&qupv3_se2_default_tx>;
+	status = "ok";
+};
+
+&huawei_lbs_info{
+	compatible = "huawei,hw_lbs_info";
+	gnss,chiptype = "hxxt";
+	status = "ok";
+	huawei,chip_type = "unicore";
+	huawei,subchip_type = "uc6228";
+	huawei,gps_en = <&tlmm 16 0>;/*gpio16*/
+	lbs,lbs-vdd-spmu-supply = <&pm8350c_l12>;
+	lbs,lbs-vdd-spmu-voltage-level = <1850000 1850000>;
+	lbs,lbs-vdd-spmu-current-level = <150000>;
+};

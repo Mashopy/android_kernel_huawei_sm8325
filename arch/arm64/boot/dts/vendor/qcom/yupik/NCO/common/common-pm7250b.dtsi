@@ -12,6 +12,7 @@
 #include "huawei_fac.dtsi"
 #include "huawei_bsp.dtsi"
 #include "huawei_fp.dtsi"
+#include "huawei_fsa.dtsi"
 
 &pmk8350_vadc {
 
@@ -223,11 +224,21 @@
 };
 
 &als_after_sale_ltr311 {
-    compatible = "ltr311";
+    compatible = "als_s002_002";
     als_after_sale_product = <34>;
     als_after_sale_xl = <608>;
     als_after_sale_yl = <26>;
     als_after_sale_xr = <708>;
     als_after_sale_yr = <126>;
     als_after_sale_gamma = <0>;
+    310_c06 = "658,76,4,1,220,192,159,127,102,74,56,31,4";
+    190_c06 = "658,76,4,1,220,192,159,127,102,74,56,31,4";
+    110_a08 = "658,76,6,1,220,192,159,127,102,74,56,31,4";
+    290_f00 = "658,76,7,1,220,192,159,127,102,74,56,31,4";
+    default = "658,76,7,1,220,192,159,127,102,74,56,31,4";
+};
+
+&drop_sensor_enable {
+    compatible = "huawei,sensorhub_drop";
+    enable_drop = "1";
 };

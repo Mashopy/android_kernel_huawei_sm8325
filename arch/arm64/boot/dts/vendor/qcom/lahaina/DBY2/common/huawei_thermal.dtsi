@@ -1,0 +1,53 @@
+&thermal_zones {
+	pm8350b-bcl-lvl0 {
+		cooling-maps {
+			vbat_cpu4 {
+				trip = <>;
+				cooling-device = <>;
+
+			};
+
+			vbat_cpu5 {
+				trip = <>;
+				cooling-device = <>;
+
+			};
+
+			vbat_cpu0 {
+				trip = <&b_bcl_lvl0>;
+				cooling-device = <&cpu0_isolate 1 1>;
+			};
+
+			vbat_cpu1 {
+				trip = <&b_bcl_lvl0>;
+				cooling-device = <&cpu1_isolate 1 1>;
+			};
+		};
+	};
+
+	pm8350b-bcl-lvl1 {
+		cooling-maps {
+			vbat_cpu6 {
+				trip = <>;
+				cooling-device = <>;
+
+			};
+
+			vbat_cpu7 {
+				trip = <>;
+				cooling-device = <>;
+			};
+
+			vbat_cpu4 {
+				trip = <&b_bcl_lvl1>;
+				cooling-device = <&cpu4_isolate 1 1>;
+			};
+
+			vbat_cpu5 {
+				trip = <&b_bcl_lvl1>;
+				cooling-device = <&cpu5_isolate 1 1>;
+			};
+
+		};
+	};
+};

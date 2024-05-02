@@ -50,6 +50,7 @@
 		multi_mic_enable = "true";
 		backmic_record_enable = "true";
 		mic_content = "bottom:mainmic#top:submic#back:submic2";
+		voice_wakeup_switch_mic_enable = "true";
 		status = "ok";
 		hostless_id_info {
 			hostless_id_reset = "true";

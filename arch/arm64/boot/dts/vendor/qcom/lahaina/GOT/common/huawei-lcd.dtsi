@@ -28,6 +28,25 @@
 	};
 };
 
+&dsi_got_350_h01_12p6_qcom {
+        qcom,mdss-dsi-display-timings {
+                timing@0 {
+                        qcom,panel-roi-alignment = <0 0 612 60 1224 60>;
+                        qcom,partial-update-enabled = "single_roi";
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-mdp-transfer-time-us = <7300>;
+                        qcom,mdss-dsi-panel-clockrate = <1336000000>;
+                };
+                timing@1 {
+                        qcom,panel-roi-alignment = <0 0 612 60 1224 60>;
+                        qcom,partial-update-enabled = "single_roi";
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-mdp-transfer-time-us = <7300>;
+                        qcom,mdss-dsi-panel-clockrate = <1336000000>;
+                };
+        };
+};
+
 &sde_dsi {
 	qcom,dsi-default-panel = <&dsi_got_auo_otm3501a_5p2_1600p_video_default>;
 };

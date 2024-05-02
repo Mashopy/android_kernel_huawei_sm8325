@@ -1,0 +1,3 @@
+&dev_detect {
+    laser = <2>;
+};

@@ -109,9 +109,9 @@
 		lcd-kit,checksum-cmds = <0x15 0x01 0x00 0x00 0x0a 0x00 0x02 0x6F 0x01
 			0x06 0x01 0x00 0x00 0x0a 0x00 0x08 0xF2 0x00 0x00 0x00 0x00 0x00 0x00 0x00>;
 		lcd-kit,checksum-cmds-state = "dsi_lp_mode";
-		lcd-kit,checksum-value = <0x92 0x54 0xc4 0x40 0x0e 0xf1 0x84 0x3b
-			0x51 0x64 0xf8 0xae 0x2e 0x8a 0x47 0x0e
-			0xcf 0x63 0xba 0xaa 0xfe 0x26 0xb6 0x54>;
+		lcd-kit,checksum-value = <0xAE 0x88 0x73 0x8f 0x00 0xc8 0x66 0x18
+			0xE3 0xD2 0x1A 0x0F 0x89 0xFF 0x28 0xEE
+			0x84 0x89 0xED 0x6F 0x5C 0xB7 0xC8 0x7E>;
 		lcd-kit,oneside-mode-left = <0x39 0x01 0x00 0x00 0x00 0x00 0x06 0xF0 0x55 0xAA 0x52 0x08 0x06
 		0x39 0x01 0x00 0x00 0x00 0x00 0x06 0xB0 0x32 0x32 0x32 0x32 0x32
 		0x39 0x01 0x00 0x00 0x00 0x00 0x06 0xB1 0x32 0x32 0x32 0x32 0x32
@@ -302,9 +302,9 @@
 		lcd-kit,check-aod-reg-on-support-dsm-report = <0>;
 		lcd-kit,check-reg-off-support = <0>;
 		lcd-kit,check-reg-off-support-dsm-report = <0>;
-		lcd-kit,checksum-support = <0>;
-		lcd-kit,pcd-cmds-support = <0>;
-		lcd-kit,pcd-check-reg-value-compare-mode = <0>;
+		lcd-kit,checksum-support = <1>;
+		lcd-kit,pcd-cmds-support = <1>;
+		lcd-kit,pcd-check-reg-value-compare-mode = <1>;
 		lcd-kit,vtc-line-support = <0>;
 		lcd-kit,ddic-lv-det-support = <0>;
 		lcd-kit,hor-line-support = <0>;
@@ -378,7 +378,9 @@
 		lcd-kit,power-on-stage = <2 1 1
 				9 1 1
 				1 1 10>;
-		lcd-kit,lp-on-stage = <5 1 10
+		lcd-kit,lp-on-stage = <5 1 1
+				5 0 1
+				5 1 10
 				7 1 0
 				6 1 0
 				8 1 0>;
@@ -457,6 +459,39 @@
 				qcom,default-topology-index  = <0>;
 				qcom,mdss-dsi-on-command = [
 		
+		39 01 00 00 00 00 06 F0 55 AA 52 08 00
+		15 01 00 00 00 00 02 6F 01
+		15 01 00 00 00 00 02 C0 B3
+		15 01 00 00 00 00 02 6F 11
+		15 01 00 00 00 00 02 C0 30
+		
+		39 01 00 00 00 00 06 F0 55 AA 52 08 01
+		15 01 00 00 00 00 02 6F 10
+		15 01 00 00 00 00 02 D8 1F
+		
+		39 01 00 40 00 00 06 F0 55 AA 52 08 00
+		39 01 00 40 00 00 0B C3 00 FF 00 00 00 00 00 00 04 FF
+		39 01 00 40 00 00 06 F0 55 AA 52 08 03
+		15 01 00 40 00 00 02 6F 1E
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 24
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 2A
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 30
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 36
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		39 01 00 40 00 00 06 F0 55 AA 52 08 01
+		39 01 00 40 00 00 05 B3 12 05 22 22
+		39 01 00 40 00 00 06 F0 55 AA 52 08 01
+		39 01 00 40 00 00 05 B4 02 05 22 22
+		39 01 00 40 00 00 06 F0 55 AA 52 08 00
+		39 01 00 40 00 00 0F C6 22 22 22 22 00 02 00 22 22 22 22 22 22 22
+		39 01 00 40 00 00 05 FF AA 55 A5 81
+		15 01 00 40 00 00 02 6F 0C
+		15 01 00 40 00 00 02 F3 3F
+		
 		39 01 00 00 00 00 06 F0 55 AA 52 08 01
 		15 01 00 00 00 00 02 C7 A0
 		15 01 00 00 00 00 02 6F 03
@@ -508,7 +543,7 @@
 				qcom,mdss-dsi-lp1-command = [39 01 00 00 00 00 06 F0 55 AA 52 08 00
 			15 01 00 00 00 00 02 6F 0D
 			15 01 00 00 00 00 02 B5 4F
-			15 01 00 00 00 00 02 2F 01
+			15 01 00 00 11 00 02 2F 01
 			05 01 00 00 00 00 01 39
 			05 01 00 00 00 00 01 2C];
 				qcom,mdss-dsi-lp1-command-state = "dsi_lp_mode";
@@ -536,6 +571,39 @@
 				qcom,display-topology  = <1 1 1>;
 				qcom,default-topology-index  = <0>;
 				qcom,mdss-dsi-on-command = [
+		
+		39 01 00 00 00 00 06 F0 55 AA 52 08 00
+		15 01 00 00 00 00 02 6F 01
+		15 01 00 00 00 00 02 C0 B3
+		15 01 00 00 00 00 02 6F 11
+		15 01 00 00 00 00 02 C0 30
+		
+		39 01 00 00 00 00 06 F0 55 AA 52 08 01
+		15 01 00 00 00 00 02 6F 10
+		15 01 00 00 00 00 02 D8 1F
+		
+		39 01 00 40 00 00 06 F0 55 AA 52 08 00
+		39 01 00 40 00 00 0B C3 00 FF 00 00 00 00 00 00 04 FF
+		39 01 00 40 00 00 06 F0 55 AA 52 08 03
+		15 01 00 40 00 00 02 6F 1E
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 24
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 2A
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 30
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		15 01 00 40 00 00 02 6F 36
+		39 01 00 40 00 00 07 B0 FF FF F0 FF FF F0
+		39 01 00 40 00 00 06 F0 55 AA 52 08 01
+		39 01 00 40 00 00 05 B3 12 05 22 22
+		39 01 00 40 00 00 06 F0 55 AA 52 08 01
+		39 01 00 40 00 00 05 B4 02 05 22 22
+		39 01 00 40 00 00 06 F0 55 AA 52 08 00
+		39 01 00 40 00 00 0F C6 22 22 22 22 00 02 00 22 22 22 22 22 22 22
+		39 01 00 40 00 00 05 FF AA 55 A5 81
+		15 01 00 40 00 00 02 6F 0C
+		15 01 00 40 00 00 02 F3 3F
 		
 		39 01 00 00 00 00 06 F0 55 AA 52 08 01
 		15 01 00 00 00 00 02 C7 A0
@@ -588,7 +656,7 @@
 				qcom,mdss-dsi-lp1-command = [39 01 00 00 00 00 06 F0 55 AA 52 08 00
 			15 01 00 00 00 00 02 6F 0D
 			15 01 00 00 00 00 02 B5 4F
-			15 01 00 00 00 00 02 2F 01
+			15 01 00 00 11 00 02 2F 01
 			05 01 00 00 00 00 01 39
 			05 01 00 00 00 00 01 2C];
 				qcom,mdss-dsi-lp1-command-state = "dsi_lp_mode";

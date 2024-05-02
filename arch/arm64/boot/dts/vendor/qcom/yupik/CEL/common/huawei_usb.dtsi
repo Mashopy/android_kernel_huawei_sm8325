@@ -17,3 +17,8 @@
 &huawei_usb_misc {
 	status = "ok";
 };
+
+&huawei_usb_adsp {
+        ibus_limit = <1>;
+        status = "ok";
+};

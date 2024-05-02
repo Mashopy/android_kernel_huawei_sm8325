@@ -142,6 +142,15 @@
 		"CAE", "0", "buck_term_para1";
 };
 
+&power_glink {
+	adsp_jeita_table = <
+		0 5 400 4450
+		5 10 1200 4450
+		10 45 3600 4450
+		45 55 1400 4100
+	>;
+};
+
 &direct_charge_ps {
 	boost_5v_support_scp_power = <0>;
 	bst_ctrl_use_common_gpio = <0>;
@@ -217,7 +226,7 @@
 		"4150", "9000", "6750",
 		"4250", "6750", "5400",
 		"4300", "5400", "4500",
-		"4450", "4500", "3150";
+		"4450", "4500", "2000";
 	volt_para1 =
 		"4250", "12000", "9000",
 		"4350", "9000", "6750",
@@ -273,6 +282,14 @@
 		"2700", "105",
 		"2700", "105";
 	status = "ok";
+};
+
+&direct_charge_turbo {
+	status = "ok";
+	time_para =
+		"660", "8200",
+		"150", "10000",
+		"0", "12000";
 };
 
 &huawei_battery_temp {
@@ -482,6 +499,7 @@
 		reg = <0x64>;
 		cw,bat_name = "battery_gauge_aux";
 		ic_role = <1>;
+		en_profile_update = <1>;
 		status = "ok";
 		battery0{
 			batt_name = "BYTCAE_4500_4450_v0";
@@ -571,6 +589,7 @@
 		reg = <0x64>;
 		cw,bat_name = "battery_gauge";
 		ic_role = <0>;
+                en_profile_update = <1>;
 		status = "ok";
 		battery0{
 			batt_name = "BYTCAE_4500_4450_v0";
@@ -621,7 +640,7 @@
 		compatible = "stm32g031";
 		fcp_support = <1>;
 		scp_support = <1>;
-		ufcs_support = <0>;
+		ufcs_support = <1>;
 		int_gpio_type = <1>; /* 0:int gpio for wakeup; 1:int gpio for interrupt */
 		wait_time = <0>;
 		gpio_enable = <&tlmm 67 0>;

@@ -158,11 +158,11 @@
 			thp-vcc-type = <1>;
 			thp-vcc-supply = <&L3C>;
 			thp-vcc-value = <3296000>;
-                        thp-vcc-load = <100000>;
+			thp-vcc-load = <100000>;
 			thp-iovdd-type = <1>;
 			thp-iovdd-supply = <&L2C>;
 			thp-iovdd-value = <1800000>;
-                        thp-iovdd-load = <100000>;
+			thp-iovdd-load = <100000>;
 
 			/* Timing */
 			boot_reset_hi_delay_ms = <1>;

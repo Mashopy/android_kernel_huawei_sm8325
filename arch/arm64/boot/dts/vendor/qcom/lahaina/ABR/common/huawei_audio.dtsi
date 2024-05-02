@@ -72,6 +72,7 @@
 		voip_scene_support = "true";
 		status = "ok";
 		mic_content = "bottom:mainmic#top:submic";
+		voice_wakeup_switch_mic_enable = "true";
 		hostless_id_info {
 			hostless_id_reset = "true";
 			headset_rx_hostless_id = "30";

@@ -471,7 +471,7 @@
 		pinctrl-0 = <&rt9426_irq_pins_default>;
 		rt9426,gpio-intb = <&tlmm 34 0x0>;
 		need_reset_version = <9>;
-		rt_config_ver = <18>;
+		rt_config_ver = <19>;
 		ground_loop_comp_en = <1>;
 		ground_loop_comp_rcomp = <41>;
 		status = "ok";
@@ -568,6 +568,8 @@
 		interrupts = <7 0>;
 		gpio_int = <&tlmm 7 0>;
 		gpio_en = <&tlmm 77 0>;
+		tx_ping_ocp_th = /bits/ 16 <1100>;
+		tx_ping_freq = /bits/ 16 <145>;
 		tx_min_fop = <120>;
 		tx_max_fop = <145>;
 		tx_ploss_th0 = <3300>;
@@ -586,7 +588,8 @@
 		gpio_int = <&tlmm 7 0>;
 		gpio_en = <&tlmm 77 0>;
 		gpio_en_valid_val = <0>;
-		tx_ping_ocp_th = <900>;
+		tx_ping_ocp_th = <1100>;
+		tx_ping_freq = /bits/ 16 <145>;
 		tx_min_fop = /bits/ 16 <120>;
 		tx_max_fop = /bits/ 16 <145>;
 		tx_ploss_th0 = /bits/ 16 <3300>;

@@ -15,14 +15,3 @@
 	qcom,dp-aux-switch = <&fsa4480>;
 };
 
-&qupv3_se3_i2c {
-	#address-cells = <1>;
-	#size-cells = <0>;
-	status = "ok";
-	fsa4480: fsa4480@42 {
-		compatible = "qcom,fsa4480-i2c";
-		reg = <0x42>;
-		status = "ok";
-	};
-};
-

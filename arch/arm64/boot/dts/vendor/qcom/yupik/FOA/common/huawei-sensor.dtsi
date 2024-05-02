@@ -1,0 +1,40 @@
+&qupv3_se15_i2c {
+	status = "ok";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	ams_as7341@39 {
+		compatible = "ams,as7341";
+		reg = <0x39>;
+		flicker_support = <1>;
+		algo_support = <1>;
+                hal_cali_info_support = <1>;
+		distinguish_product = <5>;
+		status = "ok";
+	};
+	sy3132cs@46 {
+		compatible = "silergy,sy3132cs";
+		reg = <0x46>;
+		flicker_support = <1>;
+		algo_support = <1>;
+                hal_cali_info_support = <1>;
+		distinguish_product = <7>;
+		status = "ok";
+	};
+};
+
+&soc {
+	vibrator_gpio {
+		compatible = "vib,pmi-ldo-vibrator";
+		avdd-supply = <&pm8350c_l11>;
+		vib,avdd = "avdd";
+		vib,avdd-min-uv = <3500000>;
+		vib,avdd-max-uv = <3500000>;
+		is_support_power_on_vib = <1>;
+	};
+};
+
+&hw_sensor_info{
+	compatible = "huawei,sensor_info";
+	ps_ultrasonic_en = <1>;
+	status = "ok";
+};

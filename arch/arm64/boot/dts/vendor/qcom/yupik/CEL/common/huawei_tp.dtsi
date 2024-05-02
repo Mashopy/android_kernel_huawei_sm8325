@@ -210,6 +210,7 @@
 		support_factory_mode_extra_cmd = <2>;
 		need_notify_to_roi_algo = <1>;
 		use_ap_gesture = <1>;
+		no_resume_only_stylus = <1>;
 		use_thp_queue = <1>;
 		supported_charger = <1>;
 		need_enable_irq_wake = <1>;

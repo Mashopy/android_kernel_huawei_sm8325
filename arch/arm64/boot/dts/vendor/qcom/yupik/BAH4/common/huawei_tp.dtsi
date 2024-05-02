@@ -227,6 +227,7 @@
 			himax_ic_83102_flag = <1>;
 			himax_ic_hispeed_support = <1>;
 			himax_gesture_need_lcd_rst = <1>;
+			allow_retry_read_projectid_from_lcd = <1>;
 		};
 		novatech {
 			irq_flag = <0x00000002>;

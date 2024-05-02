@@ -256,7 +256,8 @@
 
 &power_glink {
 	jeita_fv = <4470>;
-	jeita_hot_th = <80>;
+	jeita_hot_th = <60>;
+	charge_flag = <0x1>; /* bit0: aicl rerun flag, only cel and balie need */
 	adsp_jeita_table = <
 		0 5 390 4470
 		5 10 1170 4470
@@ -284,6 +285,16 @@
 	boost_5v_support_scp_power = <0>;
 	bst_ctrl_use_common_gpio = <0>;
 	is_need_bst_ctrl = <0>;
+	status = "ok";
+};
+
+&direct_charge_turbo {
+	time_para =
+		"1380", "6500",
+		"710", "7500",
+		"480", "7700",
+		"120", "9800",
+		"0", "11800";
 	status = "ok";
 };
 

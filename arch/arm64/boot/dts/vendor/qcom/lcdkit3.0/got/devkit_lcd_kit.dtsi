@@ -6,4 +6,5 @@
 
 
 #include "got_350_c00_12p6_qcom.dtsi"
+#include "got_350_h01_12p6_qcom.dtsi"
 #include "got_auo_otm3501a_5p2_1600p_video_default.dtsi"

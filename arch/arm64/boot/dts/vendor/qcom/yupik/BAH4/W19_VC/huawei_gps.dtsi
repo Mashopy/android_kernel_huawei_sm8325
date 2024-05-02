@@ -34,3 +34,7 @@
 		};
 };
 
+&huawei_lbs_info{
+	compatible = "huawei,hw_lbs_info";
+	gnss,chiptype = "ssp,bcm4775";
+};

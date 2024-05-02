@@ -6,6 +6,7 @@
 		voip_scene_support = "true";
 		mic_num = "2";
 		mic_content = "bottom:mainmic#top:submic";
+		voice_wakeup_switch_mic_enable = "true";
 	};
 };
 

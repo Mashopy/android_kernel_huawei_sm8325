@@ -1,9 +1,10 @@
-&tlmm{
+&soc{
 	qcom,smp2p-modem {
-		smp2p-ipa-1-out {
+		compatible = "qcom,smp2p";
+		smp2p_ipa_1_out: qcom,smp2p-ipa-1-out {
 			qcom,entry-name = "ipa";
 			#qcom,smem-state-cells = <1>;
-			status = "disabled";
+			status = "ok";
 		};
 
 		/* ipa - inbound entry from mss */
@@ -11,14 +12,13 @@
 			qcom,entry-name = "ipa";
 			interrupt-controller;
 			#interrupt-cells = <2>;
-			status = "disabled";
+			status = "ok";
 		};
-		/* Nedd add for ipa end*/
 	};
-	/* Need add for ipa*/
+
 	qcom,msm_gsi {
 		compatible = "qcom,msm_gsi";
-		status = "disabled";
+		status = "ok";
 	};
 
 	qcom,rmnet-ipa {
@@ -36,15 +36,12 @@
 		qcom,firmware-name = "yupik_ipa_fws";
 		qcom,pil-force-shutdown;
 		memory-region = <&pil_ipa_gsi_mem>;
-		status = "disabled";
+		status = "ok";
 	};
-	/* Need add for ipa end*/
 
 	ipa_hw: qcom,ipa@1e00000 {
-
-		/* Need add for ipa start*/
-		status = "disabled";
-		/* Need add for ipa end*/
-
+		compatible = "qcom,ipa";
+		support_ignore_vote_wifionly;
+		status = "ok";
 	};
 };

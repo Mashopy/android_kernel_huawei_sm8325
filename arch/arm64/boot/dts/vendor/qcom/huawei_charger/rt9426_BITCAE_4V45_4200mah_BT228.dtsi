@@ -1,4 +1,4 @@
-rt,dtsi_version = <02 622>;
+rt,dtsi_version = <04 408>;
 rt,battery_type = <4400>;
 rt,volt_source = <1>; /* 0:AP 1:FG_VBAT 2:FG_OCV; 3:FG_AV */
 rt,temp_source = <1>; /* 0:AP 1:FG_TEMP 2:FG_INTT; 3:FG_AT */
@@ -13,7 +13,7 @@ rt,extreg_data = <
 	0x1 0x4E 0x2424
 	0x2 0x4E 0xF404
 	0x3 0x4E 0xB708
-	0x5 0x48 0x120A
+	0x5 0x48 0x0C0A
 	0x5 0x4C 0x3223
 	0x5 0x4E 0x001A
 	0x6 0x40 0x8813
@@ -41,8 +41,9 @@ rt,extreg_data = <
 	0x8 0x4E 0x00AB>;
 rt,design_capacity = <1680>;
 rt,fcc = <1651 1535 1465 1395 1326>;
-rt,fg_fc_vth = <0xA3 0x99 0x8F 0x85 0x7B>;
-rt,fg_fc_ith = <0x64>;
+rt,fg_fc_vth = <0xAA 0xA0 0x96 0x8C 0x82>;
+rt,fg_non_ffc_fc_vth = <0xA3 0x99 0x8F 0x85 0x7B>;
+rt,fg_fc_ith = <0x14>;
 rt,fg_fc_sth = <0x05>;
 rt,fg_fd_vth = <0x8E>;
 rt,fg_op_config = <0x3400 0x0000 0x3EFB 0x2000 0x087A>;
@@ -53,6 +54,22 @@ rt,fg_otd_dchg_ith = <0x045F>;
 rt,fg_uvov_threshold = <0x00FF>;
 rt,fg_us_threshold = <0x00>;
 rt,fg_curr_db = <0x00>;
+rt,fg_fc_low_curr_vth = <0xAC 0xA2 0x98 0x8E 0x84>;
+rt,fg_fc_low_curr_vth_non_ffc = <0xA6 0x9C 0x92 0x88 0x7E>;
+rt,fg_fc_low_curr_vdelta = <30>;
+rt,fg_fc_low_curr_idelta = <100>;
+rt,fc_low_curr_cnt_th = <1>;
+rt,ffc_dc_para_A = <0>;
+rt,ffc_dc_para_B = <0>;
+rt,ffc_buck_para_A = <0>;
+rt,ffc_buck_para_B = <0>;
+rt,non_ffc_para_A = <10>;
+rt,non_ffc_para_B = <50>;
+rt,fc_delta_ith_for_non_ffc_spd = <30>;
+rt,fc_delta_ith_for_ffc_spd = <70>;
+rt,fc_delta_ith_for_spd_th = <500>;
+rt,dynamic_change_iterm_en = <1>;
+rt,dynamic_change_iterm_disabled_in_dc = <1>;
 rt,rs_ic_setting = <250>; /* unit:0.01mR ; 250x0.01 = 2.5mR */
 rt,rs_schematic = <100>; /* unit:0.01mR ; 100x0.01 = 1mR */
 rt,fg_ocv_table0 = <0x0013 0x4A40 0x5000 0x56E1 0x5B16 0x5BFF 0x5CB4 0x5E2B

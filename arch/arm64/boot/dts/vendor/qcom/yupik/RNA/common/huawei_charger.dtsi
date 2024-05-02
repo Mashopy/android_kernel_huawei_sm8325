@@ -584,6 +584,16 @@
 	status = "ok";
 };
 
+&direct_charge_turbo {
+	status = "ok";
+	time_para =
+		 "840", "8000",
+		 "420", "11000",
+		 "360", "12200",
+		 "210", "14100",
+		 "50", "16500";
+};
+
 &huawei_battery_temp {
 	status = "ok";
 };

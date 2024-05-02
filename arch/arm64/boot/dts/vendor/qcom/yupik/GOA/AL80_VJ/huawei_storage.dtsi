@@ -1,0 +1,5 @@
+&pm7325_l8 {
+    regulator-min-microvolt = <870000>;
+    regulator-max-microvolt = <970000>;
+    qcom,init-voltage = <904000>;
+};

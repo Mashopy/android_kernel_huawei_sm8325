@@ -211,6 +211,7 @@
 };
 
 &buck_charge {
+	ibus_limit_after_chg_done = <500>;
 	jeita_support = <1>;
 	jeita_table =
 		"-32767", "0", "-1","100","4440","0",
@@ -224,7 +225,7 @@
 
 &power_glink {
 	jeita_fv = <4440>;
-	jeita_hot_th = <80>;
+	battery_adc_channel = <1>;
 	charge_flag = <0x1>; /* bit0: aicl rerun flag, only balie need */
 	adsp_jeita_table = <
 		0 5 390 4440
@@ -255,6 +256,14 @@
 	status = "ok";
 };
 
+&direct_charge_turbo {
+	time_para =
+		"1200", "5300",
+		"600", "5700",
+		"240", "6500";
+	status = "ok";
+};
+
 &direct_charge_ic {
 	/* The IC_PARA table is used to find the relationship between chip and path */
 	/* the chip's current passing capacity */
@@ -269,6 +278,7 @@
 		"lvc_mode", "ic_para1",
 		"sc_mode", "ic_para2";
 	use_coul_ibat = <1>;
+	use_coul_vbat = <1>;
 	status = "ok";
 };
 
@@ -315,6 +325,7 @@
 	adaptor_antifake_check_enable = <1>;
 	adaptor_antifake_key_index = <2>;
 	ui_max_pwr = <40000>;
+	use_higher_vbat = <1>;
 	volt_para =
 		"4150", "7800", "5850",
 		"4250", "5850", "3900",
@@ -558,6 +569,8 @@
 		need_reset_version = <9>;
 		rt_config_ver = <16>;
 		ic_role = <0>;
+		ir_comp_en = <1>;
+		compensation_r = <17>;
 		status = "ok";
 		battery0{
 			batt_name = "BYTCAE_3900_4450_v0";
@@ -570,6 +583,8 @@
 		reg = <0x64>;
 		cw,bat_name = "battery_gauge";
 		ic_role = <0>;
+		ir_comp_en = <1>;
+		compensation_r = <17>;
 		status = "ok";
 		battery0{
 			batt_name = "BITCAE_3900_4450_v0";
@@ -599,6 +614,8 @@
 		need_reset_version = <9>;
 		rt_config_ver = <17>;
 		ic_role = <1>;
+		ir_comp_en = <1>;
+		compensation_r = <17>;
 		status = "ok";
 		battery0{
 			batt_name = "BYTCAE_3900_4450_v0";
@@ -611,6 +628,8 @@
 		reg = <0x64>;
 		cw,bat_name = "battery_gauge";
 		ic_role = <1>;
+		ir_comp_en = <1>;
+		compensation_r = <17>;
 		status = "ok";
 		battery0{
 			batt_name = "BITCAE_3900_4450_v0";
@@ -643,13 +662,13 @@
 		adc_channel_vbat_sys = <14>;
 		fcp_support = <1>;
 		scp_support = <1>;
-		lvc_ibat_regulator = <12200>;
-		lvc_vbat_regulator = <4500>;
-		lvc_vout_regulator = <4550>;
+		lvc_ibat_regulator = <6000>;
+		lvc_vbat_regulator = <4600>;
+		lvc_vout_regulator = <4750>;
 		lvc_ibus_regulator = <5600>;
-		sc_ibat_regulator = <12200>;
-		sc_vbat_regulator = <4500>;
-		sc_vout_regulator = <4590>;
+		sc_ibat_regulator = <10000>;
+		sc_vbat_regulator = <4600>;
+		sc_vout_regulator = <4750>;
 		sc_ibus_regulator = <5600>;
 		lvc_vusb2vbus_drop_en = <1>;
 		sc_vusb2vbus_drop_en = <1>;
@@ -659,6 +678,7 @@
 		ico_current_mode = <0>;
 		r_coul_mohm = <5>;
 		vusb_uv_flag = <1>;
+		avdd_enable_flag = <0>;
 	};
 };
 

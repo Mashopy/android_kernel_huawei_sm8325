@@ -42,3 +42,15 @@
         status = "ok";
     };
 };
+
+&pm7325_l8 {
+    regulator-min-microvolt = <870000>;
+    regulator-max-microvolt = <970000>;
+    qcom,init-voltage = <904000>;
+};
+
+&qupv3_se2_i2c {
+    hi6526_charger@6B {
+        avdd_enable_flag = <1>;
+    };
+};

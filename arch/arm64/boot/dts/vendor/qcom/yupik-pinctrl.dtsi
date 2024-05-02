@@ -61,6 +61,7 @@
 				pins = "sdc1_rclk";
 				bias-pull-down;
 			};
+
 		};
 
 		sdc1_off: sdc1_off {

@@ -1,0 +1,26 @@
+/*I2C:GPIO8/9 */
+&qupv3_se2_i2c {
+	status = "ok";
+	sc8562@64{
+		status = "disabled";
+	};
+	sc8562@6E{
+		status = "disabled";
+	};
+};
+
+/*I2C:GPIO60/61 */
+&qupv3_se15_i2c {
+	status = "ok";
+	sc8562@64{
+		status = "disabled";
+	};
+	sc8562@6E{
+		compatible = "sc8562";
+		slave_mode = <0>;
+		ic_role = <0>;
+		fcp_support = <1>;
+		scp_support = <1>;
+		status = "ok";
+	};
+};

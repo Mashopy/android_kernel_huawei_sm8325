@@ -1,0 +1,73 @@
+&tlmm {
+	rsmc_int_default: rsmc_int_default {
+		mux {
+			pins = "gpio130";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio130";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
+};
+
+&soc {
+	spi@980000 {
+		status = "ok";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		qcom,rt = <1>;
+		qcom,disable-dma = <1>;
+		huawei_rsmc@10 {
+			compatible = "huawei,rsmc";
+			status = "ok";
+			/* SPI Config */
+			spi-max-frequency = <5000000>;
+			spi-bus-id = <0>;
+			spi-mode = <0>;
+			bits-per-word = <8>;
+			reg = <0>;
+			/* Timing */
+			tcxo_pwr_after_delay_ms = <20>;
+			/* GPIO Config */
+			en_gpio = <&tlmm 132 0>;
+			pa_gpio = <&tlmm 5 0>;
+			mcu_rst_gpio = <&tlmm 137 0>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&rsmc_int_default>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <130 0>;
+			irq_gpio = <&tlmm 130 0>;
+			rx_ant_gpio = <&tlmm 104 0>;
+			tx_ant_gpio = <&tlmm 101 0>;
+			rsmc_vc1_ant_gpio = <&tlmm 123 0>;
+			rsmc_vc2_ant_gpio = <&tlmm 124 1>;
+			/* Feature Config */
+			cpu-affinity-offset = <0>;
+			cpu-affinity-mask = <112>;
+
+			/* Power Config */
+			sp4t_pwr_gpio = <&tlmm 138 0>;
+			rsmc-tcxo-vcc-type = <1>;
+			tcxo_pwr_gpio = <&tlmm 102 0>;
+
+			/* Camera Config */
+			cam_vaf-supply = <&pm8350c_l11>;
+			regulator-names = "cam_vaf";
+			rgltr-min-voltage = <3100000>;
+			rgltr-max-voltage = <3100000>;
+			rgltr-load-current = <0>;
+		};
+	};
+};
+
+&huawei_rsmc {
+	compatible = "huawei_rsmc";
+	rsmc_enable_x801;
+	rf_file_name = "/odm/etc/rsmc/rf-para/rf.json";
+	config_name = "default";
+	tcxo_frequency = <1>;
+};

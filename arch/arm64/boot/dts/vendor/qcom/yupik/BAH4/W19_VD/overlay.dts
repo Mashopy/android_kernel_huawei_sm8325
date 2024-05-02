@@ -12,6 +12,7 @@
 #include "../common/huawei_audio_bah4.dtsi"
 #include "../common/huawei_mpss.dtsi"
 #include "../common/huawei_ipa.dtsi"
+#include "../common/huawei_mpss_ram.dtsi"
 #include "huawei-sensor.dtsi"
 
 / {

@@ -66,6 +66,7 @@
 		voip_ap_algo_enable = "true";
 		voip_scene_support = "true";
 		status = "ok";
+		voice_wakeup_switch_mic_enable = "true";
 		hostless_id_info {
 			hostless_id_reset = "true";
 			headset_rx_hostless_id = "30";

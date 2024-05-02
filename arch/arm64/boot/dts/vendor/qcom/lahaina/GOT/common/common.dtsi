@@ -11,3 +11,4 @@
 #include "huawei_usb.dtsi"
 #include "huawei_bsp.dtsi"
 #include "huawei_led.dtsi"
+#include "huawei_btkb_led.dtsi"

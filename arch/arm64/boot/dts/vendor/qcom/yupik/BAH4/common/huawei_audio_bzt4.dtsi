@@ -103,7 +103,7 @@
     pinctrl-1 = <&speaker_id_sleep &receiver_id_sleep>;
     box_consistent_test_info {
 	consistent_test_support;
-	test_group_num = <1>;
+	each_group_elem_num = <4>;
 	consistent_test_groups = <0 1>;
     };
 };

@@ -29,7 +29,7 @@
 };
 
 &als_after_sale_TCS3718ALSPRX {
-    compatible = "TCS3718ALSPRX";
+    compatible = "als_s001_003";
 	als_after_sale_product = <5380>;
 	als_after_sale_xl = <390>;
 	als_after_sale_yl = <138>;
@@ -37,7 +37,8 @@
 	als_after_sale_yr = <238>;
 	als_after_sale_gamma = <0>;
 	190_207_CELU = "440,188,1,0,208,186,161,130,105,74,49,24,5";
-	default = "440,188,1,0,208,186,161,130,105,74,49,24,5";
+	310_f00_CELU = "440,188,4,0,161,128,106,81,62,44,25,19,9";
+	default = "440,188,4,0,208,186,161,130,105,74,49,24,5";
 };
 &pmk8350_vadc {
 	pm7325_quiet_therm {

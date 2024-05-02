@@ -11,6 +11,7 @@
 #include "../common/huawei_audio_bzt4.dtsi"
 #include "../common/huawei_mpss.dtsi"
 #include "../common/huawei_ipa.dtsi"
+#include "../common/huawei_mpss_ram.dtsi"
 #include "../common/huawei-pogopin.dtsi"
 
 

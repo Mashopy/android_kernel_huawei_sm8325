@@ -9,8 +9,24 @@
 		status = "disabled";
 	};
 
+	huawei_pogopin_sw: huawei_pogopin_sw {
+		compatible = "huawei,pogopin_sw";
+		status = "disabled";
+	};
+
+	huawei_pogo_acc:huawei_pogo_acc {
+		compatible = "huawei,pogopinaccessory";
+		status = "disabled";
+	};
+
 	ship_mode: ship_mode {
 		compatible = "huawei,ship_mode";
+		status = "disabled";
+	};
+
+	charge_mode_test: charge_mode_test {
+		/* protocol  mode  ibat_th  time  early_termination  force_test */
+		compatible = "huawei,charge_mode_test";
 		status = "disabled";
 	};
 
@@ -640,6 +656,11 @@
 
 	low_power: low_power {
 		compatible = "huawei,low_power";
+		status = "disabled";
+	};
+
+	qplat_charger_sc: qplat_charger_sc {
+		compatible = "huawei,qplat_charger_sc";
 		status = "disabled";
 	};
 };

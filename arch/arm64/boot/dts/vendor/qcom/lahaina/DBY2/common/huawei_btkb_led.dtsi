@@ -1,0 +1,6 @@
+&btkb_led {
+	status = "ok";
+	btkb_led_notifier = <1>;
+	btkb_led_notifier_client = <1>;
+	panel = <&dsi_dby2_290_20d_11p5_qcom &dsi_dby2_190_20d_11p5_qcom>;
+};

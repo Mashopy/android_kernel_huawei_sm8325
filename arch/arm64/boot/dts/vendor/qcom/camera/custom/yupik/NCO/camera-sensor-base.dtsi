@@ -395,7 +395,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <1>; /* CAMERA_POSITION_FORE */
 	};
 
 	/* rear wide eeprom */

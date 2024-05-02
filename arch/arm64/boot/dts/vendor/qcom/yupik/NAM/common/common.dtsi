@@ -25,23 +25,25 @@
 };
 
 &als_after_sale_tsl2591 {
-	compatible = "tsl2591";
+	compatible = "als_s001_001";
 	als_after_sale_product = <24>;
 	als_after_sale_xl = <706>;
 	als_after_sale_yl = <0>;
 	als_after_sale_xr = <806>;
 	als_after_sale_yr = <97>;
 	als_after_sale_gamma = <0>;
+	default = "756,47,1,1,220,192,159,127,102,74,56,31,4";
 };
 
 &als_after_sale_ltr311 {
-	compatible = "ltr311";
+	compatible = "als_s002_002";
 	als_after_sale_product = <25>;
 	als_after_sale_xl = <706>;
 	als_after_sale_yl = <0>;
 	als_after_sale_xr = <806>;
 	als_after_sale_yr = <97>;
 	als_after_sale_gamma = <0>;
+	default = "756,47,1,1,220,192,159,127,102,74,56,31,4";
 };
 &pmk8350_vadc {
 	pm7325_quiet_therm {

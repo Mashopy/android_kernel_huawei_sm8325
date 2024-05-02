@@ -1,0 +1,13 @@
+&sdhc_1{
+    emmc-rst-gpios = <&tlmm 105 GPIO_ACTIVE_HIGH>;
+    vccq-vol-gpios = <&tlmm 104 GPIO_ACTIVE_HIGH>;
+    /* auto_key_info @ name: emmc_rst_gpio_num type: int default: -1 */
+    emmc_rst_gpio_num = <105>;
+    /* auto_key_info @ name: vccq_vol_gpio_num type: int default: -1 */
+    vccq_vol_gpio_num = <104>;
+    vdd-supply = <&L9C>;
+    qcom,vdd-always-on;
+    qcom,vdd-voltage-level = <3300000 3544000>;
+    vdd-io-supply = <&S1B>;
+    qcom,vdd-io-voltage-level = <1911000 2040000>;
+};

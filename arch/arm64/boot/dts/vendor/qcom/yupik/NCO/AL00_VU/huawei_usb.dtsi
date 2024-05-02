@@ -1,0 +1,12 @@
+&usb3phy_portselect_default {
+	mux {
+		pins = "gpio140";
+		function = "usb_phy";
+	};
+
+	config {
+		pins = "gpio140";
+		bias-pull-down;
+		drive-strength = <2>;
+	};
+};

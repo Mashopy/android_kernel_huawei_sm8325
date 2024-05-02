@@ -614,7 +614,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <0>; /* CAMERA_POSITION_REAR */
 		status = "ok";
 	};
 };
@@ -755,7 +754,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <2>; /* CAMERA_POSITION_REAR_SECOND */
 		status = "ok";
 	};
 
@@ -866,7 +864,6 @@
 		clock-names = "cam_clk";
 		clock-cntl-level = "nominal";
 		clock-rates = <19200000>;
-		ic_position = <1>; /* CAMERA_POSITION_FORE */
 		status = "ok";
 	};
 

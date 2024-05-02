@@ -2,6 +2,7 @@
 	src_vconn = <2>; /* 5v-boost */
 	src_vbus = <2>; /* 5v-boost */
 	cc_dynamic_protect = <2>;
+	quirks_fix_flag = <1>;
 };
 
 &huawei_usb_misc {

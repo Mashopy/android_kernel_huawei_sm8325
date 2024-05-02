@@ -401,6 +401,8 @@
     huawei_bt_info: huawei_bt_info {
     };
 
+	huawei_lbs_info: huawei_lbs_info {
+	};
 	huawei_audio_info: huawei_audio_info {
 	};
 
@@ -457,12 +459,17 @@
 	};
 
 	als_after_sale_TCS3718ALSPRX: als_after_sale_TCS3718ALSPRX {
-		compatible = "TCS3718ALSPRX";
+		compatible = "als_s001_003";
 		status = "ok";
 	};
 
 	mntn_switch {
 		mntn_switch = "01111111111110101011111110100110000001100000001";
+	};
+
+	btkb_led: btkb_led {
+		compatible = "huawei,btkb_led";
+		status = "disabled";
 	};
 };
 

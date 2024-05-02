@@ -1,4 +1,4 @@
-		rt,dtsi_version = <06 528>;
+		rt,dtsi_version = <07 1117>;
 		rt,battery_type = <4400>;
 		rt,volt_source = <1>; /* 0:AP 1:FG_VBAT 2:FG_OCV; 3:FG_AV */
 		rt,temp_source = <1>; /* 0:AP 1:FG_TEMP 2:FG_INTT; 3:FG_AT */
@@ -6,12 +6,24 @@
 		rt,offset_interpolation_order = <2 2>;
 		rt,soc_offset_size = <2 1>;
 		rt,soc_offset_data = <0 250 0 1000 250 0>;
-		rt,extreg_size = <31>;
+		rt,extreg_size = <44>;
 		rt,extreg_data = <
 				0x1 0x4A 0x320B
 				0x1 0x4C 0x0411
 				0x1 0x4E 0x2424
+				0x2 0x40 0x8200	/* 2022/11/17: Add to set correct value */
+				0x2 0x42 0x0200	/* 2022/11/17: Add to set correct value */
+				0x2 0x44 0x0200	/* 2022/11/17: Add to set correct value */
+				0x2 0x4A 0x0640	/* 2022/11/17: Add to set correct value */
+				0x2 0x4C 0x063B	/* 2022/11/17: Add to set correct value */
 				0x2 0x4E 0xF406
+				0x3 0x40 0x0064	/* 2022/11/17: Add to set correct value */
+				0x3 0x42 0x045F	/* 2022/11/17: Add to set correct value */
+				0x3 0x44 0X0064	/* 2022/11/17: Add to set correct value */
+				0x3 0x46 0x045F	/* 2022/11/17: Add to set correct value */
+				0x3 0x48 0x00FF	/* 2022/11/17: Add to set correct value */
+				0x3 0x4A 0x4600	/* 2022/11/17: Add to set correct value */
+				0x3 0x4C 0x0A3C	/* 2022/11/17: Add to set correct value */
 				0x3 0x4E 0xB708
 				0x5 0x48 0x1F14
 				0x5 0x4C 0x3223
@@ -19,6 +31,7 @@
 				0x6 0x40 0x8813
 				0x6 0x42 0x3212
 				0x6 0x44 0xAD77
+				0x6 0x46 0x7304	/* 2022/11/17: Add to set correct value */
 				0x6 0x48 0xA312
 				0x6 0x4A 0x6852
 				0x6 0x4C 0x6457

@@ -1,0 +1,9 @@
+&battery_ui_capacity {
+	correct_shutdown_soc_en = <0>;
+};
+&low_power {
+	status = "disabled";
+};
+&huawei_batt_info {
+    shield_ct_sign = <1>;
+};

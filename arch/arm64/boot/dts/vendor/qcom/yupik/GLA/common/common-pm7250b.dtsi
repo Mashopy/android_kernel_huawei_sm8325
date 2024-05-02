@@ -14,13 +14,21 @@
 #include "huawei_fp.dtsi"
 
 &als_after_sale_tsl2591 {
-    compatible = "tsl2591";
+    compatible = "als_s001_001";
     als_after_sale_product = <31>;
     als_after_sale_xl = <734>;
     als_after_sale_yl = <83>;
     als_after_sale_xr = <834>;
     als_after_sale_yr = <183>;
     als_after_sale_gamma = <0>;
+    310_106 = "784,133,4,1,220,192,159,127,102,74,56,31,4";
+    190_20f = "781,128,1,1,220,192,159,127,102,74,56,31,4";
+    default = "781,128,1,1,220,192,159,127,102,74,56,31,4";
+};
+
+&drop_sensor_enable {
+    compatible = "huawei,sensorhub_drop";
+    enable_drop = "1";
 };
 
 &pmk8350_vadc {

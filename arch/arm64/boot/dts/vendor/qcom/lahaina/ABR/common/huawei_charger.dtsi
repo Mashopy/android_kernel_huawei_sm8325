@@ -66,6 +66,15 @@
 		"35", "45", "20", "1048", "400";
 };
 
+&power_glink {
+	adsp_jeita_table = <
+		0 5 400 4450
+		5 10 1200 4450
+		10 45 3600 4450
+		45 55 1400 4100
+	>;
+};
+
 &bat_heating {
 	panel_client = "1";
 	low_temp_min_thld = "-15";
@@ -273,6 +282,15 @@
 	status = "ok";
 };
 
+&direct_charge_turbo {
+	status = "ok";
+	time_para =
+		"460", "7300",
+		"360", "8000",
+		"120", "10000",
+		"0", "12400";
+};
+
 &huawei_battery_temp {
 	status = "ok";
 };
@@ -384,7 +402,7 @@
 		lowtemp_t_thr = "-50";
 		lowtemp_edv_thr = <0x64>;
 		need_reset_version = <9>;
-		rt_config_ver = <15>;
+		rt_config_ver = <16>;
 		ntc_compensation_is = <1>;
 		ntc_temp_compensation_para =
 			"11000", "110",

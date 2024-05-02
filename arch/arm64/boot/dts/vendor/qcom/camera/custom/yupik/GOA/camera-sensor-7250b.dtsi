@@ -1,0 +1,17 @@
+&pm7250b_gpios {
+	front_tel_avdd_active: front_tel_avdd_active {
+		pins = "gpio4";
+		function = "normal";
+		power-source = <0>;
+		output-high;
+		bias-disable;
+	};
+
+	front_tel_avdd_suspend: front_tel_avdd_suspend {
+		pins = "gpio4";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+		bias-disable;
+	};
+};

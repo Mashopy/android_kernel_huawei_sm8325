@@ -26,7 +26,7 @@
 };
 
 &als_after_sale_TCS3718ALSPRX {
-    compatible = "TCS3718ALSPRX";
+	compatible = "als_s001_003";
 	als_after_sale_product = <26>;
 	als_after_sale_xl = <870>;
 	als_after_sale_yl = <132>;

@@ -1,0 +1,116 @@
+#include <dt-bindings/interconnect/qcom,lahaina.h>
+#include <dt-bindings/clock/qcom,gcc-lahaina.h>
+
+&tlmm {
+	huawei_pogopin_sw_int:huawei_pogopin_sw_int {
+		mux{
+			pins = "gpio32";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio32";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	huawei_pogopin_sw_vcc_en:huawei_pogopin_sw_vcc_en {
+		mux{
+			pins = "gpio78";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio78";
+			bias-pull-down;
+			input-enable;
+		};
+	};
+
+	qupv3_se11_2uart_pins: qupv3_se11_2uart_pins {
+		qupv3_se11_2uart_active: qupv3_se11_2uart_active {
+			mux {
+				pins = "gpio50", "gpio51";
+				function = "qup11";
+			};
+
+			config {
+				pins = "gpio50", "gpio51";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se11_2uart_sleep: qupv3_se11_2uart_sleep {
+			mux {
+				pins = "gpio50", "gpio51";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio50", "gpio51";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+	};
+};
+
+&soc {
+	qupv3_se11_2uart: qcom,qup_uart@a8c000 {
+		compatible = "qcom,msm-geni-serial-hs";
+		reg = <0xa8c000 0x4000>;
+		reg-names = "se_phys";
+		clock-names = "se-clk", "m-ahb", "s-ahb";
+		clocks = <&clock_gcc GCC_QUPV3_WRAP1_S3_CLK>,
+			<&clock_gcc GCC_QUPV3_WRAP_1_M_AHB_CLK>,
+			<&clock_gcc GCC_QUPV3_WRAP_1_S_AHB_CLK>;
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&qupv3_se11_2uart_active>;
+		pinctrl-1 = <&qupv3_se11_2uart_sleep>;
+		interrupts = <GIC_SPI 356 IRQ_TYPE_LEVEL_HIGH>;
+		qcom,wrapper-core = <&qupv3_1>;
+		qcom,change-sampling-rate;
+		custom_line = <5>;
+		status = "ok";
+	};
+};
+
+&pm8350b_gpios {
+	gpio4_adc {
+		gpio4_adc_default: gpio4_adc_default {
+			pins = "gpio4"; /* GPIO 4 */
+			function = "normal"; /* normal */
+			bias-high-impedance; /* DISABLE GPIO4 for ADC*/
+		};
+	};
+};
+
+&pmk8350_vadc {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pm8350_rear_tof_therm_default &gpio4_adc_default>;
+	hw_pogopin_sw_adc {
+		reg = <PM8350B_ADC7_GPIO4>;
+		label = "hw_pogopin_sw_adc";
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+};
+
+&huawei_pogo_acc {
+	compatible = "huawei,pogopinaccessory";
+	status = "ok";
+};
+
+&huawei_pogopin_sw {
+	compatible = "huawei,pogopin_sw";
+	io-channels = <&pmk8350_vadc PM8350B_ADC7_GPIO4>;
+	io-channel-names = "hw_pogopin_sw_adc";
+	pinctrl-names = "default";
+	pinctrl-0 = <&huawei_pogopin_sw_int &huawei_pogopin_sw_vcc_en>;
+	huawei_pogopin_sw_int_gpio = <&tlmm 32 0>;
+	huawei_pogopin_sw_vcc_en_gpio = <&tlmm 78 0>;
+	sw_tty_name = "ttyHS5";
+	status = "ok";
+};

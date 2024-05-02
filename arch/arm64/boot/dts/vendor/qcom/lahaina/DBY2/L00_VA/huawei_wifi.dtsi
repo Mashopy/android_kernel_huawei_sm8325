@@ -1,0 +1,8 @@
+&huawei_wifi_info{
+    compatible = "huawei,hw_wifi_info";
+    status = "ok";
+    wifi,pubfile_id = "dby2_al00";
+    wifi,chiptype = "WIFI_QUALCOMM_WCN6856";
+    wifi,ic_vendor = "true";
+    wifi,ini_type = "dby2_common";
+};

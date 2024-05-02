@@ -191,16 +191,16 @@
 			02 02 02 02 04 0A 07];
 				qcom,display-topology  = <1 0 1>;
 				qcom,default-topology-index  = <0>;
-				qcom,mdss-dsi-on-command = [15 01 00 00 00 00 02 FE 00
-			15 01 00 00 00 00 02 35 02
-			15 01 00 00 00 00 02 53 20
-			15 01 00 00 00 00 02 63 FF
-			39 01 00 00 00 00 05 2A 00 0A 01 5D
-			39 01 00 00 00 00 05 2B 00 00 01 53
+				qcom,mdss-dsi-on-command = [15 00 00 00 00 00 02 FE 00
+			15 00 00 00 00 00 02 35 02
+			15 00 00 00 00 00 02 53 20
+			15 00 00 00 00 00 02 63 FF
+			39 00 00 00 00 00 05 2A 00 0A 01 5D
+			39 00 00 00 00 00 05 2B 00 00 01 53
 			05 01 00 00 50 00 01 11
 			05 01 00 00 00 00 01 29];
 				qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
-				qcom,mdss-dsi-off-command = [05 01 00 00 00 00 01 28
+				qcom,mdss-dsi-off-command = [05 00 00 00 00 00 01 28
 			05 01 00 00 55 00 01 10];
 				qcom,mdss-dsi-off-command-state = "dsi_lp_mode";
 			};
