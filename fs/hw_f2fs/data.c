@@ -115,15 +115,11 @@ static bool __is_cp_guaranteed(struct page *page)
 	inode = mapping->host;
 	sbi = F2FS_I_SB(inode);
 
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
 	if (inode->i_ino == F2FS_META_INO(sbi) ||
 			inode->i_ino == F2FS_NODE_INO(sbi) ||
-			S_ISDIR(inode->i_mode))
-		return true;
-
-	if (f2fs_is_compressed_page(page))
-		return false;
-	if ((S_ISREG(inode->i_mode) &&
+			S_ISDIR(inode->i_mode) ||
+			(S_ISREG(inode->i_mode) &&
 			(f2fs_is_atomic_file(inode) || IS_NOQUOTA(inode))) ||
 			page_private_gcing(page))
 		return true;
@@ -135,6 +131,10 @@ static bool __is_cp_guaranteed(struct page *page)
 			(f2fs_is_atomic_file(inode) || IS_NOQUOTA(inode))) ||
 			is_cold_data(page))
 		return true;
+#endif
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
+	if (f2fs_is_compressed_page(page))
+		return false;
 #endif
 	return false;
 }
@@ -207,8 +207,8 @@ static void f2fs_finish_read_bio(struct bio *bio)
 #else
 static void __read_end_io(struct bio *bio)
 {
-	struct page *page;
 #endif
+	struct page *page;
 	struct bio_vec *bv;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	struct bvec_iter_all iter_all;
@@ -226,16 +226,14 @@ static void __read_end_io(struct bio *bio)
 	bio_for_each_segment_all(bv, bio, i) {
 #endif
 
-#ifdef CONFIG_F2FS_FS_COMPRESSION
-		struct page *page = bv->bv_page;
+		page = bv->bv_page;
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		if (f2fs_is_compressed_page(page)) {
 			if (bio->bi_status)
 				f2fs_end_read_compressed_page(page, true, 0);
 			f2fs_put_page_dic(page);
 			continue;
 		}
-#else
-		page = bv->bv_page;
 #endif
 		/* PG_error was set if decryption or verity failed. */
 		if (bio->bi_status || PageError(page)) {
@@ -1029,7 +1027,7 @@ static bool __has_merged_page(struct bio *bio, struct inode *inode,
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 		target = bvec->bv_page;
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		if (fscrypt_is_bounce_page(target)) {
 			target = fscrypt_pagecache_page(target);
 			if (IS_ERR(target))
@@ -1503,7 +1501,7 @@ next:
 	}
 
 	verify_fio_blkaddr(fio);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	if (fio->encrypted_page)
 		bio_page = fio->encrypted_page;
 	else if (fio->compressed_page)
@@ -2170,7 +2168,7 @@ alloc:
 	if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO) {
 		invalidate_mapping_pages(META_MAPPING(sbi),
 					old_blkaddr, old_blkaddr);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		f2fs_invalidate_compress_page(sbi, old_blkaddr);
 #endif
 	}
@@ -3585,7 +3583,7 @@ int f2fs_mpage_readpages(struct address_space *mapping,
 	sector_t last_index_in_bio = 0;
 	struct inode *inode = mapping->host;
 	struct f2fs_map_blocks map;
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	struct compress_ctx cc = {
 		.inode = inode,
 		.log_cluster_size = F2FS_I(inode)->i_log_cluster_size,
@@ -3635,8 +3633,12 @@ int f2fs_mpage_readpages(struct address_space *mapping,
 						  readahead_gfp_mask(mapping)))
 				goto next_page;
 		}
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+		if (f2fs_is_compressed_inode(inode)) {
+#else
 		if (f2fs_compressed_file(inode)) {
+#endif
 			/* there are remained comressed pages, submit them */
 			if (!f2fs_cluster_can_merge_page(&cc, page->index)) {
 				ret = f2fs_read_multi_pages(&cc, &bio,
@@ -3695,7 +3697,7 @@ read_single_page:
 		inode_dec_read_io(inode);
 #endif
 		if (ret) {
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 set_error_page:
 #endif
 			SetPageError(page);
@@ -3706,8 +3708,12 @@ set_error_page:
 next_page:
 		if (pages)
 			put_page(page);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+		if (f2fs_is_compressed_inode(inode)) {
+#else
 		if (f2fs_compressed_file(inode)) {
+#endif
 			/* last page */
 			if (nr_pages == 1 && !f2fs_cluster_is_empty(&cc)) {
 				ret = f2fs_read_multi_pages(&cc, &bio,
@@ -3744,7 +3750,7 @@ static int f2fs_read_data_page(struct file *file, struct page *page)
 	int ret = -EAGAIN;
 
 	trace_f2fs_readpage(page, DATA);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	if (!f2fs_is_compress_backend_ready(inode)) {
 		unlock_page(page);
 		return -EOPNOTSUPP;
@@ -4172,7 +4178,7 @@ out:
 		f2fs_unlock_op(fio->sbi);
 	return err;
 }
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 int f2fs_write_single_data_page(struct page *page, int *submitted,
 				struct bio **bio,
 				sector_t *last_block,
@@ -4207,7 +4213,7 @@ static int __write_data_page(struct page *page, bool *submitted,
 		.page = page,
 		.encrypted_page = NULL,
 		.submitted = false,
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		.compr_blocks = compr_blocks,
 #endif
 		.need_lock = LOCK_RETRY,
@@ -4237,7 +4243,7 @@ static int __write_data_page(struct page *page, bool *submitted,
 
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		goto redirty_out;
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	if (page->index < end_index || f2fs_verity_in_progress(inode) || compr_blocks)
 #else
 	if (page->index < end_index || f2fs_verity_in_progress(inode))
@@ -4732,7 +4738,11 @@ next:
 
 #if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	/* flush remained pages in compress cluster */
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+	if (f2fs_is_compressed_inode(inode) && !f2fs_cluster_is_empty(&cc)) {
+#else
 	if (f2fs_compressed_file(inode) && !f2fs_cluster_is_empty(&cc)) {
+#endif
 		ret = f2fs_write_multi_pages(&cc, &submitted, wbc, io_type);
 		nwritten += submitted;
 		wbc->nr_to_write -= submitted;
@@ -4741,7 +4751,11 @@ next:
 			retry = 0;
 		}
 	}
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+	if (f2fs_is_compressed_inode(inode))
+#else
 	if (f2fs_compressed_file(inode))
+#endif
 		f2fs_destroy_compress_ctx(&cc, false);
 #endif
 
@@ -4790,7 +4804,7 @@ static inline bool __should_serialize_io(struct inode *inode,
 		return false;
 	if (IS_NOQUOTA(inode))
 		return false;
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	if (f2fs_need_compress_data(inode))
 		return true;
 #else
