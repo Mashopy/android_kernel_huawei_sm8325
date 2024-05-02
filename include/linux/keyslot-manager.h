@@ -74,6 +74,10 @@ bool keyslot_manager_crypto_mode_supported(struct keyslot_manager *ksm,
 					   unsigned int data_unit_size,
 					   bool is_hw_wrapped_key);
 
+#ifdef CONFIG_DISK_MAGO
+unsigned int keyslot_manager_get_max_dun_bytes(struct keyslot_manager *ksm);
+#endif
+
 int keyslot_manager_evict_key(struct keyslot_manager *ksm,
 			      const struct blk_crypto_key *key);
 

@@ -131,14 +131,6 @@ enum pageflags {
 	PG_young,
 	PG_idle,
 #endif
-#ifdef CONFIG_DFX_MEMCHECK
-	PG_lslub,
-	PG_vmalloc,
-	PG_skb,
-	PG_ion,
-	PG_zspage,
-	PG_drv,
-#endif
 #ifdef CONFIG_ZRAM_NON_COMPRESS
 	PG_non_compress,
 #endif
@@ -470,15 +462,6 @@ TESTPAGEFLAG(Young, young, PF_ANY)
 SETPAGEFLAG(Young, young, PF_ANY)
 TESTCLEARFLAG(Young, young, PF_ANY)
 PAGEFLAG(Idle, idle, PF_ANY)
-#endif
-
-#ifdef CONFIG_DFX_MEMCHECK
-PAGEFLAG(Lslub, lslub, PF_ANY)
-PAGEFLAG(Vmalloc, vmalloc, PF_ANY)
-PAGEFLAG(ION, ion, PF_ANY)
-PAGEFLAG(SKB, skb, PF_ANY)
-PAGEFLAG(Zspage, zspage, PF_ANY)
-PAGEFLAG(Drv, drv, PF_ANY)
 #endif
 
 /*

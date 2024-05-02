@@ -47,6 +47,7 @@ enum adapter_support_mode {
 	ADAPTER_SUPPORT_SC = 0x2,
 	ADAPTER_SUPPORT_SC4 = 0x4,
 	ADAPTER_SUPPORT_HV = 0x8,
+	ADAPTER_TEST_MODE = 0X10,
 };
 
 enum adapter_support_type {
@@ -82,6 +83,8 @@ enum adapter_support_type {
 	ADAPTER_TYPE_YLR_20V5A_CAR,
 	ADAPTER_TYPE_FCR_C_11V6A, /* 20v2a 11v6a */
 	ADAPTER_TYPE_M7_11V6A,
+	ADAPTER_TYPE_FRO_20V4P4A,
+	ADAPTER_TYPE_XH_11V6A,
 };
 
 enum adapter_detect_error_code {
@@ -102,6 +105,20 @@ enum adapter_output_status {
 	ADAPTER_OUTPUT_OCP = 2,
 	ADAPTER_OUTPUT_OVP = 3,
 	ADAPTER_OUTPUT_UVP = 4,
+};
+
+enum adapter_source_info_para {
+	ADAPTER_OUTPUT_VOLT = 0,
+	ADAPTER_OUTPUT_CURR,
+	ADAPTER_PORT_TEMP,
+	ADAPTER_DEV_TEMP,
+};
+
+struct adapter_source_info {
+	int output_volt;
+	int output_curr;
+	int port_temp;
+	int dev_temp;
 };
 
 enum adapter_protocol_rw_error_flag {
@@ -156,6 +173,7 @@ enum adapter_protocol_device_id {
 	PROTOCOL_DEVICE_ID_RT1711H,
 	PROTOCOL_DEVICE_ID_FUSB30X,
 	PROTOCOL_DEVICE_ID_SM5450,
+	PROTOCOL_DEVICE_ID_HL7136,
 	PROTOCOL_DEVICE_ID_HL7139,
 	PROTOCOL_DEVICE_ID_SC8545,
 	PROTOCOL_DEVICE_ID_SC8562,
@@ -246,6 +264,7 @@ struct adapter_protocol_ops {
 	int (*get_power_curve)(struct adp_pwr_curve_para *val, int *size, int max_size);
 	int (*get_inside_temp)(int *temp);
 	int (*get_port_temp)(int *temp);
+	int (*get_source_info)(struct adapter_source_info *info);
 	int (*get_port_leakage_current_flag)(int *flag);
 	int (*auth_encrypt_start)(int key);
 	int (*set_usbpd_enable)(int enable);
@@ -260,8 +279,10 @@ struct adapter_protocol_ops {
 	int (*get_slave_status)(void);
 	int (*get_master_status)(void);
 	int (*stop_charging_config)(void);
+	int (*get_cable_info)(int *curr);
 	bool (*is_accp_charger_type)(void);
 	bool (*is_undetach_cable)(void);
+	bool (*is_scp_superior)(void);
 };
 
 struct adapter_protocol_dev {
@@ -300,6 +321,8 @@ int adapter_get_power_drop_current(int prot, int *cur);
 int adapter_get_power_curve(int prot, struct adp_pwr_curve_para *val, int *size, int max_size);
 int adapter_get_inside_temp(int prot, int *temp);
 int adapter_get_port_temp(int prot, int *temp);
+int adapter_get_source_info(int prot, struct adapter_source_info *info);
+int adapter_get_cable_info(int prot, int *curr);
 int adapter_get_port_leakage_current_flag(int prot, int *flag);
 int adapter_auth_encrypt_start(int prot, int key);
 int adapter_set_usbpd_enable(int prot, int enable);
@@ -316,6 +339,7 @@ int adapter_get_master_status(int prot);
 int adapter_stop_charging_config(int prot);
 bool adapter_is_accp_charger_type(int prot);
 bool adapter_is_undetach_cable(int prot);
+bool adapter_is_scp_superior(int prot);
 #else
 static inline struct adapter_protocol_dev *adapter_get_protocol_dev(void)
 {
@@ -468,6 +492,16 @@ static inline int adapter_get_port_temp(int prot, int *temp)
 	return -EPERM;
 }
 
+static inline int adapter_get_source_info(int prot, struct adapter_source_info *info)
+{
+	return -EPERM;
+}
+
+static inline int adapter_get_cable_info(int prot, int *curr)
+{
+	return -EPERM;
+}
+
 static inline int adapter_get_port_leakage_current_flag(int prot, int *flag)
 {
 	return -EPERM;
@@ -545,6 +579,11 @@ static inline bool adapter_is_accp_charger_type(int prot)
 }
 
 static inline bool adapter_is_undetach_cable(int prot)
+{
+	return false;
+}
+
+static inline bool adapter_is_scp_superior(int prot)
 {
 	return false;
 }

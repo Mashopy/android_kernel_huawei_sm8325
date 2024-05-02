@@ -58,6 +58,12 @@
 #define ADC_SAMPLE_COUNT_DEFAULT    0
 #define OCP_DELAY_2MS               2
 #define GET_ADC_FAIL                (-1)
+#define POGO_OTG_OUT                0
+#define POGO_OTG_INSERT             1
+
+#ifdef CONFIG_POGO_PIN
+int get_pogopin_otg_status(void);
+#endif
 
 struct pogopin_otg_id_dev {
 	struct platform_device *pdev;

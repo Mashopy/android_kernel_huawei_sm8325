@@ -43,7 +43,7 @@ enum himntn_id_enum {
 	HIMNTN_ID_UART_LOG_SWITCH,
 	HIMNTN_ID_MRK_SWITCH,
 	HIMNTN_ID_THREE_KEY_SWITCH,
-	HIMNTN_ID_KEl_DEBUGLOG_SWITCH,
+	HIMNTN_ID_KEL_DEBUGLOG_SWITCH,
 	HIMNTN_ID_PROC_PLLK_SWITCH,
 	HIMNTN_ID_PROC_LKMSG_SWITCH,
 	HIMNTN_ID_KERNEL_BUF_SWITCH,
@@ -81,5 +81,5 @@ void rb_kallsyms_set(const char *fmt);
 void* rb_bl_log_get(unsigned int *size);
 /* core interface for business module */
 void cmd_himntn_item_switch(unsigned int index, bool *rtn);
-
+bool cmd_himntn_bootdump_switch_fast(void);
 #endif /* _RAINBOW_INTERFACE_H */

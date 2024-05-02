@@ -54,6 +54,11 @@ struct hwufcs_verify_response_data {
 	u8 random[HWUFCS_VERIFY_RSP_RANDOM_SIZE];
 };
 
+struct hwufcs_verify_data {
+	struct hwufcs_verify_request_data req_data;
+	struct hwufcs_verify_response_data rsp_data;
+};
+
 #ifdef CONFIG_ADAPTER_PROTOCOL_UFCS
 bool hwufcs_auth_get_srv_state(void);
 int hwufcs_auth_wait_completion(void);

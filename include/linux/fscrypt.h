@@ -254,6 +254,9 @@ static inline void fscrypt_set_ops(struct super_block *sb,
 {
 	sb->s_cop = s_cop;
 }
+#ifdef CONFIG_F2FS_FS_DEDUP
+int __fscrypt_prepare_encrypt_info(struct inode *inode);
+#endif
 #else  /* !CONFIG_FS_ENCRYPTION */
 
 static inline bool fscrypt_has_encryption_key(const struct inode *inode)
@@ -567,6 +570,13 @@ static inline void fscrypt_set_ops(struct super_block *sb,
 				   const struct fscrypt_operations *s_cop)
 {
 }
+
+#ifdef CONFIG_F2FS_FS_DEDUP
+static inline int __fscrypt_prepare_encrypt_info(struct inode *inode)
+{
+	return -EOPNOTSUPP;
+}
+#endif
 
 #endif	/* !CONFIG_FS_ENCRYPTION */
 
@@ -882,5 +892,14 @@ static inline void fscrypt_finalize_bounce_page(struct page **pagep)
 		fscrypt_free_bounce_page(page);
 	}
 }
+
+#ifdef CONFIG_F2FS_FS_DEDUP
+static inline int fscrypt_prepare_encrypt_info(struct inode *inode)
+{
+	if (IS_ENCRYPTED(inode))
+		return __fscrypt_prepare_encrypt_info(inode);
+	return 0;
+}
+#endif
 
 #endif	/* _LINUX_FSCRYPT_H */

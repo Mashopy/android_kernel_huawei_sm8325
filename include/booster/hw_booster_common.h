@@ -17,6 +17,14 @@
 #define IFNAME_LEN_DOUBLE 2
 #define IFNAME_LEN_TRIPLE 3
 
+#define UDP_DNS_PORT 53
+#define TCP_DNS_PORT 853
+
+#define DS_NET_NAME "rmnet"
+#define DS_NET_NAME_LEN 5
+#define DS_NET_NAME_QCOM "rmnet_data"
+#define DS_NET_NAME_QCOM_PREFIX_LEN 10
+
 #define assign_short(p, val) (*(s16 *)(p) = (val))
 #define assign_int(p, val) (*(s32 *)(p) = (val))
 #define assign_uint(p, val) (*(u32 *)(p) = (val))

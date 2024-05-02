@@ -69,6 +69,7 @@ enum power_if_op_user {
 	POWER_IF_OP_USER_BMS_HEATING, /* for bms_heating daemon */
 	POWER_IF_OP_USER_BMS_AUTH, /* for bms_auth daemon */
 	POWER_IF_OP_USER_BATT_CT, /* for battery info daemon */
+	POWER_IF_OP_USER_RF, /* for rf interface */
 	POWER_IF_OP_USER_END,
 };
 
@@ -79,6 +80,7 @@ enum power_if_op_type {
 	POWER_IF_OP_TYPE_OTG, /* otg */
 	POWER_IF_OP_TYPE_HVC, /* hvc */
 	POWER_IF_OP_TYPE_PD, /* pd */
+	POWER_IF_OP_TYPE_DC, /* dc */
 	POWER_IF_OP_TYPE_LVC, /* lvc */
 	POWER_IF_OP_TYPE_SC, /* sc */
 	POWER_IF_OP_TYPE_MAINSC, /* mainsc */
@@ -115,8 +117,6 @@ struct power_if_ops {
 	int (*get_ichg_ratio)(unsigned int *value);
 	int (*set_vterm_dec)(unsigned int value);
 	int (*get_vterm_dec)(unsigned int *value);
-	int (*get_rt_test_time)(unsigned int *value);
-	int (*get_rt_test_result)(unsigned int *value);
 	int (*get_hota_iin_limit)(unsigned int *value);
 	int (*get_startup_iin_limit)(unsigned int *value);
 	int (*set_enable)(unsigned int value);

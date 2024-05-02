@@ -14,7 +14,7 @@
 #define INDEX_INVALID (-1)
 #define EMCOM_TRUE_VALUE  1
 #define EMCOM_XENGINE_DEFAULT_NET_ID 0
-#define EMCOM_XENGINE_NET_ID_MASK 0xff
+#define EMCOM_XENGINE_NET_ID_MASK 0xffff
 #define EMCOM_MAX_MPIP_APP 5
 #define EMCOM_MAX_CCALG_APP 5
 #define EMCOM_CONGESTION_CONTROL_ALG_BBR "bbr"
@@ -124,6 +124,8 @@ typedef enum {
 	EMCOM_XENGINE_NET_WLAN1,
 	EMCOM_XENGINE_NET_CELL1,
 	EMCOM_XENGINE_NET_WLAN2,
+	EMCOM_XENGINE_NET_P2P,
+	EMCOM_XENGINE_NET_ETH,
 	EMCOM_XENGINE_NET_MAX_NUM,
 	EMCOM_XENGINE_NET_DEFAULT = 15,
 } emcom_xengine_net_no;
@@ -184,6 +186,7 @@ struct emcom_xengine_network_info {
 
 void emcom_xengine_init(void);
 int emcom_xengine_clear(void);
+void emcom_xengine_network_info_clear(void);
 bool emcom_xengine_hook_ul_stub(struct sock *pstSock);
 void emcom_xengine_speedctrl_winsize(struct sock *pstSock, uint32_t *win);
 void emcom_xengine_udpenqueue(const struct sk_buff *skb);
@@ -208,5 +211,6 @@ int emcom_xengine_get_net_type_by_name(const char *iface_name);
 int emcom_xengine_get_sock_bound_net_type(const struct sock *sk);
 void emcom_xengine_process_http_req(const struct sk_buff *skb, int ip_type);
 char *emcom_xengine_get_network_iface_name(int net_type);
+void emcom_xengine_notify_sk_mark_modify(struct sock *sk, uint32_t new_mark);
 
 #endif

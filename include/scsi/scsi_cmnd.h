@@ -88,6 +88,9 @@ struct scsi_cmnd {
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	struct iomt_timestamp iomt_start_time;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	unsigned long req_start_time;
+#endif
 	int retries;
 	int allowed;
 

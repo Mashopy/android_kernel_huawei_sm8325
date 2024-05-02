@@ -15,6 +15,11 @@
 #define PATH2_RATIO 2
 #define PATH3_RATIO 3
 
+#define MPROUTE_SK_MARK_MIN 2000
+#define MPROUTE_SK_MARK_MAX 2100
+#define MPROUTE_FWMARK_CONTROL_MASK 0xFFFF0000
+#define MPROUTE_FWMARK_NEW_MASK 0xFFFF
+
 struct mproute_xengine_head {
 	unsigned short type;
 	unsigned short len;
@@ -28,40 +33,48 @@ enum MpRouteReqMsgType {
 	MPROUTE_NOTIFY_NETWORK_INFO,
 	MPROUTE_STOP,
 	MPROUTE_CLEAR_POLICY,
+	MPROUTE_NOTIFY_MPDNS_CFG,
+	MPROUTE_NOTIFY_MPDNS_RESULT,
+	MPROUTE_NOTIFY_CLEAR_STATE,
 	MPROUTE_CMD_NUM,
 };
 
 typedef struct {
 	uint32_t uid;
-	int32_t best_mark; // the best qos mark
+	uint32_t best_mark; // the best qos mark
 	uint8_t mark_count; // the num of mark
-	int32_t mark[EMCOM_MPROUTER_MAX_MARK]; // all mark value
+	uint32_t mark[EMCOM_MPROUTER_MAX_MARK]; // all mark value
 } mproute_policy;
 
 struct reset_mproute_policy {
-	uint8_t        act;
-	uint32_t      const_perid;
-	int      rst_mark;
+	uint8_t act;
+	uint32_t const_perid;
+	uint32_t rst_to_mark;
 };
 
 struct reset_mproute_policy_info {
-	uint32_t uid; /* The uid of application */
+	uint32_t uid;
 	struct reset_mproute_policy policy;
 	struct flow_info flow;
 };
 
 struct transfer_mproute_flow_info {
-	uint32_t uid; /* The uid of application */
+	uint32_t uid;
+	uint32_t rst_from_mark;
 	struct reset_mproute_policy policy;
 };
 
-mproute_policy *emcom_mproute_get_policy(void);
+uint32_t emcom_mproute_get_best_mark(void);
 void emcom_mproute_evt_proc(int32_t event, const uint8_t *data, uint16_t len);
 int emcom_mproute_getmark(int8_t index, uid_t uid, struct sockaddr *uaddr, uint8_t proto);
 int emcom_mproute_bind_burst(int8_t index, uint16_t dport, uint8_t proto,
 	struct emcom_xengine_mpflow_ai_burst_port *burst_info);
-void emcom_mproute_set_default_mark(int32_t mark);
-int32_t emcom_mproute_get_default_mark(void);
+void emcom_mproute_set_default_mark(uint32_t mark);
+uint32_t emcom_mproute_get_default_mark(void);
 void emcom_mproute_init(void);
+void emcom_mproute_close_tcp_flow(const uint32_t uid, const uint32_t rst_to_mark,
+	const uint32_t rst_from_mark);
+void emcom_mproute_close_udp_flow(const uint32_t uid, const uint32_t rst_to_mark,
+	const reset_act act, const uint32_t rst_from_mark);
 
 #endif

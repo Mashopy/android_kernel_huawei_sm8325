@@ -57,9 +57,11 @@ struct buck_charge_dev {
 	bool dc_adp;
 	u32 ffc_only_chr_done;
 	int ffc_delay_cnt;
+	u32 ibus_limit_after_chg_done;
 	struct delayed_work buck_charge_work;
 	struct work_struct stop_charge_work;
 	struct notifier_block event_nb;
+	struct notifier_block chg_event_nb;
 	struct notifier_block dc_event_nb;
 	struct bc_jeita_para jeita_table[BC_JEITA_PARA_LEVEL];
 	struct bc_jeita_result jeita_result;

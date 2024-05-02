@@ -348,6 +348,10 @@ int chr_notify_event(int event, int pid,
 		packet->src_addr = 0;
 		memcpy(&(packet->rtn_stat), prtn,
 			RNT_SIZE * sizeof(struct http_return));
+	} else if (event == TCP_RECOVER_HIVIEW_ID) {
+		packet->chr_event = event;
+		packet->src_addr = 0;
+		memcpy(&(packet->rtn_stat), prtn, sizeof(struct http_return)); /* unsafe_function_ignore: memcpy */
 	}
 
 	/* skb will be freed in netlink_unicast */

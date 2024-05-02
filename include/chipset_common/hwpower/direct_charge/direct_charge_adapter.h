@@ -21,6 +21,7 @@
 #define _DIRECT_CHARGE_ADAPTER_H_
 
 #include <linux/errno.h>
+#include <chipset_common/hwpower/protocol/adapter_protocol.h>
 
 /* define protocol power supply operator for direct charge */
 struct dc_pps_ops {
@@ -44,6 +45,8 @@ int dc_get_adapter_current_set(int *value);
 int dc_get_power_drop_current(int *value);
 int dc_get_adapter_max_current(int value);
 int dc_get_adapter_temp(int *value);
+int dc_get_adapter_source_info(unsigned int flag, struct adapter_source_info *data);
+int dc_get_adapter_cable_info(int *curr);
 int dc_get_protocol_register_state(void);
 int dc_set_adapter_voltage(int value);
 int dc_set_adapter_current(int value);
@@ -57,6 +60,7 @@ bool dc_get_adapter_antifake_result(void);
 int dc_get_adapter_antifake_failed_cnt(void);
 int dc_check_adapter_antifake(void);
 bool dc_is_undetach_cable(void);
+bool dc_is_scp_superior(void);
 int dc_get_adapter_ilimit(void);
 #else
 static inline int dc_pps_ops_register(struct dc_pps_ops *ops)
@@ -138,6 +142,16 @@ static inline int dc_get_adapter_temp(int *value)
 	return -EPERM;
 }
 
+static inline int dc_get_adapter_source_info(unsigned int flag, struct adapter_source_info *data)
+{
+	return -EPERM;
+}
+
+static inline int dc_get_adapter_cable_info(int *curr)
+{
+	return -EPERM;
+}
+
 static inline int dc_get_protocol_register_state(void)
 {
 	return -EPERM;
@@ -198,6 +212,11 @@ static inline int dc_check_adapter_antifake(void)
 }
 
 static inline bool dc_is_undetach_cable(void)
+{
+	return false;
+}
+
+static inline bool dc_is_scp_superior(void)
 {
 	return false;
 }

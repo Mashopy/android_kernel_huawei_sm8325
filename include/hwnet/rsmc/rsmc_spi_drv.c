@@ -718,6 +718,30 @@ int smc_parse_spi_config(struct device_node *smc_node,
 	return 0;
 }
 
+int smc_parse_feature_config(struct device_node *node,
+	struct smc_core_data *cd)
+{
+	u32 value = 0;
+	int rc;
+
+	if (node == NULL || cd == NULL) {
+		hwlog_info("%s: input null\n", __func__);
+		return -ENODEV;
+	}
+
+	rc = of_property_read_u32(node, "cpu-affinity-offset", &value);
+	if (!rc) {
+		cd->feature_config.cpu_affinity_offset = value;
+		hwlog_info("%s: cpu_affinity_offset=%d\n", __func__, value);
+	}
+	rc = of_property_read_u32(node, "cpu-affinity-mask", &value);
+	if (!rc) {
+		cd->feature_config.cpu_affinity_mask = value;
+		hwlog_info("%s: cpu_affinity_mask=%d\n", __func__, value);
+	}
+	return 0;
+}
+
 int smc_parse_config(struct device_node *smc_node,
 	struct smc_core_data *cd)
 {
@@ -734,6 +758,9 @@ int smc_parse_config(struct device_node *smc_node,
 	ret = smc_parse_spi_config(smc_node, cd);
 	if (ret != 0)
 		return ret;
+	ret = smc_parse_feature_config(smc_node, cd);
+	if (ret != 0)
+		hwlog_info("%s: can not read feature config", __func__);
 
 	cd->smc_node = smc_node;
 

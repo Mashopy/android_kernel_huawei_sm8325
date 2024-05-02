@@ -41,5 +41,33 @@ static inline void swap_cgroup_swapoff(int type)
 }
 
 #endif /* CONFIG_MEMCG_SWAP */
+#ifdef CONFIG_HYPERHOLD
+__attribute__((unused)) static struct mem_cgroup *get_memcg_from_swap_entry(swp_entry_t entry)
+{
+	struct mem_cgroup *mcg = NULL;
+	unsigned short id;
+
+	id = lookup_swap_cgroup_id(entry);
+	rcu_read_lock();
+	mcg = mem_cgroup_from_id(id);
+	if (mcg)
+		css_get(&mcg->css);
+	rcu_read_unlock();
+
+	return mcg;
+}
+
+__attribute__((unused)) static void swap_entry_memcg_put(struct mem_cgroup *mcg)
+{
+	if (mcg)
+		css_put(&mcg->css);
+}
+#else
+__attribute__((unused)) static inline struct mem_cgroup *get_memcg_from_swap_entry(swp_entry_t entry)
+{
+	return NULL;
+}
+__attribute__((unused)) static inline void swap_entry_memcg_put(struct mem_cgroup *mcg) {}
+#endif
 
 #endif /* __LINUX_SWAP_CGROUP_H */

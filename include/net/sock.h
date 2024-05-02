@@ -317,7 +317,7 @@ struct bpf_sk_storage;
   *	@sk_tskey: counter to disambiguate concurrent tstamp requests
   *	@sk_zckey: counter to order MSG_ZEROCOPY notifications
   *	@sk_socket: Identd and reporting IO signals
-  *	@sk_user_data: RPC layer private data
+  *	@sk_user_data: RPC layer private data. Write-protected by @sk_callback_lock.
   *	@sk_frag: cached page frag
   *	@sk_peek_off: current peek_offset value
   *	@sk_send_head: front of stuff to transmit
@@ -562,11 +562,12 @@ struct sock {
 #endif
 
 #ifdef CONFIG_HUAWEI_XENGINE
-	int hicom_flag;
+	int	hicom_flag;
 	u8	snd_pkt_cnt;
-	u8	is_mp_flow:1,
-		is_download_flow:1,
-		is_mp_flow_bind:1;
+	u8	is_mp_flow : 1;
+	u8	is_download_flow : 1;
+	u8	is_mp_flow_bind : 1;
+	u8	is_modify_sk_mark : 1;
 #endif
 
 #ifdef CONFIG_CGROUP_BPF
@@ -579,6 +580,11 @@ struct sock {
 
 #ifdef CONFIG_HW_DPIMARK_MODULE
 	unsigned long	sk_born_stamp;
+#endif
+
+#ifdef CONFIG_HW_NETWORK_DCP
+	u8 is_first_packet;
+	u16 v6_index;
 #endif
 
 	ANDROID_KABI_RESERVE(1);
@@ -1785,6 +1791,11 @@ void sk_common_release(struct sock *sk);
  */
 
 /* Initialise core socket variables */
+void sock_init_data_uid(struct socket *sock, struct sock *sk, kuid_t uid);
+
+/* Initialise core socket variables.
+ * Assumes struct socket *sock is embedded in a struct socket_alloc.
+ */
 void sock_init_data(struct socket *sock, struct sock *sk);
 
 /*

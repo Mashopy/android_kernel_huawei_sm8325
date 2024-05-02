@@ -120,7 +120,7 @@ struct wldc_init_para {
 	int dc_type;
 	const char *dc_name;
 	int ext_pwr_type;
-	int rx_ratio;
+	int cp_ratio;
 	int vbatt_min;
 	int vbatt_max;
 	int rx_vout;
@@ -188,7 +188,7 @@ struct wldc_ic_data {
 };
 
 struct wldc_regulation_data {
-	int rx_ratio;
+	int cp_ratio;
 	int rx_vrect;
 	int rx_vout;
 	int rx_iout;
@@ -234,7 +234,7 @@ struct wldc_dev_info {
 	int cur_stage;
 	int ctrl_interval;
 	int calc_interval;
-	int volt_ratio;
+	int dc_ratio;
 	int cur_vbat_hth;
 	int cur_cp_iout_hth;
 	int cur_cp_iout_lth;

@@ -170,6 +170,9 @@ struct mmc_request {
 	u64 data_unit_num;
 	const struct blk_crypto_key *crypto_key;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	unsigned long		req_start_time;
+#endif
 };
 
 #ifdef CONFIG_MMC_CRYPTO

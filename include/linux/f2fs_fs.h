@@ -126,6 +126,9 @@ struct f2fs_super_block {
 /*
  * For checkpoint
  */
+#ifdef CONFIG_DISK_MAGO
+#define CP_MIRROR_SPACE_FLAG		0x00020000
+#endif
 #define CP_DISABLED_QUICK_FLAG		0x00010000
 #define CP_RESIZEFS_FLAG		0x00008000
 #define CP_DISABLED_FLAG		0x00004000

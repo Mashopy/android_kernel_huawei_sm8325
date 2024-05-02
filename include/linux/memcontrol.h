@@ -24,6 +24,7 @@
 #ifdef CONFIG_HYPERHOLD
 #include <linux/memcg_policy.h>
 #endif
+#include <linux/parallel_swapd.h>
 
 struct mem_cgroup;
 struct page;
@@ -240,6 +241,10 @@ struct mem_cgroup {
 
 	/* Range enforcement for interrupt charges */
 	struct work_struct high_work;
+
+#ifdef CONFIG_PARA_SWAPD
+	struct mm_parad_work zpara;
+#endif
 
 	unsigned long soft_limit;
 

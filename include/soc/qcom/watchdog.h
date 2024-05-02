@@ -159,6 +159,9 @@ int qcom_wdt_register(struct platform_device *pdev,
 int qcom_wdt_pet_suspend(struct device *dev);
 int qcom_wdt_pet_resume(struct device *dev);
 int qcom_wdt_remove(struct platform_device *pdev);
+#if IS_ENABLED(CONFIG_SHUI_DETECTOR)
+void qcom_wdt_pet_stop(void *ignore, void *extra);
+#endif
 #else
 static inline void qcom_wdt_trigger_bite(void) { }
 #endif

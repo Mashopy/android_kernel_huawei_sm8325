@@ -63,6 +63,8 @@ struct wltx_ic_ops {
 	int (*set_rp_dm_to)(u8 timeout, void *dev_data);
 	int (*set_vset)(int vset, void *dev_data);
 	int (*set_bridge)(unsigned int v_ask, unsigned int bridge, void *dev_data);
+	int (*lowpower_enable)(bool flag, void *dev_data);
+	int (*q_calibration)(void *dev_data);
 };
 
 #ifdef CONFIG_WIRELESS_CHARGER
@@ -106,6 +108,8 @@ int wltx_ic_set_fod_coef(unsigned int type, u16 ploss_th, u8 ploss_cnt);
 int wltx_ic_set_rp_dm_to(unsigned int type, u16 timeout);
 int wltx_ic_set_vset(unsigned int type, int vset);
 int wltx_ic_set_bridge(unsigned int type, unsigned int v_ask, unsigned int bridge);
+int wltx_ic_lowpower_enable(unsigned int type, bool flag);
+int wltx_ic_q_calibration(unsigned int type);
 #else
 static inline int wltx_ic_ops_register(struct wltx_ic_ops *ops, unsigned int type)
 {
@@ -301,6 +305,16 @@ static inline int wltx_ic_set_vset(unsigned int type, int vset)
 }
 
 static inline int wltx_ic_set_bridge(unsigned int type, unsigned int v_ask, unsigned int bridge)
+{
+	return -EPERM;
+}
+
+static inline int wltx_ic_lowpower_enable(unsigned int type, bool flag)
+{
+	return -EPERM;
+}
+
+static inline int wltx_ic_q_calibration(unsigned int type)
 {
 	return -EPERM;
 }

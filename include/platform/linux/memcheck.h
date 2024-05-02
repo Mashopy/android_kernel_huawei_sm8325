@@ -2,7 +2,6 @@
 #define _MEMCHECK_H
 
 #include <linux/types.h>
-
 #ifdef __KERNEL__
 #ifdef CONFIG_DFX_MEMCHECK
 #include <asm/ioctls.h>
@@ -12,11 +11,118 @@
 #include <sys/ioctl.h>
 #endif /* __KERNEL__ */
 
-#define MEMCHECK_CMD_INVALID	0xFFFFFFFF
+#define IDX_JAVA 0
+#define IDX_NATIVE 1
+#define IDX_SLUB 2
+#define IDX_VMALLOC 3
+#define IDX_ION 4
+#define IDX_GPU 5
+#define IDX_ASHMEM 6
+#define IDX_CMA 7
+#define IDX_COUNT 8
+
+#define MTYPE_NONE 0
+#define MTYPE_JAVA (1 << IDX_JAVA)
+#define MTYPE_NATIVE (1 << IDX_NATIVE)
+#define MTYPE_PSS (MTYPE_JAVA | MTYPE_NATIVE)
+#define MTYPE_SLUB (1 << IDX_SLUB)
+#define MTYPE_VMALLOC (1 << IDX_VMALLOC)
+#define MTYPE_ION (1 << IDX_ION)
+#define MTYPE_GPU (1 << IDX_GPU)
+#define MTYPE_ASHMEM (1 << IDX_ASHMEM)
+#define MTYPE_CMA (1 << IDX_CMA)
+
+#define MEMCHECK_CMD_INVALID		0xFFFFFFFF
+#define MEMCHECK_MAGIC			0x5377FEFA
+#define MEMCHECK_PID_INVALID		0xFFDEADFF
+#define MEMCHECK_STACKINFO_MAXSIZE	(5 * 1024 * 1024)
+
+#define __MEMCHECKIO			0xAF
+#define LOGGER_MEMCHECK_PSS_READ	_IO(__MEMCHECKIO, 1)
+#define LOGGER_MEMCHECK_COMMAND		_IO(__MEMCHECKIO, 2)
+#define LOGGER_MEMCHECK_STACK_READ	_IO(__MEMCHECKIO, 3)
+#define LOGGER_MEMCHECK_STACK_SAVE	_IO(__MEMCHECKIO, 4)
+#define LOGGER_MEMCHECK_MIN		LOGGER_MEMCHECK_PSS_READ
+#define LOGGER_MEMCHECK_MAX		LOGGER_MEMCHECK_STACK_SAVE
+
+#define SIGNO_MEMCHECK			44
+#define ADDR_JAVA_ENABLE		(1 << 0)
+#define ADDR_JAVA_DISABLE		(1 << 1)
+#define ADDR_JAVA_SAVE			(1 << 2)
+#define ADDR_JAVA_CLEAR			(1 << 3)
+#define ADDR_NATIVE_ENABLE		(1 << 4)
+#define ADDR_NATIVE_DISABLE		(1 << 5)
+#define ADDR_NATIVE_SAVE		(1 << 6)
+#define ADDR_NATIVE_CLEAR		(1 << 7)
+#define ADDR_NATIVE_DETAIL_INFO		(1 << 8)
+
+/* do not change the order or insert any value before MEMCMD_CLEAR_LOG */
+enum memcmd {
+	MEMCMD_NONE,
+	MEMCMD_ENABLE,
+	MEMCMD_DISABLE,
+	MEMCMD_SAVE_LOG,
+	MEMCMD_CLEAR_LOG,
+	MEMCMD_MAX
+};
 
 #ifdef __KERNEL__
 #ifdef CONFIG_DFX_MEMCHECK
+struct memstat_pss {
+	u32 magic;
+	u32 id;
+	u32 type;
+	u64 pss;
+	u64 swap;
+	u64 java_pss;
+	u64 native_pss;
+};
+
+struct track_cmd {
+	u32 magic;
+	u32 id;
+	u32 type;
+	u64 timestamp;
+	enum memcmd cmd;
+};
+
+struct stack_info {
+	u32 magic;
+	u32 type;
+	u64 size;
+	char data[0];
+};
+#endif /* CONFIG_DFX_MEMCHECK */
+#else
+struct memstat_pss {
+	__u32 magic;
+	__u32 id;
+	__u32 type;
+	__u64 pss;
+	__u64 swap;
+	__u64 java_pss;
+	__u64 native_pss;
+};
+
+struct track_cmd {
+	__u32 magic;
+	__u32 id;
+	__u32 type;
+	__u64 timestamp;
+	enum memcmd cmd;
+};
+
+struct stack_info {
+	__u32 magic;
+	__u32 type;
+	__u64 size;
+	char data[0];
+};
+#endif /* __KERNEL__ */
+
+#ifdef __KERNEL__
 struct file;
+#ifdef CONFIG_DFX_MEMCHECK
 long memcheck_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 #else /* CONFIG_DFX_MEMCHECK */
 static inline long memcheck_ioctl(struct file *file, unsigned int cmd,
@@ -27,76 +133,4 @@ static inline long memcheck_ioctl(struct file *file, unsigned int cmd,
 #endif /* CONFIG_DFX_MEMCHECK */
 #endif /* __KERNEL__ */
 
-#ifdef CONFIG_DFX_MEMCHECK
-#define SLAB_MM_NOTRACE     0x10000000UL
-#define SLAB_MM_TRACE       0x20000000UL
-void mm_mem_stats_show(void);
-void mm_set_vmalloc_page_zone_state(struct page *page, bool is_add);
-#else
-#define SLAB_MM_NOTRACE     0x00000000UL
-#define SLAB_MM_TRACE       0x00000000UL
-static inline void mm_mem_stats_show(void)
-{
-}
-static inline void mm_set_vmalloc_page_zone_state(struct page *page, bool is_add)
-{
-}
-#endif
-
-#ifdef CONFIG_DFX_MEMCHECK_DETAIL
-void mm_vmalloc_detail_show(void);
-#else
-static inline void mm_vmalloc_detail_show(void)
-{
-}
-#endif
-
-#ifdef CONFIG_DFX_MEMCHECK_DETAIL
-void get_slub_detail_info(void);
-#else
-static inline void get_slub_detail_info(void)
-{
-}
-#endif
-
-#ifdef CONFIG_DFX_MEMCHECK_STACK
-int mm_buddy_track_map(int nid);
-#else
-static inline int mm_buddy_track_map(int nid)
-{
-	return 0;
-}
-#endif
-
-#ifdef CONFIG_DFX_MEMCHECK_EXT
-void mm_ion_process_info(void *idev);
-#else /* CONFIG_DFX_MEMCHECK_EXT */
-static inline void mm_ion_process_info(void *idev)
-{
-}
-#endif /* CONFIG_DFX_MEMCHECK_EXT */
-
-#ifdef CONFIG_DFX_MEMCHECK_EXT
-void mm_ashmem_process_info(void);
-#else /* CONFIG_DFX_MEMCHECK_EXT */
-static inline void mm_ashmem_process_info(void)
-{
-}
-#endif /* CONFIG_DFX_MEMCHECK_EXT */
-
-#ifdef CONFIG_DFX_MEMCHECK_EXT
-void ion_heap_show(void);
-#else
-static inline void ion_heap_show(void)
-{
-}
-#endif /* CONFIG_DFX_MEMCHECK_EXT*/
-
-#ifdef CONFIG_DFX_MEMCHECK_EXT
-void ashmem_info_show(void);
-#else
-static inline void ashmem_info_show(void)
-{
-}
-#endif /* CONFIG_DFX_MEMCHECK_EXT*/
 #endif /* _MEMCHECK_H */

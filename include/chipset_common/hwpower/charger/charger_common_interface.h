@@ -103,6 +103,8 @@ struct charge_switch_ops {
 
 int charge_get_first_insert(void);
 void charge_set_first_insert(int flag);
+void charge_set_fcp_enable_flag(bool enable);
+bool charge_fcp_enable(void);
 unsigned int charge_get_wakelock_flag(void);
 void charge_set_wakelock_flag(unsigned int flag);
 unsigned int charge_get_monitor_work_flag(void);

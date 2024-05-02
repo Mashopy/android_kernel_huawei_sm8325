@@ -90,6 +90,11 @@ struct adapter {
 		int (*set_stage)(int stage);
 		int (*get_stage)(int *pstage);
 	} stage_ops;
+#ifdef CONFIG_SHUT_DETECTOR
+	struct {
+		int (*set_stage)(void);
+	} shut_stage_ops;
+#endif
 	void (*print)(const char *format, ...);
 	void (*sha256)(unsigned char *pout, unsigned long out_len,
 		const void *pin, unsigned long in_len);

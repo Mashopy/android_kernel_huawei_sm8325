@@ -19,9 +19,17 @@
 #include <linux/mmc/pm.h>
 #include <linux/dma-direction.h>
 #include <linux/ipc_logging.h>
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/disk_mago_latency.h>
+#endif
 
 struct mmc_ios {
-	unsigned int	clock;			/* clock rate */
+	unsigned int	clock;       /* clock rate */
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	unsigned int	old_rate;    /* saved clock rate */
+	unsigned int	clock_store;
+	unsigned long	clk_ts;      /* time stamp of last updated clock */
+#endif
 	unsigned short	vdd;
 	unsigned int	power_delay_ms;		/* waiting for stable power */
 
@@ -581,6 +589,9 @@ struct mmc_host {
 #ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
         void *iomt_host_info;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	struct mago_io_latency_stat *mago_latency;
+#endif
 	/* Command Queue Engine (CQE) support */
 	const struct mmc_cqe_ops *cqe_ops;
 	void			*cqe_private;
@@ -605,6 +616,10 @@ struct mmc_host {
 	int sd_sim_boost_5v;
 	struct wakeup_source *detect_wake_lock;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	int emmc_rst_gpio; /* emmc_rst_gpio */
+	int emmc_vccq_gpio; /* emmc_vccq_gpio */
+#endif
 	/* Host Software Queue support */
 	bool			hsq_enabled;
 #if defined(CONFIG_SDC_QTI)
@@ -625,6 +640,9 @@ void mmc_remove_host(struct mmc_host *);
 void mmc_free_host(struct mmc_host *);
 int mmc_of_parse(struct mmc_host *host);
 int mmc_of_parse_voltage(struct device_node *np, u32 *mask);
+#ifdef CONFIG_DISK_MAGO
+int emmc_gpio_set_value(int gpio_num, int value);
+#endif
 
 #ifdef CONFIG_MMC_IPC_LOGGING
 #define NUM_LOG_PAGES		10

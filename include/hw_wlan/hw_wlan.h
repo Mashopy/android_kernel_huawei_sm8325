@@ -3,6 +3,9 @@
 #define HW_WLAN_H
 #include <linux/types.h> /* for size_t */
 
+#ifndef DSM_WIFI_ICMP_WAKEUP_ERROR
+#define DSM_WIFI_ICMP_WAKEUP_ERROR (909030002)
+#endif
 #ifndef DSM_WIFI_MODULE_INIT_ERROR
 #define DSM_WIFI_MODULE_INIT_ERROR (909030001)
 #endif
@@ -32,4 +35,5 @@ void hw_wlan_dsm_client_notify(int dsm_id, const char *fmt, ...);
 int hw_wlan_get_cust_ini_path(char *ini_path, size_t len);
 bool hw_wlan_is_driver_match(const char *driver_module_name);
 const void *hw_wlan_get_board_name(void);
+void hw_wlan_set_ipa_enable(bool enable);
 #endif //HW_WLAN_H

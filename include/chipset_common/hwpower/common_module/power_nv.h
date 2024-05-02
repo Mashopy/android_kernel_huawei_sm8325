@@ -22,6 +22,16 @@
 
 #include <linux/types.h>
 
+#define NV_LEN                  104
+#define HW_COUL_NV_RESERVE_LEN  (NV_LEN - sizeof(int) - sizeof(int) - sizeof(int))
+
+struct hw_coul_nv_info {
+	int cycle_count;
+	int io_status;
+	int fcc;
+	char reserved[HW_COUL_NV_RESERVE_LEN];
+};
+
 enum power_nv_type {
 	POWER_NV_TYPE_BEGIN = 0,
 	POWER_NV_BLIMSW = POWER_NV_TYPE_BEGIN,

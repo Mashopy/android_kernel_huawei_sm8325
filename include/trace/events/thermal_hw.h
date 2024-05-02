@@ -42,6 +42,7 @@ TRACE_EVENT(IPA_boost,
 		__entry->boost_timeout)
 );
 
+#ifdef CONFIG_HW_IPA_THERMAL_QCOM
 TRACE_EVENT(cpu_update_policy,
 	TP_PROTO(unsigned int cid, unsigned long clipped_freq),
 
@@ -59,6 +60,23 @@ TRACE_EVENT(cpu_update_policy,
 
 	TP_printk("cpuid=%d clipped_freq=%d",
 		__entry->cid, __entry->clipped_freq)
+);
+
+TRACE_EVENT(gpu_update_policy,
+	TP_PROTO(unsigned long clipped_freq),
+
+	TP_ARGS(clipped_freq),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, clipped_freq)
+	),
+
+	TP_fast_assign(
+		__entry->clipped_freq = clipped_freq;
+	),
+
+	TP_printk("gpu clipped_freq=%d",
+		__entry->clipped_freq)
 );
 
 TRACE_EVENT(tz_target,
@@ -285,3 +303,4 @@ TRACE_EVENT(cpu_static_power,
 		__entry->nr_cpus, __entry->temperature, __entry->t_scale,
 		__entry->v_scale, __entry->cpu_coeff)
 	);
+#endif

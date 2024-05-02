@@ -12,4 +12,6 @@ obj-$(CONFIG_HW_DPIMARK_MODULE) += hw_dpi_mark/
 obj-$(CONFIG_HW_WAUDIO_MODULE) += waudio/
 obj-$(CONFIG_HW_WIFI_EXT) += wifi_ext_adaptor/
 obj-$(CONFIG_HW_RSMC) += rsmc/
+obj-$(CONFIG_HW_RSMC) += rsmc_x801/
+obj-$(CONFIG_HW_NETWORK_DCP) += network_dcp/
 EXTRA_CFLAGS += -Idriver/huawei_platform

@@ -73,6 +73,12 @@
 #include "stream_detect.h"
 #endif
 
+#ifdef CONFIG_HW_NETWORK_DCP
+#include <hwnet/network_dcp/network_dcp_handle.h>
+#endif
+
+#include "app_proxy.h"
+
 #undef HWLOG_TAG
 #define HWLOG_TAG monitor_handle
 HWLOG_REGIST();
@@ -129,6 +135,8 @@ const u16 cmd_map_model[CMD_NUM_MAX][MAP_ENTITY_NUM] = {
 	{DEL_FG_UID, PACKET_FILTER_BYPASS},
 	{BYPASS_FG_UID, PACKET_FILTER_BYPASS},
 	{NOPASS_FG_UID, PACKET_FILTER_BYPASS},
+	{SOCKET_CLOSE_DETECT_UID_ADD, PACKET_FILTER_BYPASS},
+	{SOCKET_CLOSE_DETECT_UID_DEL, PACKET_FILTER_BYPASS},
 	/* hw_packet_filter_bypass end */
 	{TCP_PKT_COLLEC_CMD, TCP_PARA_COLLEC},
 	{BIND_UID_PROCESS_TO_NETWORK_CMD, NETWORK_SLICE_MANAGEMENT},
@@ -163,7 +171,8 @@ const u16 cmd_map_model[CMD_NUM_MAX][MAP_ENTITY_NUM] = {
 	{ SYNC_TOP_UID_LIST, IP_PARA_COLLEC },
 	{ UPDATE_WIFI_STATE, IP_PARA_COLLEC },
 	{ UPDATE_VIRTUAL_SIM_STATE, IP_PARA_COLLEC },
-	{ UPDATE_QOE_VERSION_INFO, BOOSTER_COMM }
+	{ UPDATE_QOE_VERSION_INFO, BOOSTER_COMM },
+	{ APP_PROXY_CMD, NETWORK_DCP}
 };
 
 static void nl_notify_event(struct res_msg_head *msg)
@@ -423,6 +432,9 @@ static const net_link_func_handler_stru s_init_comm_msg_tbl[] = {
 #endif
 	{ HONGBAO, update_wechat_init, "update_wechat_init" },
 	{ BOOSTER_COMM, hw_booster_common_init, "hw_booster_common_init" },
+#ifdef CONFIG_HW_NETWORK_DCP
+	{ NETWORK_DCP, hw_app_proxy_init, "app_proxy_init" },
+#endif
 };
 
 static int __init netlink_handle_module_init(void)

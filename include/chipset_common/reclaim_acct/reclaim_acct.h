@@ -20,10 +20,11 @@
 #define _RECLAIM_ACCT_H
 
 #include <linux/sched.h>
+#include <linux/shrinker.h>
 
 /* RA is the abbreviation of reclaim accouting */
 enum reclaimacct_stubs {
-	RA_DIRECTRECLAIM = 0,
+	RA_RECLAIM = 0,
 	RA_DRAINALLPAGES,
 	RA_SHRINKFILE,
 	RA_SHRINKANON,
@@ -31,44 +32,36 @@ enum reclaimacct_stubs {
 };
 #define NR_RA_STUBS (RA_SHRINKSLAB + 1)
 
-#define DIRECT_RECLAIM_STR "direct_reclaim"
-#define DRAIN_ALL_PAGES_STR "drain_all_pages"
-#define SHRINK_FILE_LIST_STR "shrink_file_list"
-#define SHRINK_ANON_LIST_STR "shrink_anon_list"
-#define SHRINK_SLAB_STR "shrink_slab"
+enum ra_reclaim_type {
+	DIRECT_RECLAIMS = 0,
+	KSWAPD_RECLAIM,
+	ZSWAPD_RECLAIM,
+};
+#define RECLAIM_TYPES (ZSWAPD_RECLAIM + 1)
 
-#define DELAY_LV0 5000000 /* 5ms */
-#define DELAY_LV1 10000000 /* 10ms */
-#define DELAY_LV2 50000000 /* 50ms */
-#define DELAY_LV3 100000000 /* 100ms */
-#define DELAY_LV4 2000000000 /* 2000ms */
-#define DELAY_LV5 50000000000 /* 50000ms */
-#define NR_DELAY_LV 6
+static inline bool is_system_reclaim(enum ra_reclaim_type type)
+{
+	return (type == KSWAPD_RECLAIM || type == ZSWAPD_RECLAIM);
+}
 
 void reclaimacct_tsk_init(struct task_struct *tsk);
 void reclaimacct_init(void);
-void reclaimacct_directreclaim_start(void);
-void reclaimacct_directreclaim_end(void);
-void reclaimacct_directcompact_start(void);
-void reclaimacct_directcompact_end(void);
-void reclaimacct_drainallpages_start(void);
-void reclaimacct_drainallpages_end(void);
-void reclaimacct_shrinklist_start(int file);
-void reclaimacct_shrinklist_end(int file);
-void reclaimacct_shrinkslab_start(void);
-void reclaimacct_shrinkslab_end(const void *shrinker);
 
-enum ra_show_type {
-	RA_DELAY,
-	RA_COUNT,
-	RA_DELAY_MAX,
-	RA_DELAY_MAX_T,
-};
+void reclaimacct_start(enum ra_reclaim_type type);
+void reclaimacct_end(enum ra_reclaim_type type);
+void reclaimacct_destroy(void);
 
-/*
- * When type is RA_DELAY or RA_COUNT, the caller should make sure
- * 0 <= level < NR_DELAY_LV and 0 <= stub < NR_RA_STUBS.
- */
-u64 reclaimacct_get_data(enum ra_show_type type, int level, int stub);
+void reclaimacct_substage_start(enum reclaimacct_stubs stub, struct shrinker *shrinker);
+void reclaimacct_substage_end(enum reclaimacct_stubs stub, unsigned long freed,
+	unsigned long scanned, struct shrinker *shrinker);
+
+void reclaimacct_get_nr_to_scan(const unsigned long *nr);
+void kswapd_change_block_status(void);
+
+bool is_super_cache_scan(void *scan_objects);
+
+#ifdef CONFIG_SCHEDSTATS
+void get_ra_sched_blocked_info(struct task_struct *tsk, u64 time);
+#endif
 
 #endif /* _RECLAIM_ACCT_H */

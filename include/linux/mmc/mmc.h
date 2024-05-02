@@ -385,6 +385,11 @@ static inline bool mmc_op_multi(u32 opcode)
 #define EXT_CSD_PWR_CL_8BIT_SHIFT	4
 #define EXT_CSD_PWR_CL_4BIT_SHIFT	0
 
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#define EXT_CSD_DYNCAP_EVENT_EN		BIT(1)
+#define EXT_CSD_SYSPOOL_EVENT_EN	BIT(2)
+#endif
+
 #define EXT_CSD_PACKED_EVENT_EN	BIT(3)
 
 /*

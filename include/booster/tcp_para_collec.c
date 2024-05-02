@@ -21,40 +21,9 @@ static DEFINE_SPINLOCK(g_tcp_para_collec_lock);
 
 static long tcp_tx_pkt_sum = 0;
 static long tcp_rx_pkt_sum = 0;
-static long tcp_rx_syn_ack_sum = 0;
-static long tcp_rx_data_sum = 0;
 static long dns_tx_pkt_sum = 0;
 static long dns_rx_pkt_sum = 0;
 static notify_event *notifier = NULL;
-
-void update_tcp_syn_ack_pkt_stat(struct sk_buff *skb)
-{
-	struct iphdr *iph = NULL;
-	struct ipv6hdr *ip6h = NULL;
-	struct tcphdr *tcph = NULL;
-
-	if (skb == NULL)
-		return;
-	if (skb->dev == NULL || skb->dev->name == NULL)
-		return;
-
-	/* identify the network protocol of an IP packet */
-	if (ntohs(skb->protocol) == ETH_P_IPV6) {
-		ip6h = ipv6_hdr(skb);
-		if (ip6h == NULL || ip6h->nexthdr != IPPROTO_TCP)
-			return;
-	} else {
-		iph = ip_hdr(skb);
-		if (iph == NULL || iph->protocol != IPPROTO_TCP)
-			return;
-	}
-
-	tcph = tcp_hdr(skb);
-	if (tcph == NULL || skb->data == NULL || tcph->doff == 0)
-		return;
-	if (tcph->syn == 1 && tcph->ack == 1)
-		tcp_rx_syn_ack_sum++;
-}
 
 void booster_update_dns_tx_statistics(struct sk_buff *skb,
 	struct net_device *in, struct net_device *out, int proto)
@@ -127,6 +96,7 @@ void booster_update_tcp_statistics(u_int8_t af, struct sk_buff *skb,
 {
 	unsigned int thoff = 0;
 	int proto;
+	struct tcphdr *tcph = NULL;
 
 	if (skb == NULL)
 		return;
@@ -143,12 +113,24 @@ void booster_update_tcp_statistics(u_int8_t af, struct sk_buff *skb,
 
 	if (proto != IPPROTO_TCP)
 		return;
+	tcph = tcp_hdr(skb);
+	if (tcph != NULL && skb->data != NULL && tcph->doff != 0) {
+		if (in != NULL && tcph->syn == 1 && tcph->ack == 1) {
+			return;
+		}
+		if (tcph->fin == 1) {
+			return;
+		}
+		if (tcph->rst == 1) {
+			return;
+		}
+	}
+
 	spin_lock_bh(&g_tcp_para_collec_lock);
 	if (out != NULL)
 		tcp_tx_pkt_sum++;
 	if (in != NULL) {
 		tcp_rx_pkt_sum++;
-		update_tcp_syn_ack_pkt_stat(skb);
 	}
 	spin_unlock_bh(&g_tcp_para_collec_lock);
 	return;
@@ -200,7 +182,7 @@ static void notify_tcp_collec_event(void)
 	// type
 	assign_short(p, TCP_PKT_CONUT_RPT);
 	skip_byte(p, sizeof(s16));
-	// len(2B type + 2B len + 8B tcp_tx_pkt_sum + 8B tcp_rx_data_sum +
+	// len(2B type + 2B len + 8B tcp_tx_pkt_sum + 8B tcp_rx_pkt_sum +
 	// 8B dns_tx_pkt_sum + 8B dns_rx_pkt_sum)
 	assign_short(p, notify_len);
 	skip_byte(p, sizeof(s16));
@@ -208,9 +190,8 @@ static void notify_tcp_collec_event(void)
 	// 8B tcp_tx_pkt_sum
 	assign_long(p, tcp_tx_pkt_sum);
 	skip_byte(p, data_sum_len);
-	// 8B tcp_rx_data_sum
-	tcp_rx_data_sum = tcp_rx_pkt_sum - tcp_rx_syn_ack_sum;
-	assign_long(p, tcp_rx_data_sum);
+	// 8B tcp_rx_pkt_sum
+	assign_long(p, tcp_rx_pkt_sum);
 	skip_byte(p, data_sum_len);
 	// 8B dns_tx_pkt_sum
 	assign_long(p, dns_tx_pkt_sum);

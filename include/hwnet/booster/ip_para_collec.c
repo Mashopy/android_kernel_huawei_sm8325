@@ -18,6 +18,7 @@
 #include "hw_booster_common.h"
 #include "ip_para_collec_ex.h"
 #include "netlink_handle.h"
+#include "../chr/wbc_hw_hook.h"
 #include <securec.h>
 #ifdef CONFIG_HW_NETWORK_SLICE
 #include "network_slice_management.h"
@@ -30,6 +31,8 @@
 #define TCP_HDR_DOFF_QUAD 4
 #define TCP_HDR_IHL_QUAD 4
 #define INVALID_LINK_PROPERTITY_INTERFACE_ID 0xFF
+#define TCP_RECOVER_HIVIEW_ID 909002109
+#define TCP_RECOVER_AVERAGE_BAD_RTT 500
 
 static struct app_ctx *g_app_ctx = NULL;
 static struct link_property_info g_link_property[] = {
@@ -38,6 +41,9 @@ static struct link_property_info g_link_property[] = {
 };
 
 static DEFINE_SPINLOCK(g_ip_para_collec_lock);
+static DEFINE_SPINLOCK(g_tcp_reset_lock);
+static u32 g_foreground_uid = 0;
+static struct tcp_reset_info g_tcp_reset_info;
 bool g_is_enable_stats = false;
 int g_dev_id_network_type[NETWORK_NUM] = {-1, -1, -1}; // -1 means main card, second card or wifi is closed
 traffic_node_ptr g_traffic_info_head = NULL;
@@ -204,7 +210,7 @@ static void notify_traffic_info(char *p, u16 notify_len)
 /*
  * judge if socket is ipv6 packet
  */
-static bool is_v6_sock(struct sock *sk)
+bool is_v6_sock(struct sock *sk)
 {
 	if (sk->sk_family == AF_INET6 &&
 		!(ipv6_addr_type(&sk->sk_v6_daddr) & IPV6_ADDR_MAPPED) &&
@@ -695,6 +701,119 @@ static void update_sk_rtt_ofo_common(struct sock *sk)
 	tp->rtt_update_tstamp = tcp_jiffies32;
 }
 
+void tcp_recover_hiview_report(struct sock *sk, u32 estimate_time)
+{
+#ifdef CONFIG_CHR_NETLINK_MODULE
+	u32 advmss = 0;
+	u32 unreceived_pkg = 0;
+	struct tcp_sock *tp = NULL;
+	struct tcp_recover_info tcp_info = {0};
+
+	if (!is_sk_fullsock(sk))
+		return;
+	tp = tcp_sk(sk);
+	if (tp == NULL)
+		return;
+	if (RB_EMPTY_ROOT(&tp->out_of_order_queue))
+		return;
+
+	advmss = tp->advmss;
+	if (advmss == 0)
+		advmss = 1420;
+	unreceived_pkg = (TCP_SKB_CB(tp->ooo_last_skb)->end_seq - tp->rcv_nxt)/advmss;
+
+	tcp_info.app_uid = sk->sk_uid.val;
+	tcp_info.tcp_rtt = get_current_srtt(tp);
+	tcp_info.tcp_mss = tp->advmss;
+	tcp_info.tcp_seq = TCP_SKB_CB(tp->ooo_last_skb)->seq;
+	tcp_info.tcp_ack = tp->rcv_nxt;
+	tcp_info.tcp_unreceived = unreceived_pkg;
+	tcp_info.estimate_time = estimate_time;
+
+	upload_tcp_recover_info(&tcp_info);
+#endif
+}
+
+static void tcp_should_enter_recover(struct sock *sk)
+{
+	struct tcp_sock *tp = NULL;
+	u32 estimate_time = 0;
+
+	if (!is_sk_fullsock(sk))
+		return;
+
+	tp = tcp_sk(sk);
+	if (tp == NULL)
+		return;
+
+	if (!RB_EMPTY_ROOT(&tp->out_of_order_queue)
+		&& (tp->ofo_tstamp != 0)
+		&& (tp->last_rcv_nxt != 0)
+		&& before(tp->last_rcv_nxt, tp->rcv_nxt)
+		&& before(tp->rcv_nxt, TCP_SKB_CB(tp->ooo_last_skb)->seq)
+		&& before(tp->ofo_tstamp, tcp_jiffies32)) {
+		if (tcp_jiffies32 - tp->ofo_tstamp > DURATION_ONE_SEC) {
+			estimate_time =
+			(TCP_SKB_CB(tp->ooo_last_skb)->seq - tp->rcv_nxt) /
+			(tp->rcv_nxt - tp->last_rcv_nxt) * (tcp_jiffies32 - tp->ofo_tstamp);
+			pr_err("tcp_recover #2: seq:%u ack:%u lastack:%u usedtime:%u estimatetime:%u\n",
+			TCP_SKB_CB(tp->ooo_last_skb)->seq, tp->rcv_nxt, tp->last_rcv_nxt,
+			tcp_jiffies32 - tp->ofo_tstamp, estimate_time);
+			if (estimate_time > TIME_TEN_SEC) {
+				tp->should_recover = 1;
+				tcp_recover_hiview_report(sk, estimate_time);
+				return;
+			} else {
+				tp->should_recover = 0;
+				tp->should_enter_recover = 0;
+			}
+		}
+	} else {
+		tp->should_recover = 0;
+		tp->should_enter_recover = 0;
+	}
+	return;
+}
+
+void update_should_enter_recover(struct sock *sk, u32 seq)
+{
+	struct tcp_sock *tp = NULL;
+	u32 rtt_ms = 0;
+
+	if (!is_sk_fullsock(sk))
+		return;
+
+	tp = tcp_sk(sk);
+	if (tp == NULL)
+		return;
+
+	if (sk->sk_state != TCP_ESTABLISHED)
+		return;
+
+	if (tp->should_recover)
+		return;
+
+	if (tp->should_enter_recover)
+		goto recover_check;
+	rtt_ms = get_current_srtt(tp);
+	if (rtt_ms == 0 || rtt_ms > TCP_RECOVER_AVERAGE_BAD_RTT)
+		rtt_ms = TCP_RECOVER_AVERAGE_BAD_RTT; /* average bad RTT from big data */
+	/* Threshold（10s） < (seq – ACK) * RTT / mss */
+	if (before(tp->rcv_nxt, seq)
+		&& (seq - tp->rcv_nxt) * rtt_ms > TIME_TEN_SEC * tp->advmss) {
+		pr_err("tcp_recover #1: need to recover seq:%u ack:%u rrt:%u mss:%u numEmpty:%u\n",
+		seq, tp->rcv_nxt, rtt_ms, tp->advmss, (seq - tp->rcv_nxt)/tp->advmss);
+		goto recover_check;
+	}
+	tp->should_enter_recover = 0;
+	tp->should_recover = 0;
+	return;
+
+recover_check:
+	tp->should_enter_recover = 1;
+	tcp_should_enter_recover(sk);
+}
+
 void update_ofo_tstamp_for_qoe(struct sock *sk)
 {
 	struct tcp_sock *tp = NULL;
@@ -709,15 +828,18 @@ void update_ofo_tstamp_for_qoe(struct sock *sk)
 			tp->ofo_tstamp == 0) {
 			tp->rcv_nxt_ofo = tp->rcv_nxt + tp->rcv_wnd;
 			tp->ofo_tstamp = tcp_jiffies32;
+			tp->last_rcv_nxt = tp->rcv_nxt;
 		} else if (before(tp->rcv_nxt_ofo, tp->rcv_nxt) &&
 			tp->rcv_nxt_ofo != 0) {
 			tp->rcv_nxt_ofo = tp->rcv_nxt + tp->rcv_wnd;
 			tp->ofo_tstamp = tcp_jiffies32;
+			tp->last_rcv_nxt = tp->rcv_nxt;
 		}
 	} else {
 		if (tp->ofo_tstamp != 0) {
 			tp->rcv_nxt_ofo = 0;
 			tp->ofo_tstamp = 0;
+			tp->last_rcv_nxt = 0;
 		}
 	}
 }
@@ -832,6 +954,65 @@ static void update_post_routing_para(struct tcp_res_info *stat,
 	increace_sk_num(sk, stat);
 }
 
+static int get_sock_index(struct sock *sk)
+{
+	int i;
+
+	if (g_tcp_reset_info.record_index >= MAX_TCP_SOCK_INFO_SIZE - 1)
+		return -1;
+
+	for (i = 0; i <= g_tcp_reset_info.record_index; i++) {
+		if (g_tcp_reset_info.sock_info[i] == sk)
+			return -1;
+	}
+	return i;
+}
+
+static void update_tcp_reset_count(const struct sk_buff *skb, struct sock *sk, const struct tcphdr *th)
+{
+	int index = -1;
+	int uid = 0;
+
+	if (skb == NULL || sk == NULL || th == NULL)
+		return;
+
+	if (!(sk->sk_state == TCP_ESTABLISHED || sk->sk_state == TCP_SYN_SENT) || th->rst != 1 || !is_ds_rnic(skb->dev))
+		return;
+
+	uid = sk->sk_uid.val;
+	spin_lock_bh(&g_tcp_reset_lock);
+	if (uid < IGNORE_UID || uid != g_foreground_uid) {
+		spin_unlock_bh(&g_tcp_reset_lock);
+		return;
+	}
+
+	if (g_tcp_reset_info.report_cnt >= MAX_REPORT_TCP_RESET_CNT) {
+		spin_unlock_bh(&g_tcp_reset_lock);
+		return;
+	}
+
+	index = get_sock_index(sk);
+	if (index < 0 || index >= MAX_TCP_SOCK_INFO_SIZE) {
+		spin_unlock_bh(&g_tcp_reset_lock);
+		return;
+	}
+
+	if (is_v6_sock(sk)) {
+		if (sk->sk_state == TCP_ESTABLISHED)
+			g_tcp_reset_info.established_v6_count++;
+		else
+			g_tcp_reset_info.syn_v6_count++;
+	} else {
+		if (sk->sk_state == TCP_ESTABLISHED)
+			g_tcp_reset_info.established_v4_count++;
+		else
+			g_tcp_reset_info.syn_v4_count++;
+	}
+	g_tcp_reset_info.record_index = index;
+	g_tcp_reset_info.sock_info[index] = sk;
+	spin_unlock_bh(&g_tcp_reset_lock);
+}
+
 /*
  * tcp pkt_in pid=0(default),uid is ok, pkt_out pid,uid is ok.
  */
@@ -857,6 +1038,7 @@ static void update_tcp_para(struct tcp_res_info *stat, struct sk_buff *skb,
 	if (tcp_len < 0)
 		return;
 	if (direction == NF_INET_LOCAL_IN) {
+		update_tcp_reset_count(skb, sk, th);
 		increace_sk_num(sk, stat);
 		if (sk->sk_state != TCP_ESTABLISHED)
 			return;
@@ -1426,6 +1608,11 @@ static void stat_report(struct timer_list* sync)
 	mod_timer(&g_app_ctx->timer, jiffies + g_app_ctx->jcycle);
 	cnt = g_app_ctx->cnt;
 	len = sizeof(struct res_msg) + cnt * sizeof(struct tcp_res);
+	if (len > MAX_REQ_DATA_LEN) {
+		pr_err("[IP_PARA]%s data = %d is too long!", __func__, len);
+		goto report_end;
+	}
+
 	res = kmalloc(len, GFP_ATOMIC);
 
 	if (res == NULL)
@@ -1454,6 +1641,55 @@ static void stat_report(struct timer_list* sync)
 
 report_end:
 	spin_unlock_bh(&g_app_ctx->lock);
+}
+
+static void reset_tcp_sock_info(void)
+{
+	g_tcp_reset_info.record_index = -1;
+	g_tcp_reset_info.syn_v4_count = 0;
+	g_tcp_reset_info.syn_v6_count = 0;
+	g_tcp_reset_info.established_v4_count = 0;
+	g_tcp_reset_info.established_v6_count = 0;
+	(void)memset_s(g_tcp_reset_info.sock_info, MAX_TCP_SOCK_INFO_SIZE, 0, MAX_TCP_SOCK_INFO_SIZE);
+	if (time_after(jiffies, g_tcp_reset_info.report_stamp + TCP_RESET_CHR_FORBIDDEN_REPORT_TIME))
+		g_tcp_reset_info.report_cnt = 0;
+}
+
+static void report_tcp_reset_chr(int last_foreground_uid)
+{
+	char event[TCP_RESET_NOTIFY_LEN] = {0};
+	char *p = event;
+
+	if (last_foreground_uid < IGNORE_UID)
+		return;
+
+	if (g_tcp_reset_info.report_cnt >= MAX_REPORT_TCP_RESET_CNT)
+		return;
+
+	if (!(g_tcp_reset_info.syn_v4_count > 0 || g_tcp_reset_info.syn_v6_count > 0 ||
+		g_tcp_reset_info.established_v4_count > 0 || g_tcp_reset_info.established_v6_count > 0))
+		return;
+
+	assign_short(p, TCP_RESET_CHR_MSG_ID);
+	skip_byte(p, sizeof(u16));
+	assign_short(p, TCP_RESET_CHR_RPT_LEN);
+	skip_byte(p, sizeof(u16));
+	assign_int(p, last_foreground_uid);
+	skip_byte(p, sizeof(int));
+	assign_int(p, g_tcp_reset_info.syn_v4_count);
+	skip_byte(p, sizeof(int));
+	assign_int(p, g_tcp_reset_info.syn_v6_count);
+	skip_byte(p, sizeof(int));
+	assign_int(p, g_tcp_reset_info.established_v4_count);
+	skip_byte(p, sizeof(int));
+	assign_int(p, g_tcp_reset_info.established_v6_count);
+	skip_byte(p, sizeof(int));
+	if (g_app_ctx->fn) {
+		g_app_ctx->fn((struct res_msg_head *) event);
+		g_tcp_reset_info.report_cnt++;
+		if (g_tcp_reset_info.report_cnt == 1)
+			g_tcp_reset_info.report_stamp = jiffies;
+	}
 }
 
 static void record_fore_app_uid(u32 uid)
@@ -1794,6 +2030,20 @@ static void process_virtual_sim_update(const struct virtual_sim_state_msg *msg)
 	return;
 }
 
+static void set_foreground_uid(const struct uid_change_msg *msg)
+{
+	if (msg == NULL || msg->uid <= 0)
+		return;
+
+	spin_lock_bh(&g_tcp_reset_lock);
+	if (g_foreground_uid != msg->uid) {
+		report_tcp_reset_chr(g_foreground_uid);
+		reset_tcp_sock_info();
+		g_foreground_uid = msg->uid;
+	}
+	spin_unlock_bh(&g_tcp_reset_lock);
+}
+
 /*
  * handle msg from booster
  */
@@ -1838,16 +2088,29 @@ static void cmd_process(struct req_msg_head *msg, u32 len)
 		pr_err("ip_para_collec msg len error!!! left = %d, right = %d", msg->len, len);
 		return;
 	}
-	if (msg->type == APP_QOE_SYNC_CMD)
+	if (msg->type == APP_QOE_SYNC_CMD) {
 		process_sync((struct req_msg *)msg);
-	else if (msg->type == UPDATE_APP_INFO_CMD)
+	} else if (msg->type == UPDATE_APP_INFO_CMD) {
 		process_app_update((struct req_msg *)msg);
-	else if (msg->type == UPDAT_INTERFACE_NAME)
+	} else if (msg->type == UPDAT_INTERFACE_NAME) {
 		process_link_property_update((struct link_property_msg *)msg);
-	else if (msg->type >= ADD_TOP_UID && msg->type <= UPDATE_VIRTUAL_SIM_STATE)
+	} else if (msg->type == FG_CHANGE_UID) {
+		if (msg->len < sizeof(struct uid_change_msg))
+			return;
+		set_foreground_uid((struct uid_change_msg *) msg);
+	} else if (msg->type >= ADD_TOP_UID && msg->type <= UPDATE_VIRTUAL_SIM_STATE) {
 		booster_msg_process(msg);
-	else
+	} else {
 		pr_info("[IP_PARA]map msg error\n");
+	}
+}
+
+static void init_reset_sock_info(void)
+{
+	spin_lock_bh(&g_tcp_reset_lock);
+	(void)memset_s(&g_tcp_reset_info, sizeof(struct tcp_reset_info), 0, sizeof(struct tcp_reset_info));
+	g_tcp_reset_info.record_index = -1;
+	spin_unlock_bh(&g_tcp_reset_lock);
 }
 
 /*
@@ -1860,7 +2123,7 @@ msg_process *ip_para_collec_init(notify_event *fn)
 
 	if (fn == NULL)
 		return NULL;
-
+	init_reset_sock_info();
 	g_app_ctx = kmalloc(sizeof(struct app_ctx), GFP_KERNEL);
 	if (g_app_ctx == NULL)
 		return NULL;

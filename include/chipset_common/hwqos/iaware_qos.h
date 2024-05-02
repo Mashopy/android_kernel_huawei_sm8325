@@ -22,6 +22,9 @@
 #include <linux/sched/task.h>
 #include <linux/types.h>
 #include <chipset_common/hwqos/hwqos_common.h>
+#ifdef CONFIG_ARM
+#include <linux/ioctl.h>
+#endif
 
 #define QOS_CTRL_MAGIC 'q'
 

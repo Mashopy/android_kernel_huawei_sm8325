@@ -124,10 +124,11 @@ struct dc_ic_ops {
 	int (*get_ic_id)(void *dev_data);
 	int (*get_ic_status)(void *dev_data);
 	int (*set_ic_buck_enable)(int enable, void *dev_data);
-	int (*ic_reg_reset_and_init)(void *dev_data);
+	int (*ic_reg_reset_and_init)(void *dev_data); /* only few sc chips need reset after plug out */
 	int (*set_ic_freq)(int freq, void *dev_data);
 	int (*get_ic_freq)(void *dev_data);
 	int (*set_ic_thld)(int enable, void *dev_data);
+	int (*get_max_ibat)(void *dev_data, int *ibat);
 };
 
 struct dc_batinfo_ops {
@@ -152,8 +153,8 @@ struct dc_batinfo_ops *dc_ic_get_battinfo_ops(unsigned int index);
 int dc_ic_get_ic_index(int mode, unsigned int path, unsigned int *index, int len);
 int dc_ic_get_ic_index_for_ibat(int mode, unsigned int path, unsigned int *index, int len);
 int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat);
-bool dc_ic_get_ibat_from_coul(int *ibat);
-bool dc_ic_get_vbat_from_coul(int *vbat);
+bool dc_ic_get_ibat_from_coul(void);
+bool dc_ic_get_vbat_from_coul(void);
 bool dc_ic_use_two_stage(void);
 struct dc_ic_dev_info *dc_ic_get_ic_info(void);
 #else
@@ -192,12 +193,12 @@ static inline int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
 	return -EPERM;
 }
 
-static inline bool dc_ic_get_ibat_from_coul(int *ibat)
+static inline bool dc_ic_get_ibat_from_coul(void)
 {
 	return false;
 }
 
-static inline bool dc_ic_get_vbat_from_coul(int *vbat)
+static inline bool dc_ic_get_vbat_from_coul(void)
 {
 	return false;
 }

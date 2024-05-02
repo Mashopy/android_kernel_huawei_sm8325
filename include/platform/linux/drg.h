@@ -28,7 +28,7 @@ enum drg_dev_type {
 	DRG_CPU_CLUSTER0 = (1 << 0) << 8,
 	DRG_CPU_CLUSTER1,
 	DRG_CPU_CLUSTER2,
-	/* CACHE TYPE if new cache add after(eg. l4 l5 l6 ...)*/
+	/* CACHE TYPE if new cache add after(eg. l4 l5 l6 ...) */
 	DRG_L3_CACHE = (1 << 1) << 8,
 	/* If new type add after here */
 };

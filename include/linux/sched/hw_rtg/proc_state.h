@@ -130,7 +130,21 @@ struct rtg_enable_data {
 	struct rtg_data_head head;
 	int enable;
 	int len;
+#ifdef CONFIG_ARM
+	/* 32 bits kernel, keep same byte align with 64 bits kernel */
+	char paddingAlign1;
+	char paddingAlign2;
+	char paddingAlign3;
+	char paddingAlign4;
+#endif
 	char *data;
+#ifdef CONFIG_ARM
+	/* 32 bits kernel, keep same ptr size with 64 bits kernel */
+	char padding1;
+	char padding2;
+	char padding3;
+	char padding4;
+#endif
 };
 
 struct rtg_proc_data {
@@ -145,6 +159,13 @@ struct rtg_str_data {
 	struct rtg_data_head head;
 	int len;
 	char *data;
+#ifdef CONFIG_ARM
+	/* 32 bits kernel, keep same ptr size with 64 bits kernel */
+	char padding1;
+	char padding2;
+	char padding3;
+	char padding4;
+#endif
 };
 
 struct proc_state_data {

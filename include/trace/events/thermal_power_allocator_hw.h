@@ -68,6 +68,7 @@ TRACE_EVENT(thermal_power_actor_gpu_get_power,
 		 __entry->dynamic_power, __entry->static_power, __entry->req_power)
 );
 
+#ifdef CONFIG_HW_IPA_THERMAL_QCOM
 TRACE_EVENT(IPA_allocator,
 	TP_PROTO(struct thermal_zone_device *tz,
 		 unsigned long current_temp, unsigned long control_temp, unsigned long switch_temp,
@@ -126,6 +127,67 @@ TRACE_EVENT(IPA_allocator,
 		)
 
 );
+#else
+TRACE_EVENT(IPA_allocator,
+	TP_PROTO(struct thermal_zone_device *tz,
+		 unsigned long current_temp, unsigned long control_temp, unsigned long switch_temp, s32 delta_temp,
+		 u32 num_actors, u32 power_range,
+		 u32 *req_power, u32 total_req_power,
+		 u32 *max_power, u32 max_allocatable_power,
+		 u32 *granted_power, u32 total_granted_power
+		),
+	TP_ARGS(tz, current_temp, control_temp, switch_temp, delta_temp,
+		num_actors, power_range,
+		req_power, total_req_power,
+		max_power, max_allocatable_power,
+		granted_power, total_granted_power
+		),
+	TP_STRUCT__entry(
+		__field(int,           tz_id                    )
+		__field(unsigned long, current_temp             )
+		__field(unsigned long, control_temp             )
+		__field(unsigned long, switch_temp              )
+		__field(s32,           delta_temp               )
+		__field(u32,           num_actors               )
+		__field(u32,           power_range              )
+		__dynamic_array(u32,   req_power, num_actors    )
+		__field(u32,           total_req_power          )
+		__dynamic_array(u32,   granted_power, num_actors)
+		__field(u32,           total_granted_power      )
+		__dynamic_array(u32,   max_power, num_actors    )
+		__field(u32,           max_allocatable_power    )
+
+	),
+	TP_fast_assign(
+		__entry->tz_id = tz->id;
+		__entry->current_temp = current_temp;
+		__entry->control_temp = control_temp;
+		__entry->switch_temp = switch_temp;
+		__entry->delta_temp = delta_temp;
+		__entry->num_actors = num_actors;
+		__entry->power_range = power_range;
+		memcpy(__get_dynamic_array(req_power), req_power, num_actors * sizeof(*req_power));
+		__entry->total_req_power = total_req_power;
+		memcpy(__get_dynamic_array(granted_power), granted_power, num_actors * sizeof(*granted_power));
+		__entry->total_granted_power = total_granted_power;
+		memcpy(__get_dynamic_array(max_power), max_power, num_actors * sizeof(*max_power));
+		__entry->max_allocatable_power = max_allocatable_power;
+	),
+
+	TP_printk("%d,%lu,%lu,%lu,%d,%u,%s,%u,%s,%u,%s,%u",
+		  __entry->tz_id,
+		  __entry->current_temp,__entry->control_temp,__entry->switch_temp, __entry->delta_temp,
+		  __entry->power_range,
+		  __print_array(__get_dynamic_array(req_power), __entry->num_actors, sizeof(u32)),
+		  __entry->total_req_power,
+		  __print_array(__get_dynamic_array(max_power), __entry->num_actors, sizeof(u32)),
+		  __entry->max_allocatable_power,
+		  __print_array(__get_dynamic_array(granted_power), __entry->num_actors, sizeof(u32)),
+		  __entry->total_granted_power
+		)
+
+);
+#endif
 
 TRACE_EVENT(IPA_allocator_pid,
 	TP_PROTO(struct thermal_zone_device *tz,
@@ -240,6 +302,7 @@ TRACE_EVENT(IPA_actor_cpu_cooling,
 		__get_bitmask(cpumask), __entry->freq, __entry->cdev_state)
 );
 
+#ifdef CONFIG_HW_IPA_THERMAL_QCOM
 TRACE_EVENT(IPA_actor_gpu_limit,
 	TP_PROTO(unsigned long freq, unsigned long cdev_state, u32 power, u32 est_power),
 
@@ -263,6 +326,29 @@ TRACE_EVENT(IPA_actor_gpu_limit,
 		__entry->freq, __entry->cdev_state,
 		__entry->power, __entry->est_power)
 );
+#else
+TRACE_EVENT(IPA_actor_gpu_limit,
+	TP_PROTO(unsigned long freq, unsigned long cdev_state, u32 power),
+
+	TP_ARGS(freq, cdev_state, power),
+
+	TP_STRUCT__entry(
+		__field(unsigned long,  freq      )
+		__field(unsigned long, cdev_state)
+		__field(u32,           power     )
+	),
+
+	TP_fast_assign(
+		__entry->freq = freq;
+		__entry->cdev_state = cdev_state;
+		__entry->power = power;
+	),
+
+	TP_printk("%lu,%lu,%u",
+		__entry->freq, __entry->cdev_state,
+		__entry->power)
+);
+#endif
 
 TRACE_EVENT(IPA_actor_gpu_cooling,
 	TP_PROTO(unsigned long freq, unsigned long cdev_state),
@@ -383,6 +469,7 @@ TRACE_EVENT(IPA_gpu_hot_plug,
 		 __entry->gpu_down_threshold)
 );
 
+#ifdef CONFIG_HW_IPA_THERMAL_QCOM
 TRACE_EVENT(allocate_power_actors,
 	TP_PROTO(int num_actors, int total_weight),
 
@@ -547,3 +634,4 @@ TRACE_EVENT(cluster_state_limit,
 	TP_printk("cluster=%d, state=%lu, ipa_state_limit=%lu", __entry->actor_id,
 		__entry->state, __entry->ipa_limit)
 );
+#endif

@@ -24,7 +24,7 @@
 #include <linux/sched/rt.h>
 #include <linux/cgroup.h>
 #include <linux/futex.h>
-#include <chipset_common/linux/rtmutex_common.h>
+#include <../kernel/locking/rtmutex_common.h>
 #ifdef CONFIG_HW_QOS_THREAD
 #include <chipset_common/hwqos/hwqos_common.h>
 #endif

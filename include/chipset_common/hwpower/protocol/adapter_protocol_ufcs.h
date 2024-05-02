@@ -35,7 +35,7 @@ enum hwufcs_wait_type {
 	HWUFCS_ACK_RECEIVE_TIMEOUT = 0x8,
 };
 
-enum hwufcs_error_code {
+enum hwufcs_detect_error_code {
 	HWUFCS_DETECT_OTHER = -1,
 	HWUFCS_DETECT_SUCC = 0,
 	HWUFCS_DETECT_FAIL = 1,
@@ -51,7 +51,8 @@ enum hwufcs_error_code {
 #define HWUFCS_MSG_PROT_VERSION               0x1
 #define HWUFCS_MSG_MAX_COUNTER                16
 #define HWUFCS_MSG_MAX_BUFFER_SIZE            256
-#define HWUFCS_MSG_VERSION_ID                 0x0000
+#define HWUFCS_MSG_VERSION_ID                 0x0001
+#define HWUFCS_ADP_TYPE_FCR_66W               0x1
 
 #define HWUFCS_HDR_MASK_MSG_TYPE              0x7
 #define HWUFCS_HDR_MASK_PROT_VERSION          0x3f
@@ -73,11 +74,19 @@ enum hwufcs_error_code {
 #define HWUFCS_CTRL_DATA_MSG_DATA_OFFSET      4
 
 /* vendor defined msg body */
-#define HWUFCS_VD_MSG_MAX_BUF_SIZE            253
+#define HWUFCS_VD_MSG_MAX_BUF_SIZE            251
 #define HWUFCS_VD_MSG_VER_ID_H_OFFSET         2
 #define HWUFCS_VD_MSG_VER_ID_L_OFFSET         3
 #define HWUFCS_VD_MSG_MSG_LEN_OFFSET          4
+#define HWUFCS_VD_MSG_CMD_H_OFFSET            5
+#define HWUFCS_VD_MSG_CMD_L_OFFSET            6
+
 #define HWUFCS_VD_MSG_DATA_OFFSET             5
+
+#define HWUFCS_VDR_MASK_MSG_CMD               0x1fff
+#define HWUFCS_VDR_MASK_MSG_CMD_TYPE          0x7
+
+#define HWUFCS_VDR_HEADER_LEN                 2
 
 enum hwufcs_header_data_shift {
 	HWUFCS_HDR_SHIFT_MSG_TYPE = 0,
@@ -87,9 +96,23 @@ enum hwufcs_header_data_shift {
 };
 
 enum hwufcs_message_type {
-	HWUFCS_MSG_TYPE_CONTROL,
+	HWUFCS_MSG_TYPE_BEGIN,
+	HWUFCS_MSG_TYPE_CONTROL = HWUFCS_MSG_TYPE_BEGIN,
 	HWUFCS_MSG_TYPE_DATA,
 	HWUFCS_MSG_TYPE_VENDOR_DEFINED,
+	HWUFCS_MSG_TYPE_END,
+};
+
+enum hwufcs_vdm_header_data_shift {
+	HWUFCS_VDR_SHIFT_MSG_CMD = 0,
+	HWUFCS_VDR_SHIFT_MSG_CMD_TYPE = 13,
+};
+
+enum hwufcs_vdm_message_type {
+	HWUFCS_VDM_TYPE_BEGIN,
+	HWUFCS_VDM_TYPE_CONTROL = HWUFCS_VDM_TYPE_BEGIN,
+	HWUFCS_VDM_TYPE_DATA,
+	HWUFCS_VDM_TYPE_END,
 };
 
 enum hwufcs_device_address {
@@ -132,8 +155,23 @@ enum hwufcs_data_message {
 	HWUFCS_DATA_MSG_REFUSE = 0x9,
 	HWUFCS_DATA_MSG_VERIFY_REQUEST = 0xa,
 	HWUFCS_DATA_MSG_VERIFY_RESPONSE = 0xb,
+	HWUFCS_DATA_MSG_POWER_CHANGE = 0xc,
 	HWUFCS_DATA_MSG_TEST_REQUEST = 0xff,
 	HWUFCS_DATA_MSG_END,
+};
+
+enum hwufcs_vdm_control_message {
+	HWUFCS_VDM_CTL_MSG_BEGIN = 0x1,
+	HWUFCS_VDM_CTL_MSG_GET_SOURCE_ID = HWUFCS_VDM_CTL_MSG_BEGIN,
+	HWUFCS_VDM_CTL_MSG_GET_SCPB_POWER,
+	HWUFCS_VDM_CTL_MSG_END,
+};
+
+enum hwufcs_vdm_data_message {
+	HWUFCS_VDM_DATA_MSG_BEGIN = 0x1,
+	HWUFCS_VDM_DATA_MSG_SOURCE_ID = HWUFCS_VDM_DATA_MSG_BEGIN,
+	HWUFCS_VDM_DATA_MSG_SCPB_POWER,
+	HWUFCS_VDM_DATA_MSG_END,
 };
 
 /*
@@ -178,6 +216,22 @@ struct hwufcs_capabilities_data {
 	u16 curr_step;
 	u16 output_mode;
 };
+
+/*
+ * output power range rules as follows:
+ * 5V: 3.4V~5.5V
+ * 10V: 5.5V~11V
+ * 20V: 11V~21V
+ * 30V: 21V~36V
+ */
+#define HWUFCS_5V_VOLT_MIN                   3400 /* mv */
+#define HWUFCS_5V_VOLT_MAX                   5500 /* mv */
+#define HWUFCS_10V_VOLT_MIN                  5500 /* mv */
+#define HWUFCS_10V_VOLT_MAX                  11000 /* mv */
+#define HWUFCS_20V_VOLT_MIN                  11000 /* mv */
+#define HWUFCS_20V_VOLT_MAX                  21000 /* mv */
+#define HWUFCS_30V_VOLT_MIN                  21000 /* mv */
+#define HWUFCS_30V_VOLT_MAX                  36000 /* mv */
 
 /*
  * request data message as below:
@@ -285,8 +339,8 @@ struct hwufcs_sink_info_data {
 #define HWUFCS_CABLE_INFO_MASK_MAX_CURR       0xff
 #define HWUFCS_CABLE_INFO_MASK_MAX_VOLT       0xff
 #define HWUFCS_CABLE_INFO_MASK_RESISTANCE     0xffff
-#define HWUFCS_CABLE_INFO_MASK_ELABLE_VID     0xffff
-#define HWUFCS_CABLE_INFO_MASK_VID            0xffff
+#define HWUFCS_CABLE_INFO_MASK_RESERVED_1     0xffff
+#define HWUFCS_CABLE_INFO_MASK_RESERVED_2     0xffff
 
 #define HWUFCS_CABLE_INFO_UNIT_CURR           1000 /* ma */
 #define HWUFCS_CABLE_INFO_UNIT_VOLT           1000 /* mv */
@@ -296,16 +350,16 @@ enum hwufcs_cable_info_data_shift {
 	HWUFCS_CABLE_INFO_SHIFT_MAX_CURR = 0,
 	HWUFCS_CABLE_INFO_SHIFT_MAX_VOLT = 8,
 	HWUFCS_CABLE_INFO_SHIFT_RESISTANCE = 16,
-	HWUFCS_CABLE_INFO_SHIFT_ELABLE_VID = 32,
-	HWUFCS_CABLE_INFO_SHIFT_VID = 48,
+	HWUFCS_CABLE_INFO_SHIFT_RESERVED_1 = 32,
+	HWUFCS_CABLE_INFO_SHIFT_RESERVED_2 = 48,
 };
 
 struct hwufcs_cable_info_data {
 	u16 max_curr;
 	u16 max_volt;
 	u16 resistance;
-	u16 elable_vid;
-	u16 vid;
+	u16 reserved_1;
+	u16 reserved_2;
 };
 
 /*
@@ -317,21 +371,21 @@ struct hwufcs_cable_info_data {
  */
 #define HWUFCS_DEV_INFO_MASK_SW_VER           0xffff
 #define HWUFCS_DEV_INFO_MASK_HW_VER           0xffff
-#define HWUFCS_DEV_INFO_MASK_CHIP_VID         0xffff
-#define HWUFCS_DEV_INFO_MASK_MANU_VID         0xffff
+#define HWUFCS_DEV_INFO_MASK_RESERVED_1       0xffff
+#define HWUFCS_DEV_INFO_MASK_RESERVED_2       0xffff
 
 enum hwufcs_dev_info_data_shift {
 	HWUFCS_DEV_INFO_SHIFT_SW_VER = 0,
 	HWUFCS_DEV_INFO_SHIFT_HW_VER = 16,
-	HWUFCS_DEV_INFO_SHIFT_CHIP_VID = 32,
-	HWUFCS_DEV_INFO_SHIFT_MANU_VID = 48,
+	HWUFCS_DEV_INFO_SHIFT_RESERVED_1 = 32,
+	HWUFCS_DEV_INFO_SHIFT_RESERVED_2 = 48,
 };
 
 struct hwufcs_dev_info_data {
 	u16 sw_ver;
 	u16 hw_ver;
-	u16 chip_vid;
-	u16 manu_vid;
+	u16 reserved_1;
+	u16 reserved_2;
 };
 
 /*
@@ -456,29 +510,99 @@ struct hwufcs_refuse_data {
 };
 
 /*
+ * Baud rate base gear
+ * default : 115200bps
+ */
+enum hwufcs_baud_rate_gear {
+	HWUFCS_BAUD_RATE_115200_GEAR,
+	HWUFCS_BAUD_RATE_57600_GEAR,
+	HWUFCS_BAUD_RATE_38400_GEAR,
+	HWUFCS_BAUD_RATE_END,
+};
+
+/*
+ * power change data message as below:
+ * bit0~15: max output current
+ * bit16~19: reserve byte
+ * bit20~23: output mode
+ */
+#define HWUFCS_POWER_CHANGE_MASK_MAX_CURR     0xffff
+#define HWUFCS_POWER_CHANGE_MASK_OUTPUT_MODE  0xf
+#define HWUFCS_POWER_CHANGE_MAX_OUTPUT_MODE   7
+#define HWUFCS_POWER_CHANGE_DATA_SIZE         3
+#define HWUFCS_POWER_CHANGE_UNIT_CURR         10 /* ma */
+enum hwufcs_power_change_data_shift {
+	HWUFCS_POWER_CHANGE_SHIFT_MAX_CURR = 0,
+	HWUFCS_POWER_CHANGE_SHIFT_RESERVE = 16,
+	HWUFCS_POWER_CHANGE_SHIFT_OUTPUT_MODE = 20,
+};
+
+struct hwufcs_power_change_data {
+	u16 max_curr;
+	u8 output_mode;
+};
+
+/*
  * test request data message as below:
- * bit0~7: message number
+ * bit0~7: message cmd
  * bit8~10: message type
  * bit11~13: device address
  * bit14: voltage accuracy test mode
  */
-#define HWUFCS_TEST_REQ_MASK_MSG_NUMBER       0xff
+#define HWUFCS_TEST_REQ_MASK_MSG_CMD          0xff
 #define HWUFCS_TEST_REQ_MASK_MSG_TYPE         0x7
 #define HWUFCS_TEST_REQ_MASK_DEV_ADDRESS      0x7
 #define HWUFCS_TEST_REQ_MASK_VOLT_TEST_MODE   0x1
+#define HWUFCS_TEST_REQ_MASK_EN_TEST_MODE     0x1
 
 enum hwufcs_test_request_data_shift {
-	HWUFCS_TEST_REQ_SHIFT_MSG_NUMBER = 0,
+	HWUFCS_TEST_REQ_SHIFT_MSG_CMD = 0,
 	HWUFCS_TEST_REQ_SHIFT_MSG_TYPE = 8,
 	HWUFCS_TEST_REQ_SHIFT_DEV_ADDRESS = 11,
 	HWUFCS_TEST_REQ_SHIFT_VOLT_TEST_MODE = 14,
+	HWUFCS_TEST_REQ_SHIFT_EN_TEST_MODE = 15,
 };
 
 struct hwufcs_test_request_data {
-	u8 msg_number;
+	u8 msg_cmd;
 	u8 msg_type;
 	u8 dev_address;
 	u8 volt_test_mode;
+	u8 en_test_mode;
+};
+
+/*
+ * vdm source id data message as below:
+ * bit0~15: source id
+ * bit16~20: vdm msg number
+ * bit20~31: vdm msg type
+ */
+enum hwufcs_vdm_source_id_data_shift {
+	HWUFCS_VDM_SOURCE_ID_SHIFT_ID = 0,
+	HWUFCS_VDM_SOURCE_ID_SHIFT_MSG_NUMBER = 16,
+	HWUFCS_VDM_SOURCE_ID_SHIFT_MSG_TYPE = 20,
+};
+
+struct hwufcs_vdm_source_id_data {
+	u16 source_id;
+	u16 msg_number;
+	u8 msg_type;
+};
+
+enum hwufcs_error_code {
+	HWUFCS_ERR_UNKNOWN = -99,
+	HWUFCS_ERR_TIMEOUT,
+	HWUFCS_ERR_ILLEGAL_DATA,
+	HWUFCS_ERR_UNSUPPORT_DATA,
+	HWUFCS_ERR_UNEXPECT_DATA,
+	HWUFCS_ERR_REFUSED_DATA,
+	HWUFCS_ERR_REFUSED_SUPPORT_DATA,
+};
+
+enum hwufcs_communication_state {
+	HWUFCS_FAIL = -1,
+	HWUFCS_OK = 0,
+	HWUFCS_NEED_RETRY,
 };
 
 struct hwufcs_package_data {
@@ -487,6 +611,7 @@ struct hwufcs_package_data {
 	u8 msg_number;
 	u8 dev_address;
 	u8 cmd;
+	u8 vdm_type;
 	u16 vender_id;
 	u8 len; /* data length */
 	u8 data[HWUFCS_MSG_MAX_BUFFER_SIZE];
@@ -497,12 +622,15 @@ struct hwufcs_device_info {
 	u8 detect_finish_flag;
 	u8 outout_capabilities_rd_flag;
 	u8 dev_info_rd_flag;
+	u8 cable_info_rd_flag;
 	u16 output_volt;
 	u16 output_curr;
 	u8 output_mode;
 	u8 mode_quantity;
 	struct hwufcs_capabilities_data cap[HWUFCS_CAP_MAX_OUTPUT_MODE];
+	struct hwufcs_power_change_data change_data[HWUFCS_POWER_CHANGE_MAX_OUTPUT_MODE];
 	struct hwufcs_dev_info_data dev_info;
+	struct hwufcs_cable_info_data cable_info;
 };
 
 struct hwufcs_ops {
@@ -514,15 +642,22 @@ struct hwufcs_ops {
 	int (*read_msg)(void *dev_data, u8 *data, u8 len);
 	int (*end_read_msg)(void *dev_data);
 	int (*soft_reset_master)(void *dev_data);
+	int (*clear_rx_buff)(void *dev_data);
 	int (*get_rx_len)(void *dev_data, u8 *len);
 	int (*set_communicating_flag)(void *dev_data, bool flag);
+	int (*config_baud_rate)(void *dev_data, int baud_rate);
+	int (*hard_reset_cable)(void *dev_data);
 	bool (*need_check_ack)(void *dev_data);
+	bool (*ignore_detect_cable_info)(void *dev_data);
 };
 
 struct hwufcs_dev {
 	struct device *dev;
 	struct notifier_block event_nb;
+	struct notifier_block event_ufcs_nb;
 	struct hwufcs_device_info info;
+	struct work_struct handle_msg_work;
+	bool plugged_state;
 };
 
 #ifdef CONFIG_ADAPTER_PROTOCOL_UFCS

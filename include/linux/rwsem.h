@@ -53,9 +53,6 @@ struct rw_semaphore {
 	struct lockdep_map	dep_map;
 #endif
 	ANDROID_VENDOR_DATA(1);
-#ifdef CONFIG_HW_VIP_THREAD
-	struct task_struct *vip_dep_task;
-#endif
 };
 
 /*
@@ -93,9 +90,7 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 # define __DEBUG_RWSEM_INITIALIZER(lockname)
 #endif
 
-#if defined(CONFIG_HW_VIP_THREAD) && defined(CONFIG_RWSEM_SPIN_ON_OWNER)
-#define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED, .vip_dep_task = NULL
-#elif defined(CONFIG_RWSEM_SPIN_ON_OWNER)
+#ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 #define __RWSEM_OPT_INIT(lockname) , .osq = OSQ_LOCK_UNLOCKED
 #else
 #define __RWSEM_OPT_INIT(lockname)

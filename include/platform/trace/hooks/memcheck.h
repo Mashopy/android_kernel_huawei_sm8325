@@ -11,33 +11,21 @@
 #include <linux/tracepoint.h>
 #include <trace/hooks/vendor_hooks.h>
 
-DECLARE_HOOK(mm_set_buddy_track,
-	TP_PROTO(struct page *p, unsigned int order, unsigned long caller),
-	TP_ARGS(p, order, caller));
-
-DECLARE_HOOK(mm_track_lslub_pages,
-	TP_PROTO(struct page *p, unsigned int order, unsigned long caller, bool isAlloc),
-	TP_ARGS(p, order, caller, isAlloc));
-
-DECLARE_HOOK(mm_set_slub_alloc_track,
-	TP_PROTO(unsigned long caller),
-	TP_ARGS(caller));
-
-DECLARE_HOOK(mm_set_slub_free_track,
-	TP_PROTO(unsigned long caller),
-	TP_ARGS(caller));
-
 DECLARE_RESTRICTED_HOOK(mm_mem_stats_show,
 	TP_PROTO(int unused),
 	TP_ARGS(unused), 1);
 
-DECLARE_RESTRICTED_HOOK(mm_vmalloc_detail_show,
-	TP_PROTO(int unused),
-	TP_ARGS(unused), 1);
+DECLARE_RESTRICTED_HOOK(cma_report,
+	TP_PROTO(char *name, unsigned long total, unsigned long req),
+	TP_ARGS(name, total, req), 1);
 
-DECLARE_HOOK(mm_set_skb_pages_zone_state,
-	TP_PROTO(struct page *page, unsigned int order, bool isAdd),
-	TP_ARGS(page, order, isAdd));
+DECLARE_RESTRICTED_HOOK(slub_obj_report,
+	TP_PROTO(struct kmem_cache *s),
+	TP_ARGS(s), 1);
+
+DECLARE_RESTRICTED_HOOK(lowmem_report,
+	TP_PROTO(struct task_struct *p, unsigned long points),
+	TP_ARGS(p, points), 1);
 
 #endif /* _TRACE_MEMCHECK_H */
 

@@ -24,11 +24,16 @@
 #ifdef CONFIG_WIRELESS_CHARGER
 void wlrx_handle_sink_event(bool sink_flag);
 int wlrx_power_supply_register(struct platform_device *pdev);
+void wlrx_power_supply_unregister(void);
 #else
 static inline void wlrx_handle_sink_event(bool sink_flag) { }
 static inline int wlrx_power_supply_register(struct platform_device *pdev)
 {
 	return -1;
+}
+
+static inline void wlrx_power_supply_unregister(void)
+{
 }
 #endif /* CONFIG_WIRELESS_CHARGER */
 

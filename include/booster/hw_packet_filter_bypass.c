@@ -14,8 +14,10 @@
 #include <linux/printk.h>
 #include <linux/module.h>
 #include <linux/uidgid.h>
+#include <linux/sched/task.h>
 #include <net/sock.h>
 #include <net/inet_sock.h>
+#include <securec.h>
 
 #include "hw_booster_common.h"
 
@@ -37,6 +39,7 @@ enum report_hooks {
 struct packet_drop_stats {
 	int hook;
 	u32 pkts;
+	u32 dns_drop_count;
 	unsigned long ts_reset;
 
 	bool reported_drop;
@@ -62,7 +65,14 @@ struct listening_uids {
 };
 
 static struct listening_uids listen_uids;
+static struct detect_uids g_socket_close_detect_uids;
 static notify_event *notifier = NULL;
+
+static bool g_is_initial_socket_close_timer = false;
+static int g_socket_close_index;
+static struct chr_socket_close_info g_socket_close_uids_info[MAX_CHR_SOCKET_CLOSE_UID_NUM];
+static struct timer_list g_socket_close_timer;
+static spinlock_t g_socket_close_lock;
 
 static void reset_uid_info(struct uid_info *info, int uid)
 {
@@ -73,6 +83,14 @@ static void reset_uid_info(struct uid_info *info, int uid)
 	info->bpf_ingress_drop_stats.hook = HOOK_INGRESS;
 	info->local_in_drop_stats.hook = HOOK_LOCAL_IN;
 	info->local_out_drop_stats.hook = HOOK_LOCAL_OUT;
+}
+
+static void reset_detect_uid()
+{
+	spin_lock_bh(&g_socket_close_detect_uids.lock);
+	(void)memset_s(g_socket_close_detect_uids.uids, MAX_SOCKET_CLOSE_DETECT_NUM * sizeof(int), 0,
+		MAX_SOCKET_CLOSE_DETECT_NUM * sizeof(int));
+	spin_unlock_bh(&g_socket_close_detect_uids.lock);
 }
 
 static bool add_listening_uid(int uid)
@@ -121,37 +139,60 @@ static bool upate_bypass_flag(int uid, bool bypass)
 	return false;
 }
 
-static void do_commands(struct req_msg_head *msg, u32 len)
+
+static void add_socket_close_detect_uid(int uid)
 {
-	int uid, num, size, i;
-	char *p = NULL;
+	int i = 0;
+
+	for (i = 0; i < MAX_SOCKET_CLOSE_DETECT_NUM; ++i) {
+		if (g_socket_close_detect_uids.uids[i] == 0) {
+			g_socket_close_detect_uids.uids[i] = uid;
+			break;
+		}
+	}
+}
+
+static void del_socket_close_detect_uid(int uid)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_SOCKET_CLOSE_DETECT_NUM; ++i) {
+		if (g_socket_close_detect_uids.uids[i] == uid) {
+			g_socket_close_detect_uids.uids[i] = 0;
+			break;
+		}
+	}
+}
+
+static void socket_close_detect_uids_change(int type, int num, char *p)
+{
+	int i, uid;
+
+	spin_lock_bh(&g_socket_close_detect_uids.lock);
+	for (i = 0; i < num; ++i) {
+		uid = *(int *) p;
+		if (uid < SYSTEM_UID_MAX)
+			break;
+		if (type == SOCKET_CLOSE_DETECT_UID_ADD)
+			add_socket_close_detect_uid(uid);
+		else
+			del_socket_close_detect_uid(uid);
+		p += sizeof(int);
+	}
+	spin_unlock_bh(&g_socket_close_detect_uids.lock);
+}
+
+static void update_listen_uids(int type, int num, char *p)
+{
+	int i, uid;
 	bool ret = false;
-
-	if (!msg || msg->len <= sizeof(struct req_msg_head)) {
-		pr_err("hw_packet_filter_bypass msg length too small msg len error!!!\n");
-		return;
-	}
-
-	size = len - sizeof(struct req_msg_head);
-	p = (char *)msg + sizeof(struct req_msg_head);
-	if (size <= sizeof(int)) {
-		pr_err("hw_packet_filter_bypass msg size too small msg len error!!! %d\n", size);
-		return;
-	}
-	num = *(int *)p;
-	size -= sizeof(int);
-	p += sizeof(int);
-	if (size < (sizeof(int) * num)) {
-		pr_err("hw_packet_filter_bypass real length too small msg len error!!!\n");
-		return;
-	}
 
 	spin_lock_bh(&listen_uids.lock);
 	for (i = 0; i < num; ++i) {
 		uid = *(int *)p;
 		if (uid < 0)
 			break;
-		switch (msg->type) {
+		switch (type) {
 		case ADD_FG_UID:
 			ret = add_listening_uid(uid);
 			break;
@@ -175,6 +216,38 @@ static void do_commands(struct req_msg_head *msg, u32 len)
 	spin_unlock_bh(&listen_uids.lock);
 }
 
+static void do_commands(struct req_msg_head *msg, u32 len)
+{
+	int num, size;
+	char *p = NULL;
+
+	if (!msg || msg->len <= sizeof(struct req_msg_head)) {
+		pr_err("hw_packet_filter_bypass msg length too small msg len error!!!\n");
+		return;
+	}
+
+	size = len - sizeof(struct req_msg_head);
+	p = (char *)msg + sizeof(struct req_msg_head);
+	if (size <= sizeof(int)) {
+		pr_err("hw_packet_filter_bypass msg size too small msg len error!!! %d\n", size);
+		return;
+	}
+	num = *(int *)p;
+	size -= sizeof(int);
+	p += sizeof(int);
+	if (size < (sizeof(int) * num)) {
+		pr_err("hw_packet_filter_bypass real length too small msg len error!!!\n");
+		return;
+	}
+
+	if (msg->type == SOCKET_CLOSE_DETECT_UID_ADD || msg->type == SOCKET_CLOSE_DETECT_UID_DEL) {
+		socket_close_detect_uids_change(msg->type, num, p);
+		return;
+	}
+
+	update_listen_uids(msg->type, num, p);
+}
+
 static void notify_drop_event(int uid, struct packet_drop_stats *stats)
 {
 	char event[NOTIFY_BUF_LEN] = {0};
@@ -187,7 +260,7 @@ static void notify_drop_event(int uid, struct packet_drop_stats *stats)
 	assign_short(p, PACKET_FILTER_DROP_RPT);
 	skip_byte(p, sizeof(s16));
 	// 16 eq len(2B type + 2B len + 4B uid + 4B hook + 4B pkts)
-	assign_short(p, 16);
+	assign_short(p, 20);
 	skip_byte(p, sizeof(s16));
 	// uid
 	assign_int(p, uid);
@@ -197,6 +270,9 @@ static void notify_drop_event(int uid, struct packet_drop_stats *stats)
 	skip_byte(p, sizeof(int));
 	// pkts
 	assign_int(p, stats->pkts);
+	skip_byte(p, sizeof(int));
+	// dns is drop counts
+	assign_int(p, stats->dns_drop_count);
 	skip_byte(p, sizeof(int));
 
 	notifier((struct res_msg_head *)event);
@@ -224,7 +300,7 @@ static void notify_recovery_event(int uid, struct packet_drop_stats *stats)
 	notifier((struct res_msg_head *)event);
 }
 
-static void update_packet_count(int uid, struct packet_drop_stats *stats)
+static void update_packet_count(int uid, struct packet_drop_stats *stats, bool is_dns_drop)
 {
 	unsigned long now = jiffies;
 	int threshold;
@@ -238,11 +314,14 @@ static void update_packet_count(int uid, struct packet_drop_stats *stats)
 	 *  within DETECTION_PERIOD seconds, think it as an exception
 	 */
 	stats->pkts = stats->pkts + 1;
+	if (is_dns_drop)
+		stats->dns_drop_count = stats->dns_drop_count + 1;
 	if ((stats->pkts >= threshold) && (!stats->reported_drop)) {
 		notify_drop_event(uid, stats);
 		stats->reported_drop = true;
 		stats->reported_recovery = false;
 		stats->pkts = 0;
+		stats->dns_drop_count = 0;
 	}
 
 	if (!stats->ts_reset)
@@ -252,16 +331,18 @@ static void update_packet_count(int uid, struct packet_drop_stats *stats)
 		if (stats->pkts >= threshold && stats->reported_drop)
 			notify_drop_event(uid, stats);
 		stats->pkts = 0;
+		stats->dns_drop_count = 0;
 	}
 }
 
 static int update_filter_pkts(struct uid_info *info,
-	struct packet_drop_stats *stats, int pass)
+	struct packet_drop_stats *stats, int pass, bool is_dns_drop)
 {
 	int ret = 0;
 
 	if (pass == PASS) {
 		stats->pkts = 0;
+		stats->dns_drop_count = 0;
 		/*
 	 	 * cond1: already notify the drop event to user
 	 	 * cond2: not notify the recovery event
@@ -273,19 +354,19 @@ static int update_filter_pkts(struct uid_info *info,
 			stats->ts_reset = 0;
 		}
 	} else {
-		update_packet_count(info->uid, stats);
+		update_packet_count(info->uid, stats, is_dns_drop);
 		ret = info->bypass;
 	}
 	return ret;
 }
 
 static int update_ip_in_pkts(struct uid_info *info,
-	struct packet_drop_stats *stats, int pass)
+	struct packet_drop_stats *stats, int pass, bool is_dns_drop)
 {
 	if (pass != PASS)
 		return 0;
 
-	update_packet_count(info->uid, stats);
+	update_packet_count(info->uid, stats, is_dns_drop);
 	return 0;
 }
 
@@ -296,6 +377,7 @@ static int update_ip_out_pkts(struct uid_info *info,
 		return 0;
 
 	stats->pkts = 0;
+	stats->dns_drop_count = 0;
 	/*
 	 * cond1: already notify the drop event to user
 	 * cond2: not notify the recovery event
@@ -388,7 +470,7 @@ bool hw_hook_bypass_skb(int af, int hook, struct sk_buff *skb)
 	return hw_bypass_skb(af, HW_PFB_HOOK_ICMP, NULL, skb, in, out, PASS);
 }
 
-static int hw_pfb_hooks_info_judge(int i, int hook, int pass)
+static int hw_pfb_hooks_info_judge(int i, int hook, int pass, bool is_dns_drop)
 {
 	int ret = 0;
 	if (i < listen_uids.nums) {
@@ -396,17 +478,17 @@ static int hw_pfb_hooks_info_judge(int i, int hook, int pass)
 		case HW_PFB_INET_LOCAL_OUT:
 		case HW_PFB_INET6_LOCAL_OUT:
 			ret = update_filter_pkts(&listen_uids.infos[i],
-				&listen_uids.infos[i].local_out_drop_stats, pass);
+				&listen_uids.infos[i].local_out_drop_stats, pass, is_dns_drop);
 			break;
 		case HW_PFB_INET_BPF_EGRESS:
 		case HW_PFB_INET6_BPF_EGRESS:
 			ret = update_filter_pkts(&listen_uids.infos[i],
-				&listen_uids.infos[i].bpf_egress_drop_stats, pass);
+				&listen_uids.infos[i].bpf_egress_drop_stats, pass, is_dns_drop);
 			break;
 		case HW_PFB_INET_IP_XMIT:
 		case HW_PFB_INET6_IP_XMIT:
 			ret = update_ip_in_pkts(&listen_uids.infos[i],
-				&listen_uids.infos[i].ip_in_stats, pass);
+				&listen_uids.infos[i].ip_in_stats, pass, is_dns_drop);
 			break;
 		case HW_PFB_INET_DEV_XMIT:
 		case HW_PFB_INET6_DEV_XMIT:
@@ -416,12 +498,12 @@ static int hw_pfb_hooks_info_judge(int i, int hook, int pass)
 		case HW_PFB_INET_LOCAL_IN:
 		case HW_PFB_INET6_LOCAL_IN:
 			ret = update_filter_pkts(&listen_uids.infos[i],
-				&listen_uids.infos[i].local_in_drop_stats, pass);
+				&listen_uids.infos[i].local_in_drop_stats, pass, is_dns_drop);
 			break;
 		case HW_PFB_INET_BPF_INGRESS:
 		case HW_PFB_INET6_BPF_INGRESS:
 			ret = update_filter_pkts(&listen_uids.infos[i],
-				&listen_uids.infos[i].bpf_ingress_drop_stats, pass);
+				&listen_uids.infos[i].bpf_ingress_drop_stats, pass, is_dns_drop);
 			break;
 		case HW_PFB_HOOK_ICMP:
 			ret = listen_uids.infos[i].bypass;
@@ -434,6 +516,26 @@ static int hw_pfb_hooks_info_judge(int i, int hook, int pass)
 	return ret;
 }
 
+static bool is_dns_dport(int protocol, int dport)
+{
+	if (protocol == IPPROTO_UDP)
+		return dport == htons(UDP_DNS_PORT);
+
+	if (protocol == IPPROTO_TCP)
+		return dport == htons(TCP_DNS_PORT);
+
+	return false;
+}
+
+bool is_dns_data_drop(int pass, int hook, int protocol, int dport)
+{
+	if (pass == PASS)
+		return false;
+	if (hook != HW_PFB_INET_LOCAL_OUT && hook != HW_PFB_INET6_LOCAL_OUT)
+		return false;
+	return is_dns_dport(protocol, dport);
+}
+
 /* if we should bypass this skb, return 1, else return 0 */
 bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 	struct sk_buff *skb, struct net_device *in,
@@ -442,6 +544,7 @@ bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 	uid_t uid;
 	int i;
 	int ret = 0;
+	bool is_dns_drop = false;
 
 	if (notifier == NULL)
 		return ret;
@@ -466,14 +569,228 @@ bool hw_bypass_skb(int af, int hook, const struct sock *sk,
 		if (listen_uids.infos[i].uid == uid)
 			break;
 	}
-	ret = hw_pfb_hooks_info_judge(i, hook, pass);
+
+	if (is_dns_data_drop(pass, hook, sk->sk_protocol, sk->sk_dport))
+		is_dns_drop = true;
+
+	ret = hw_pfb_hooks_info_judge(i, hook, pass, is_dns_drop);
 	spin_unlock_bh(&listen_uids.lock);
 
 	return ret;
 }
 
+static void reset_socket_close_info(void)
+{
+	spin_lock_bh(&g_socket_close_lock);
+	(void)memset_s(&g_socket_close_uids_info, sizeof(struct chr_socket_close_info), 0, sizeof(struct chr_socket_close_info));
+	g_socket_close_index = SOCKET_CLOSE_INFO_INIT_INDEX;
+	spin_unlock_bh(&g_socket_close_lock);
+}
+
+static void process_report_socket_close_info(int size, char *p)
+{
+	int i;
+
+	if (size > MAX_CHR_SOCKET_CLOSE_UID_NUM || size < 0)
+		return;
+
+	assign_short(p, 4 + size * (SOCKET_CLOSE_INFO_SIZE));
+	skip_byte(p, sizeof(s16));
+
+	for (i = 0; i < size ; i++) {
+		if (g_socket_close_uids_info[i].uid == 0)
+			continue;
+
+		assign_int(p, g_socket_close_uids_info[i].uid);
+		skip_byte(p, sizeof(int));
+
+		assign_int(p,  g_socket_close_uids_info[i].is_tcp);
+		skip_byte(p, sizeof(int));
+
+		assign_int(p,  g_socket_close_uids_info[i].net_id);
+		skip_byte(p, sizeof(int));
+
+		assign_int(p,  g_socket_close_uids_info[i].is_foreground);
+		skip_byte(p, sizeof(int));
+
+		(void)strncpy_s(p, IFNAMSIZ, g_socket_close_uids_info[i].ifname, IFNAMSIZ - 1);
+		skip_byte(p, IFNAMSIZ);
+	}
+}
+
+static void notify_socket_close_event(int size)
+{
+	char event[NOTIFY_BUF_LEN] = {0};
+	char *p = event;
+
+	if (!notifier)
+		return;
+
+	assign_short(p, SOCKET_CLOSE_CHR_MSG_ID);
+	skip_byte(p, sizeof(s16));
+	process_report_socket_close_info(size, p);
+	notifier((struct res_msg_head *)event);
+}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+static void chr_socket_close_data_process_timer(struct timer_list* data)
+#else
+static void chr_socket_close_data_process_timer(unsigned long data)
+#endif
+{
+	if (g_socket_close_index < 0)
+		return;
+	notify_socket_close_event(g_socket_close_index + 1);
+	reset_socket_close_info();
+}
+
+static int get_update_uid_info_index(struct sock *sk)
+{
+	int i;
+	int uid = sock_i_uid(sk).val;
+
+	for (i = 0; i <= g_socket_close_index; i++) {
+		if (g_socket_close_uids_info[i].uid == uid) {
+			if (g_socket_close_uids_info[i].is_tcp == 1 && sk->sk_protocol == IPPROTO_UDP)
+				return i;
+			return INGONER_SOCKET_INDEX;
+		}
+	}
+	return i >= MAX_CHR_SOCKET_CLOSE_UID_NUM ? INGONER_SOCKET_INDEX : i;
+}
+
+static void init_socket_close_timer(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+	timer_setup(&g_socket_close_timer, chr_socket_close_data_process_timer, 0);
+#else
+	init_timer(&g_socket_close_timer);
+	g_socket_close_timer.data = 0;
+	g_socket_close_timer.function = chr_socket_close_data_process_timer;
+#endif
+	g_socket_close_timer.expires = jiffies + PROP_SOCKET_CLOSED_TIME;
+	add_timer(&g_socket_close_timer);
+}
+
+static bool is_foreground_uid(int uid)
+{
+	int i;
+
+	spin_lock_bh(&listen_uids.lock);
+	for (i = 0; i < listen_uids.nums; ++i) {
+		if (listen_uids.infos[i].uid == uid)
+			break;
+	}
+	spin_unlock_bh(&listen_uids.lock);
+	return i < listen_uids.nums;
+}
+
+static bool is_netd_process()
+{
+	char proc_name[PROCESS_NAME_LEN + 1] = {0};
+	struct task_struct *task = NULL;
+	struct pid_namespace *ns = NULL;
+	int ret;
+
+	if (current != NULL && current->group_leader != NULL) {
+		rcu_read_lock();
+		 ns = task_active_pid_ns(current);
+		 if (ns == NULL) {
+			rcu_read_unlock();
+			return false;
+		 }
+		 task = find_task_by_pid_ns(current->group_leader->pid, ns);
+		if (task == NULL) {
+			rcu_read_unlock();
+			return false;
+		}
+		get_task_struct(task);
+		rcu_read_unlock();
+		if (task->active_mm != NULL && task->active_mm->exe_file != NULL && task->active_mm->exe_file->f_path.dentry != NULL) {
+			ret = memcpy_s(proc_name, PROCESS_NAME_LEN, task->active_mm->exe_file->f_path.dentry->d_iname, PROCESS_NAME_LEN);
+			if (ret != EOK) {
+				put_task_struct(task);
+				return false;
+			}
+		}
+		put_task_struct(task);
+		return strcmp(proc_name, NETD) == 0;
+	}
+	return false;
+}
+
+static void update_socket_close_uids_info(int index, struct sock *sk, int uid)
+{
+	char ifname[IFNAMSIZ] = {0};
+
+	if (index >= MAX_CHR_SOCKET_CLOSE_UID_NUM || index < 0)
+		return;
+
+	spin_lock_bh(&g_socket_close_lock);
+	g_socket_close_uids_info[index].uid = uid;
+	g_socket_close_uids_info[index].is_foreground = is_foreground_uid(uid) ? 1 : 0;
+	g_socket_close_uids_info[index].is_tcp = sk->sk_protocol == IPPROTO_TCP ? 1 : 0;
+	if (sk->sk_bound_dev_if > 0 && netdev_get_name(sock_net(sk), ifname, sk->sk_bound_dev_if) == 0)
+		(void)strncpy_s(g_socket_close_uids_info[index].ifname, IFNAMSIZ, ifname, IFNAMSIZ - 1);
+	g_socket_close_uids_info[index].net_id = sk->sk_mark & NET_ID_MASK;
+	if (index > g_socket_close_index)
+		g_socket_close_index = index;
+	spin_unlock_bh(&g_socket_close_lock);
+}
+
+static bool is_need_detect_uid(int uid)
+{
+	int i = 0;
+
+	spin_lock_bh(&g_socket_close_detect_uids.lock);
+	for (i = 0; i < MAX_SOCKET_CLOSE_DETECT_NUM; i++) {
+		if (g_socket_close_detect_uids.uids[i] == uid) {
+			spin_unlock_bh(&g_socket_close_detect_uids.lock);
+			return true;
+		}
+	}
+	spin_unlock_bh(&g_socket_close_detect_uids.lock);
+	return false;
+}
+
+void socket_close_chr(struct sock *sk)
+{
+	int index;
+	int uid;
+
+	if (sk == NULL || (sk->sk_protocol != IPPROTO_TCP && sk->sk_protocol != IPPROTO_UDP))
+		return;
+
+	uid = sk->sk_uid.val;
+	if (uid < SYSTEM_UID_MAX || current_uid().val >= SYSTEM_UID_MAX || !is_need_detect_uid(uid))
+		return;
+
+	if (is_dns_dport(sk->sk_protocol, sk->sk_dport))
+		return;
+
+	if (is_netd_process())
+		return;
+
+	if (!g_is_initial_socket_close_timer) {
+		init_socket_close_timer();
+		g_is_initial_socket_close_timer = true;
+	}
+
+	if (timer_pending(&g_socket_close_timer) == 0) {
+		g_socket_close_timer.expires = jiffies + PROP_SOCKET_CLOSED_TIME;
+		add_timer(&g_socket_close_timer);
+	}
+
+	index = get_update_uid_info_index(sk);
+	update_socket_close_uids_info(index, sk, uid);
+}
+
 msg_process* __init hw_packet_filter_bypass_init(notify_event *notify)
 {
+	spin_lock_init(&g_socket_close_detect_uids.lock);
+	spin_lock_init(&g_socket_close_lock);
+	reset_socket_close_info();
+	reset_detect_uid();
 	if (notify == NULL) {
 		pr_err("%s: notify parameter is null\n", __func__);
 		return NULL;

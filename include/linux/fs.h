@@ -553,6 +553,11 @@ static inline void i_mmap_unlock_write(struct address_space *mapping)
 	up_write(&mapping->i_mmap_rwsem);
 }
 
+static inline int i_mmap_trylock_read(struct address_space *mapping)
+{
+	return down_read_trylock(&mapping->i_mmap_rwsem);
+}
+
 static inline void i_mmap_lock_read(struct address_space *mapping)
 {
 	down_read(&mapping->i_mmap_rwsem);
@@ -699,7 +704,7 @@ struct inode {
 	unsigned long		i_state;
 	struct rw_semaphore	i_rwsem;
 #ifdef CONFIG_SDP_ENCRYPTION
-	struct rw_semaphore     i_sdp_sem; /* protect sdp */
+	struct mutex            i_sdp_mutex; /* protect sdp */
 #endif
 	unsigned long		dirtied_when;	/* jiffies of first dirtying */
 	unsigned long		dirtied_time_when;
@@ -3787,4 +3792,5 @@ static inline int inode_drain_writes(struct inode *inode)
 	return filemap_write_and_wait(inode->i_mapping);
 }
 
+extern void ksys_sync_for_suspend(void);
 #endif /* _LINUX_FS_H */

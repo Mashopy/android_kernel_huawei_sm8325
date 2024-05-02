@@ -36,5 +36,8 @@ int usbswitch_common_manual_detach(void);
 int usbswitch_common_dcd_timeout_enable(bool enable_flag);
 int usbswitch_common_dcd_timeout_status(void);
 int usbswitch_common_chg_type_det(bool en);
-
+#ifdef CONFIG_HUAWEI_PD_THIRDPARTY
+void pd_dpm_report_device_attach(void);
+void pd_dpm_report_device_detach(void);
+#endif /* CONFIG_HUAWEI_PD_THIRDPARTY */
 #endif /* _USBSWITCH_COMMON_H_ */

@@ -6,6 +6,7 @@
 #include "wbc_hw_hook.h"
 #include <linux/netlink.h>
 
+#define TCP_RECOVER_HIVIEW_ID 909002109
 #define CHR_SPEED_SLOW_EVENT 8
 #define CHR_NETLINK_INIT 1
 #define CHR_NETLINK_EXIT 0

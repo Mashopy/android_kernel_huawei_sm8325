@@ -24,10 +24,16 @@
 
 #ifdef CONFIG_DIRECT_CHARGER
 int direct_charge_turbo_get_time_para(struct direct_charge_time_para **para, int *size);
+int direct_charge_turbo_get_pre_turbo_max_power(void);
+void direct_charge_turbo_send_max_power(int value);
 #else
 static inline int direct_charge_turbo_get_time_para(struct direct_charge_time_para **para, int *size)
 {
 	return -1;
+}
+
+static inline void direct_charge_turbo_send_max_power(int value)
+{
 }
 #endif /* CONFIG_DIRECT_CHARGER */
 

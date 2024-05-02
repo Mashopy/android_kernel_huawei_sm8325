@@ -410,6 +410,8 @@ struct dma_buf {
 	unsigned long long timestamp;
 	pid_t tgid;
 	pid_t pid;
+	char exp_task_comm[TASK_COMM_LEN]; /* Name of exporter task */
+	char exp_thread_comm[TASK_COMM_LEN]; /* Name of exporter thread */
 #ifdef CONFIG_DMABUF_DESTRUCTOR_SUPPORT
 	dma_buf_destructor dtor;
 	void *dtor_data;

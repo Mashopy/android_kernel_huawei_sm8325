@@ -135,8 +135,8 @@ enum zrhung_wp_id {
 #define ZRHUNG_CFG_CAT_NUM_MAX 200
 #define ZRHUNG_CFG_ENTRY_NUM (ZRHUNG_CAT_NUM_MAX * ZRHUNG_CFG_CAT_NUM_MAX)
 
-#define zrhung_wpid(wp) (wp & 0x00FF)
-#define zrhung_wpcat(wp) (wp >> 8 & 0x00FF)
+#define zrhung_wpid(wp) ((wp) & 0x00FF)
+#define zrhung_wpcat(wp) ((wp) >> 8 & 0x00FF)
 
 #define zrhung_wp_to_entry(wp) (zrhung_wpcat(wp) * \
 	ZRHUNG_CFG_CAT_NUM_MAX + zrhung_wpid(wp))

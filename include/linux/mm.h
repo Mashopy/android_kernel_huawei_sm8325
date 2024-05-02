@@ -40,10 +40,6 @@ struct bdi_writeback;
 
 void init_mm_internals(void);
 
-#ifdef CONFIG_RAMTURBO
-bool is_in_direct_reclaim(void);
-#endif
-
 #ifndef CONFIG_NEED_MULTIPLE_NODES	/* Don't use mapnrs, do it properly */
 extern unsigned long max_mapnr;
 

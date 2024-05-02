@@ -306,6 +306,16 @@ struct binder_frozen_status_info {
 	__u32            async_recv;
 };
 
+struct binder_feature_set {
+	__u64 feature_set;
+};
+
+struct access_token {
+	__u64 sender_tokenid;
+	__u64 first_tokenid;
+	__u64 reserved[2];
+};
+
 #define BINDER_WRITE_READ		_IOWR('b', 1, struct binder_write_read)
 #define BINDER_SET_IDLE_TIMEOUT		_IOW('b', 3, __s64)
 #define BINDER_SET_MAX_THREADS		_IOW('b', 5, __u32)
@@ -320,6 +330,8 @@ struct binder_frozen_status_info {
 #define BINDER_GET_FROZEN_INFO		_IOWR('b', 15, struct binder_frozen_status_info)
 #define BINDER_ENABLE_ONEWAY_SPAM_DETECTION	_IOW('b', 16, __u32)
 
+#define BINDER_FEATURE_SET	_IOWR('b', 30, struct binder_feature_set)
+#define BINDER_GET_ACCESS_TOKEN	_IOWR('b', 31, struct access_token)
 /*
  * NOTE: Two special error codes you should check for when calling
  * in to the driver are:

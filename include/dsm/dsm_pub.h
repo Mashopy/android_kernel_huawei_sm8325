@@ -270,6 +270,7 @@
 #define DSM_DUAL_BATTERY_CURRENT_BIAS_DETECT        920002012
 #define DSM_DUAL_BATTERY_CAPACITY_DIFFERENT_DETECT  920002013
 #define DSM_DUAL_BATTERY_OUT_OF_POSITION_DETECTION  920002014
+#define DSM_BATTERY_IO_BREAK                        920002015
 
 /* battery */
 #define DSM_BATTERY_ERROR_NO_BASE                   920001000
@@ -417,6 +418,10 @@
 
 /* keyboard */
 #define DSM_KB_CONNECTED_STATUS_NO                  936005009
+
+/* reverse charge */
+#define DSM_RCHG_TYPE_SUPER                         930001017
+#define DSM_RCHG_TYPE_NORMAL                        930001018
 
 /* superswitch */
 #define ERROR_SUPERSWITCH_BASE                      920013000
@@ -1203,30 +1208,30 @@ struct dsm_extern_client {
 #define DA_MAX_ERROR_NO		924005999
 
 struct event {
-	int error_code;				/* error code (errno) */
-	int item_id;				/* index of test item */
-	int cycle;				/* which round in aging test */
-	char result[MAX_RESULT_LEN];		/* actual test result */
-	char station[MAX_STATION_LEN];		/* name of station */
-	char bsn[MAX_BSN_LEN];			/* serial number of board */
-	char time[MAX_TIME_LEN];		/* test time */
-	char device_name[MAX_DEVICE_NAME_LEN];	/* name of device */
-	char test_name[MAX_TEST_NAME_LEN];	/* name of test item */
-	char value[MAX_VAL_LEN];		/* measured value */
-	char min_threshold[MAX_VAL_LEN];	/* min limit of measured value */
-	char max_threshold[MAX_VAL_LEN];	/* max limit of measured value */
-	char firmware[MAX_FIRMWARE_LEN];	/* firmware information */
-	char description[MAX_DESCRIPTION_LEN];	/* brief description */
+	int error_code;                         /* error code (errno) */
+	int item_id;                            /* index of test item */
+	int cycle;                              /* which round in aging test */
+	char result[MAX_RESULT_LEN];            /* actual test result */
+	char station[MAX_STATION_LEN];          /* name of station */
+	char bsn[MAX_BSN_LEN];                  /* serial number of board */
+	char time[MAX_TIME_LEN];                /* test time */
+	char device_name[MAX_DEVICE_NAME_LEN];  /* name of device */
+	char test_name[MAX_TEST_NAME_LEN];      /* name of test item */
+	char value[MAX_VAL_LEN];                /* measured value */
+	char min_threshold[MAX_VAL_LEN];        /* min limit of measured value */
+	char max_threshold[MAX_VAL_LEN];        /* max limit of measured value */
+	char firmware[MAX_FIRMWARE_LEN];        /* firmware information */
+	char description[MAX_DESCRIPTION_LEN];  /* brief description */
 	char front_item[MAX_FRONT_ITEM_LEN];
 	char item_counter[MAX_ITEM_COUNTER_LEN];
 	char environment[MAX_ENVIRONMENT_LEN];
 };
 
 struct message {
-	int version;				/* message version */
-	int data_source;			/* where is data from? */
-	int num_events;				/* event counts */
-	struct event events[MAX_MSG_EVENT_NUM];	/* store event entity */
+	int version;                            /* message version */
+	int data_source;                        /* where is data from? */
+	int num_events;                         /* event counts */
+	struct event events[MAX_MSG_EVENT_NUM]; /* store event entity */
 };
 #endif
 
@@ -1289,7 +1294,6 @@ static inline int dsm_client_copy_ext(struct dsm_client *client,
 
 static inline void dsm_client_notify(struct dsm_client *client, int error_no)
 {
-
 }
 
 static inline int dsm_update_client_vendor_info(struct dsm_dev *dev)

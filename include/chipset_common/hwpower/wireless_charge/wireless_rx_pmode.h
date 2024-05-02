@@ -65,6 +65,7 @@ struct wlrx_pmode *wlrx_pmode_get_pcfg_by_pid(unsigned int drv_type, int pid);
 struct wlrx_pmode *wlrx_pmode_get_curr_pcfg(unsigned int drv_type);
 int wlrx_pmode_get_pcfg_level(unsigned int drv_type);
 int wlrx_pmode_get_pid_by_name(unsigned int drv_type, const char *mode_name);
+bool wlrx_pmode_in_dc_mode(unsigned int drv_type);
 int wlrx_pmode_get_exp_pid(unsigned int drv_type, int pid);
 int wlrx_pmode_get_curr_pid(unsigned int drv_type);
 void wlrx_pmode_set_curr_pid(unsigned int drv_type, int pid);
@@ -89,6 +90,11 @@ static inline int wlrx_pmode_get_pcfg_level(unsigned int drv_type)
 static inline int wlrx_pmode_get_pid_by_name(unsigned int drv_type, const char *mode_name)
 {
 	return 0;
+}
+
+static inline bool wlrx_pmode_in_dc_mode(unsigned int drv_type)
+{
+	return false;
 }
 
 static inline int wlrx_pmode_get_exp_pid(unsigned int drv_type, int pid)

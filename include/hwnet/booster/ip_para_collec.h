@@ -15,7 +15,7 @@
 #include <linux/timer.h>
 #include <uapi/linux/netfilter.h>
 #include <uapi/linux/netfilter_ipv4.h>
-
+#include <net/sock.h>
 #include "netlink_handle.h"
 
 #define MAX_APP_LIST_LEN 8
@@ -81,6 +81,12 @@
 #define REPORT_TRAFFIC_LEN_THRESHOLD (100 * 1024 * 1024) // the report threshold of traffic len is 100 MB
 #define REPORT_TRAFFIC_DURATION_THRESHOLD (60 * 60 * 1000) //  the report threshold of traffic duration is 60 min
 #define MAX_REPORT_DURATION_CYCLE (7 * 24 * 60 * 60 * 1000) // the max report cycle of duration is 7 days
+#define TCP_RESET_NOTIFY_LEN 512
+#define TCP_RESET_CHR_FORBIDDEN_REPORT_TIME (24 * 60 * 60 * HZ)
+#define MAX_TCP_SOCK_INFO_SIZE 20
+#define TCP_RESET_CHR_RPT_LEN 24
+#define IGNORE_UID 10000
+#define MAX_REPORT_TCP_RESET_CNT 6
 
 /* The structure that sets the app information is defined as: */
 struct app_id {
@@ -288,6 +294,16 @@ struct virtual_sim_state_msg {
 	u32 virtual_sim_state;
 };
 
+struct tcp_reset_info {
+	int record_index;
+	int syn_v4_count;
+	int syn_v6_count;
+	int established_v4_count;
+	int established_v6_count;
+	unsigned long report_stamp;
+	int report_cnt;
+	const struct sock *sock_info[MAX_TCP_SOCK_INFO_SIZE];
+};
 /* The structure of statistics traffic info is defined as: */
 typedef struct traffic_info {
 	u32 uid; // the uid of top app, and set the uid of head node to 88888

@@ -17,9 +17,6 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <linux/percpu-refcount.h>
-#include <linux/mm.h>
-#include <linux/page-flags.h>
-#include <platform/linux/memcheck.h>
 
 /*
  * Flags to pass to kmem_cache_create().

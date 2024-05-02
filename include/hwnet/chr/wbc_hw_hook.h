@@ -205,6 +205,16 @@ struct ipv6_addr_info {
 	u32 dns_option;
 };
 
+struct tcp_recover_info {
+	u32 app_uid;
+	u32 tcp_rtt;
+	u32 tcp_mss;
+	u32 tcp_seq;
+	u32 tcp_ack;
+	u32 tcp_unreceived;
+	u32 estimate_time;
+};
+
 /*
  * struct struct_name - http_return.
  * Web page statistics structure.
@@ -269,6 +279,7 @@ struct http_return {
 	u32 tcp_srtt;
 	u32 data_reg_tech;
 	struct ipv6_addr_info v6;
+	struct tcp_recover_info tcp_recover;
 };
 
 /*
@@ -311,6 +322,7 @@ bool is_notify_chr_event(int old_data_reg_tech, int new_data_reg_tech);
 void notify_chr_thread_to_update_rtt(u32 seq_rtt_us, struct sock *sk,
 	u8 data_net_flag);
 uid_t get_uid_from_sock(struct sock *sk);
+void upload_tcp_recover_info(struct tcp_recover_info *tcp_info);
 extern int g_app_top_uid;
 
 #endif /* WEB_HW_HOOK */

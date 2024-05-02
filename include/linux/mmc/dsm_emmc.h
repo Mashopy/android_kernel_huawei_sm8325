@@ -49,6 +49,7 @@ enum DSM_EMMC_ERR
 	DSM_EMMC_DATA_CRC                 = 928002030,
 	DSM_EMMC_COMMAND_CRC              = 928002031,
 	DSM_EMMC_IO_TIMEOUT               = 928002037,
+	DSM_EMMC_CQE_RECOVERY             = 928002038,
 };
 
 

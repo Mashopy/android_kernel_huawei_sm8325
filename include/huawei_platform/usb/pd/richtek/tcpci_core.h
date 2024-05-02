@@ -350,6 +350,8 @@ struct tcpc_device {
 	bool typec_during_direct_charge;
 	uint8_t no_rpsrc_state;
 	uint32_t en_temporary_lock;
+	int vbus_only_ignore;
+	int only_charger_stg;
 };
 
 

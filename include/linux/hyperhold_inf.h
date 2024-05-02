@@ -15,6 +15,7 @@
 #ifndef HYPERHOLD_INF_H
 #define HYPERHOLD_INF_H
 
+#include <linux/version.h>
 #ifdef CONFIG_HYPERHOLD_CORE
 #include <linux/memcontrol.h>
 #endif
@@ -24,7 +25,7 @@ enum hyperhold_mcg_member {
 	MCG_ZRAM_PG_SZ,
 	MCG_DISK_STORED_SZ,
 	MCG_DISK_STORED_PG_SZ,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	MCG_DISK_FILE_STORED_SZ,
 	MCG_DISK_FILE_STORED_PG_SZ,
 #endif
@@ -48,7 +49,7 @@ enum hyperhold_reclaim_source {
 #endif
 };
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 struct hp_file_cfg {
 	__u32 pin;
 	unsigned long long len;
@@ -75,7 +76,7 @@ extern unsigned long hyperhold_reclaim_in(unsigned long size);
 extern unsigned long hyperhold_get_zram_used_pages(void);
 extern unsigned long hyperhold_get_eswap_used_pages(void);
 extern unsigned long long hyperhold_get_zram_pagefault(void);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 extern void set_hyperhold_crypto_switch(int val);
 extern int get_hyperhold_crypto_switch(void);
 #endif

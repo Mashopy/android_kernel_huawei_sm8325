@@ -13,6 +13,8 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 
+#define STP_VERSION_LEN 8
+#define STP_CONTENT_LEN 900
 #define STP_ITEM_NAME_LEN 16
 
 #define STP_NAME_KCODE         "kcode"
@@ -97,6 +99,12 @@ enum stp_item_category {
 	DOUBLE_FREE,
 	KSHIELD,
 	STP_ITEM_MAX,
+};
+
+struct event_info {
+	uint64_t id;
+	char version[STP_VERSION_LEN];
+	uint8_t content[STP_CONTENT_LEN];
 };
 
 struct stp_item_info {
@@ -198,10 +206,17 @@ static inline int kernel_stp_upload(struct stp_item result, const char *addition
 
 #ifdef CONFIG_HW_KERNEL_STP
 int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info);
+int kernel_stp_report_security_info(const struct event_info *info);
 
 #else
 static inline int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info)
 {
+	return 0;
+}
+
+static inline int kernel_stp_report_security_info(const struct event_info *info)
+{
+	(void)info;
 	return 0;
 }
 #endif

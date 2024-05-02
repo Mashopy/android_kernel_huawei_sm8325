@@ -22,7 +22,7 @@
 #define CONFIG_DPM_TYPEC_CAP_CUSTOM_SRC
 #define PD_DPM_HW_DOCK_SVID 0x12d1
 
-#define PD_DPM_CC_CHANGE_COUNTER_THRESHOLD     50
+#define PD_DPM_CC_CHANGE_COUNTER_THRESHOLD     200
 #define PD_DPM_CC_CHANGE_INTERVAL              2000 /* ms */
 #define PD_DPM_CC_CHANGE_MSEC                  1000
 #define PD_DPM_CC_CHANGE_BUF_SIZE              10
@@ -459,6 +459,12 @@ bool is_usb_rdy(void);
 void pd_dpm_set_is_direct_charge_cable(int ret);
 void pd_dpm_set_glink_status(void);
 void pd_dpm_set_emark_current(int cur);
+bool get_judge_do_bc12(void);
+bool get_only_charger_stg(void);
+bool get_pd_negotiate_flag(void);
+void set_pd_negotiate_flag(bool flag);
+bool get_dummy_pullout_flag(void);
+void set_dummy_pullout_flag(bool flag);
 #ifndef QCOM_PLATFORM_6225
 void pd_dpm_set_pd_charger_status(void *data);
 void pd_dpm_set_cc_orientation(int cc_orientation);
@@ -500,6 +506,34 @@ static inline void pd_dpm_set_glink_status(void)
 static inline void pd_dpm_set_emark_current(int cur)
 {
 }
+
+static inline bool get_judge_do_bc12(void)
+{
+	return false;
+}
+
+static inline bool get_only_charger_stg(void)
+{
+	return false;
+}
+
+static inline bool get_pd_negotiate_flag(void)
+{
+	return false;
+}
+
+static inline void set_pd_negotiate_flag(bool flag);
+{
+}
+
+static inline bool get_dummy_pullout_flag(void)
+{
+	return false;
+}
+
+static inline void set_dummy_pullout_flag(bool flag)
+{
+}
 #endif /* CONFIG_HUAWEI_PD */
 
 #ifdef CONFIG_HUAWEI_PD
@@ -510,5 +544,18 @@ static inline struct otg_ocp_para *pd_dpm_get_otg_ocp_check_para(void)
 	return NULL;
 }
 #endif /* CONFIG_HUAWEI_PD */
+
+#ifdef CONFIG_HUAWEI_PD_THIRDPARTY
+void set_role_swap_flag(bool flag);
+bool get_role_swap_flag(void);
+#else
+static inline void set_role_swap_flag(bool flag)
+{
+}
+static inline bool get_role_swap_flag(void)
+{
+	return false;
+}
+#endif /* CONFIG_HUAWEI_PD_THIRDPARTY */
 
 #endif

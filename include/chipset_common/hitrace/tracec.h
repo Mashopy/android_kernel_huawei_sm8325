@@ -30,7 +30,7 @@ enum hitrace_version {
 enum hitrace_flag {
 	/* MIN: valid */
 	HITRACE_FLAG_MIN = 0,
-	/*DEFAULT: default value*/
+	/* DEFAULT: default value */
 	HITRACE_FLAG_DEFAULT = 0,
 	/* trace sync and async call. default: trace sync call only */
 	HITRACE_FLAG_INCLUDE_ASYNC = 1 << 0,

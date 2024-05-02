@@ -54,12 +54,6 @@ enum hvdcp_reset_type {
 };
 
 #if (defined(CONFIG_HUAWEI_CHARGER_AP) || defined(CONFIG_FCP_CHARGER))
-unsigned int hvdcp_get_rt_current_thld(void);
-void hvdcp_set_rt_current_thld(unsigned int curr);
-unsigned int hvdcp_get_rt_time(void);
-void hvdcp_set_rt_time(unsigned int time);
-bool hvdcp_get_rt_result(void);
-void hvdcp_set_rt_result(bool result);
 bool hvdcp_get_charging_flag(void);
 void hvdcp_set_charging_flag(bool flag);
 unsigned int hvdcp_get_charging_stage(void);
@@ -89,33 +83,6 @@ bool hvdcp_check_adapter_detect_count(void);
 int hvdcp_detect_adapter(void);
 bool hvdcp_exit_charging(void);
 #else
-static inline unsigned int hvdcp_get_rt_current_thld(void)
-{
-	return 0;
-}
-
-static inline void hvdcp_set_rt_current_thld(unsigned int curr)
-{
-}
-
-static inline unsigned int hvdcp_get_rt_time(void)
-{
-	return 0;
-}
-
-static inline void hvdcp_set_rt_time(unsigned int time)
-{
-}
-
-static inline bool hvdcp_get_rt_result(void)
-{
-	return false;
-}
-
-static inline void hvdcp_set_rt_result(bool result)
-{
-}
-
 static inline bool hvdcp_get_charging_flag(void)
 {
 	return false;

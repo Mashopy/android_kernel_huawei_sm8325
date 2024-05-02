@@ -65,4 +65,7 @@ int rcutree_dead_cpu(unsigned int cpu);
 int rcutree_dying_cpu(unsigned int cpu);
 void rcu_cpu_starting(unsigned int cpu);
 
+#define RCU_GP_KTHREADS_DEBUG
+void show_rcu_gp_kthreads_debug(void);
+
 #endif /* __LINUX_RCUTREE_H */

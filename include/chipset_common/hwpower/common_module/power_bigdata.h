@@ -29,11 +29,13 @@
 enum power_bigdata_type {
 	POWER_BIGDATA_TYPE_BEGIN = 0,
 	POWER_BIGDATA_TYPE_COUL = POWER_BIGDATA_TYPE_BEGIN,
+	POWER_BIGDATA_TYPE_WLTX_AUX_CALIBRATE,
 	POWER_BIGDATA_TYPE_END,
 };
 
 enum power_bigdata_event_id {
 	POWER_BIGDATA_EVENT_ID_COUL = 930001007,
+	POWER_BIGDATA_EVENT_ID_WLTX_AUX_CALIBRATE = 930009002,
 };
 
 typedef int (*power_bigdata_send_cb)(struct imonitor_eventobj *, void *);

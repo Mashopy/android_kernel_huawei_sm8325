@@ -1281,6 +1281,7 @@ long ksys_statfs(const char __user * path, struct statfs __user *buf);
 long ksys_newlstat(const char __user *filename, struct stat __user *statbuf);
 long ksys_lstat64(const char __user *filename, struct stat64 __user *statbuf);
 long ksys_readlink(const char __user *path, char __user *buf, int bufsiz);
+long ksys_fdatasync(unsigned int fd);
 #endif
 
 /*

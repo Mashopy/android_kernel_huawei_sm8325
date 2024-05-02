@@ -392,6 +392,9 @@ unsigned long wb_calc_thresh(struct bdi_writeback *wb, unsigned long thresh);
 void wb_update_bandwidth(struct bdi_writeback *wb, unsigned long start_time);
 void balance_dirty_pages_ratelimited(struct address_space *mapping);
 bool wb_over_bg_thresh(struct bdi_writeback *wb);
+#ifdef CONFIG_DISK_MAGO
+bool dm_wb_over_bg_thresh(unsigned int dirty_ratio);
+#endif
 
 typedef int (*writepage_t)(struct page *page, struct writeback_control *wbc,
 				void *data);

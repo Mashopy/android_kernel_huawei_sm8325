@@ -30,6 +30,7 @@
 #define DT_USLEEP_10MS     10000
 #define DT_USLEEP_15MS     15000
 #define DT_USLEEP_20MS     20000
+#define DT_USLEEP_50MS     50000
 
 #define DT_MSLEEP_1MS      1
 #define DT_MSLEEP_10MS     10

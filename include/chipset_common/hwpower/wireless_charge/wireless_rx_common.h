@@ -33,6 +33,8 @@ enum wlrx_scene {
 
 #ifdef CONFIG_WIRELESS_CHARGER
 enum wlrx_scene wlrx_get_scene(void);
+void wlrx_set_high_pwr_test_flag(unsigned int drv_type, bool flag);
+bool wlrx_in_high_pwr_test(unsigned int drv_type);
 void wireless_charge_icon_display(int crit_type);
 void wlrx_cut_off_wired_channel(unsigned int drv_type);
 void wlrx_dsm_report(unsigned int drv_type, int err_no,
@@ -41,6 +43,15 @@ char *dsm_buff, size_t buff_size);
 static inline enum wlrx_scene wlrx_get_scene(void)
 {
 	return WLRX_SCN_END;
+}
+
+static inline void wlrx_set_high_pwr_test_flag(unsigned int drv_type, bool flag)
+{
+}
+
+static inline bool wlrx_in_high_pwr_test(unsigned int drv_type)
+{
+	return false;
 }
 
 static inline void wireless_charge_icon_display(int crit_type)

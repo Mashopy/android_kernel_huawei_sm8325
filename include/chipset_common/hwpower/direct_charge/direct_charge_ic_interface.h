@@ -35,6 +35,7 @@ int dc_prepare_enable_ic(int mode, unsigned int index);
 int dc_config_ic_watchdog(int mode, unsigned int index, int time);
 int dc_kick_ic_watchdog(int mode, unsigned int index);
 int dc_get_ic_id(int mode, unsigned int index);
+int dc_get_ic_max_ibat(int mode, unsigned int index, int *ibat);
 int dc_get_ic_status(int mode, unsigned int index);
 int dc_set_ic_buck_enable(int mode, unsigned int index, int enable);
 int dc_reset_and_init_ic_reg(int mode, unsigned int index);
@@ -109,6 +110,11 @@ static inline int dc_kick_ic_watchdog(int mode, unsigned int index)
 }
 
 static inline int dc_get_ic_id(int mode, unsigned int index)
+{
+	return -EPERM;
+}
+
+static inline int dc_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
 {
 	return -EPERM;
 }

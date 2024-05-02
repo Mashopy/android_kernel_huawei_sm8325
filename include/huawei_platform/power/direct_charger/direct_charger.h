@@ -78,7 +78,6 @@
 #include <chipset_common/hwpower/direct_charge/multi_ic_check.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_mmi.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_comp.h>
-#include <chipset_common/hwpower/protocol/adapter_protocol.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
 #include <chipset_common/hwpower/adapter/adapter_test.h>
@@ -259,6 +258,7 @@ enum direct_charge_disable_type {
 	DC_DISABLE_FATAL_ISC_TYPE,
 	DC_DISABLE_WIRELESS_TX,
 	DC_DISABLE_BATT_CERTIFICATION_TYPE,
+	DC_DISABLE_RSMC, /* rsmc:halifa */
 	DC_DISABLE_END,
 };
 
@@ -336,26 +336,6 @@ struct direct_charge_adp_cur_para {
 	int vol_min;
 	int vol_max;
 	int cur_th;
-};
-
-/* define rt test time parameters */
-enum direct_charge_rt_test_info {
-	DC_RT_CURR_TH,
-	DC_RT_TEST_TIME,
-	DC_RT_TEST_INFO_TOTAL,
-};
-
-enum direct_charge_rt_test_mode {
-	DC_NORMAL_MODE,
-	DC_CHAN1_MODE, /* channel1: single main sc mode */
-	DC_CHAN2_MODE, /* channel2: single aux sc mode */
-	DC_MODE_TOTAL,
-};
-
-struct direct_charge_rt_test_para {
-	u32 rt_curr_th;
-	u32 rt_test_time;
-	bool rt_test_result;
 };
 
 /*
@@ -437,12 +417,6 @@ enum direct_charge_info_type {
 	CC_CABLE_DETECT_OK,
 };
 
-enum direct_charge_cable_type {
-	DC_UNKNOWN_CABLE,
-	DC_NONSTD_CABLE,
-	DC_STD_CABLE,
-};
-
 enum dc_iin_thermal_channel_type {
 	DC_CHANNEL_TYPE_BEGIN = 0,
 	DC_SINGLE_CHANNEL = DC_CHANNEL_TYPE_BEGIN,
@@ -505,12 +479,12 @@ struct direct_charge_device {
 	struct direct_charge_max_power_time_para max_power_time[DC_MAX_POWER_TIME_PARA_LEVEL];
 	struct direct_charge_limit_max_power_para limit_max_pwr;
 	struct direct_charge_vstep_para vstep_para[DC_VSTEP_PARA_LEVEL];
-	struct direct_charge_rt_test_para rt_test_para[DC_MODE_TOTAL];
 	struct multi_ic_check_para multi_ic_check_info;
 	struct multi_ic_check_mode_para multi_ic_mode_para;
 	struct dc_lvc_mos_para lvc_mos_dts;
 	struct dc_comp_para comp_para;
 	struct nty_data *fault_data;
+	struct dc_cable_info cable_info;
 	int time_para_parse_ok;
 	int stage_need_to_jump[2 * DC_VOLT_LEVEL];
 	int cam_flash_stop;
@@ -576,8 +550,6 @@ struct direct_charge_device {
 	int max_dc_bat_vol;
 	int min_dc_bat_vol;
 	int super_ico_current;
-	u32 is_show_ico_first;
-	u32 is_send_cable_type;
 	int bst_ctrl;
 	int scp_power_en;
 	int compensate_r;
@@ -587,10 +559,6 @@ struct direct_charge_device {
 	int ls_id;
 	const char *ls_name;
 	int vol_err_th;
-	int nonstd_cable_full_path_res_max;
-	int std_cable_full_path_res_max;
-	int ctc_cable_full_path_res_max;
-	int full_path_res_thld;
 	int need_check_tx_iin;
 	int adaptor_leakage_current_th;
 	u32 adaptor_detect_by_voltage;
@@ -602,7 +570,6 @@ struct direct_charge_device {
 	u32 direct_charge_start_time;
 	u32 dc_multi_ic_start_time;
 	u32 cc_cable_detect_enable;
-	int cc_cable_detect_ok;
 	int max_current_for_nonstd_cable;
 	int max_current_for_ctc_cable;
 	unsigned int charge_fault;
@@ -646,8 +613,6 @@ struct direct_charge_device {
 	u32 hota_iin_limit;
 	bool nonstd_cable_flag;
 	u32 need_wired_sw_off;
-	int cable_type;
-	int orig_cable_type;
 	int max_pwr;
 	int ui_max_pwr;
 	int product_max_pwr;
@@ -655,8 +620,6 @@ struct direct_charge_device {
 	int cur_inversion;
 	u32 adapter_type;
 	int hv_flag;
-	bool ignore_full_path_res;
-	bool cable_type_send_flag;
 	int use_force_sleep;
 	struct dc_charge_info curr_info;
 	u32 cc_unsafe_sc_enable;
@@ -672,6 +635,7 @@ struct direct_charge_device {
 	u32 stop_charging_sleep_enable;
 	u32 need_boost_5v;
 	u32 prot_type;
+	bool in_stop_charging;
 };
 typedef struct aging_safe_policy_tag {
 	unsigned int level;       /* basp level */
@@ -750,6 +714,7 @@ unsigned int huawei_get_basp_vterm_dec(void);
 unsigned int huawei_get_basp_ichg_ratio(void);
 void huawei_set_basp_vterm_dec(int dec);
 void huawei_set_basp_ichg_ratio(int ratio);
+bool direct_charge_in_stop_charging(void);
 #else
 static inline void direct_charge_set_di(struct direct_charge_device *di)
 {
@@ -1032,6 +997,11 @@ static inline int sc4_get_di(struct direct_charge_device **di)
 static inline int sc4_set_disable_flags(int val, int type)
 {
 	return -1;
+}
+
+static inline bool direct_charge_in_stop_charging(void)
+{
+	return false;
 }
 #endif /* CONFIG_DIRECT_CHARGER */
 

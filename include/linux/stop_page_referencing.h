@@ -15,6 +15,8 @@ enum page_ref_type {
 	INVALID_REF,
 };
 
+static int g_enable_stop_page_referencing = 0;
+
 #ifdef CONFIG_STOP_PAGE_REF_DEBUG
 void count_ref_pages(int ref, enum page_ref_type type);
 #else

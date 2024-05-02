@@ -86,6 +86,8 @@ int power_get_adc_compensation_value(int adc_value, const struct adc_comp_data *
 int power_get_mixed_value(int value0, int value1, const struct legal_range *range);
 int power_convert_value(const struct convert_data *data, int len, int refer, int *new_val);
 int power_lookup_table_linear_trans_dichotomy(const int table[][2], int len, int ref, int dir);
+int power_min_positive(int x, int y);
+int power_max_positive(int x, int y);
 int power_find_first_char(const char *s, int pos, const char c);
 int power_sub_str(const char *s, int pos, int sub_len, char *t, int t_sz);
 bool power_regex_lite_is_matched(const char *pattern, const char *str);

@@ -42,6 +42,15 @@ enum input_clock_type {
 	INPUT_CLK_MAX
 };
 
+#ifdef CONFIG_INPUT_BTKB_LED
+struct btkb_led_dev {
+	struct input_dev *dev;
+	struct notifier_block led_input_notifier;
+	unsigned int btkb_led_notifier;
+	unsigned int btkb_led_notifier_client;
+	struct btkb_led_ops *led_ops;
+};
+#endif
 /**
  * struct input_dev - represents an input device
  * @name: name of the device
@@ -201,6 +210,9 @@ struct input_dev {
 	bool devres_managed;
 
 	ktime_t timestamp[INPUT_CLK_MAX];
+#ifdef CONFIG_INPUT_BTKB_LED
+	struct btkb_led_dev *led_dev;
+#endif
 };
 #define to_input_dev(d) container_of(d, struct input_dev, dev)
 

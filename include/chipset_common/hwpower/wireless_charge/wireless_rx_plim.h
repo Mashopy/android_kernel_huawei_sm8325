@@ -32,6 +32,7 @@ enum wlrx_plim_src {
 	WLRX_PLIM_SRC_KB,
 	WLRX_PLIM_SRC_THERMAL,
 	WLRX_PLIM_SRC_ANA_HS,
+	WLRX_PLIM_SRC_RSMC, /* rsmc:halifa */
 	WLRX_PLIM_SRC_END,
 };
 

@@ -61,6 +61,8 @@
 #define POGOPIN_EXTCON_NEEDED      1
 #define POGOPIN_EXTCON_NOT_NEEDED  0
 
+#define POGOPIN_DEFAULT_ATTACH_STATUS   1
+
 enum pogo_status {
 	POGO_NONE = 0,
 	POGO_CHARGER,
@@ -92,6 +94,7 @@ struct pogopin_info {
 	struct work_struct typec_int_work;
 	enum pogo_status pogo_insert_status;
 	struct wakeup_source *wakelock;
+	int pmic_vbus_attach_enable;
 };
 
 struct pogopin_cc_ops {
@@ -157,6 +160,7 @@ extern void pogopin_5pin_set_ana_audio_status(bool status);
 extern bool pogopin_5pin_get_ana_audio_status(void);
 extern void pogopin_set_usb_mode(int plug_in);
 extern void pogopin_set_buck_boost_gpio(int value);
+int pogopin_get_vbus_attach_enable_status(void);
 #else
 static inline void pogopin_cc_register_ops(struct pogopin_cc_ops *ops)
 {

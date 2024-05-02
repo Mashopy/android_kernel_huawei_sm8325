@@ -373,6 +373,10 @@ int charge_otg_mode_enable(int enable, unsigned int user);
 int huawei_charger_get_charge_enable(int *val);
 void huawei_charger_update_iin_thermal(void);
 void huawei_charger_set_fcp_current_limit(unsigned int value);
+void huawei_charger_set_rsmc_limit(int val);
+void huawei_charger_set_dc_disable_flags(bool disable, int type);
+bool huawei_charger_in_dc_path(void);
+int huawei_charger_get_ibus(void);
 int huawei_charger_get_vterm_dec(unsigned int *value);
 void fcp_charge_entry(void);
 #else
@@ -405,6 +409,24 @@ static inline void huawei_charger_update_iin_thermal(void)
 {
 }
 
+static inline void huawei_charger_set_rsmc_limit(int val)
+{
+}
+
+static inline void huawei_charger_set_dc_disable_flags(bool disable, int type)
+{
+}
+
+static inline bool huawei_charger_in_dc_path(void)
+{
+	return false;
+}
+
+static inline int huawei_charger_get_ibus(void)
+{
+	return 0;
+}
+
 static inline int huawei_charger_get_vterm_dec(unsigned int *value)
 {
 	return 0;
@@ -434,6 +456,7 @@ int charge_set_input_current(int iin);
 int charge_set_iin_rt_curr(int iin_rt_curr);
 void update_buck_ffc_charge_info(void);
 int get_charge_done_type(void);
+int charge_set_iin_limit(int iin_limit);
 #else
 static inline int charge_set_hiz_enable_by_direct_charge(int enable)
 {
@@ -482,6 +505,11 @@ static inline int charge_get_input_current_max(void)
 }
 
 static inline int charge_set_input_current(int iin)
+{
+	return -EINVAL;
+}
+
+static inline int charge_set_iin_limit(int iin_limit)
 {
 	return -EINVAL;
 }

@@ -58,6 +58,9 @@
 #define DEFAULT_MANUFACTURER             0
 #define DEFAULT_TX_SOFT_VER              0
 #define WLTX_AUX_TX_INFO_SIZE            4
+#define WLTX_AUX_TX_Q_CALI               1
+#define WLTX_AUX_Q_WORK_DELAY_MSECS      20000
+#define WLTX_AUX_Q_CALI_DELAY_SECS       1209600 /* two week: 2*7*24*60*60 */
 
 enum wltx_aux_open_type {
 	WLTX_AUX_OPEN_TYPE_BEGIN = 0,
@@ -121,6 +124,7 @@ enum wireless_tx_sysfs_type {
 	WL_TX_SYSFS_TX_VIN,
 	WL_TX_SYSFS_TX_IIN,
 	WL_TX_SYSFS_RX_PRODUCT_TYPE,
+	WL_TX_SYSFS_TX_Q_CALI,
 };
 
 enum wltx_acc_dev_state {
@@ -212,6 +216,7 @@ struct wltx_aux_dev_info {
 	struct delayed_work hall_away_work;
 	struct wltx_vset_para tx_vset;
 	struct wltx_aux_logic_ops *logic_ops;
+	struct delayed_work wltx_aux_q_work;
 	unsigned int monitor_interval;
 	unsigned int ping_timeout;
 	unsigned int tx_event_type;
@@ -226,6 +231,10 @@ struct wltx_aux_dev_info {
 	int gpio_tx_boost_en;
 	unsigned int ping_timeout_1;
 	unsigned int ping_timeout_2;
+	unsigned int q_detect_support;
+	unsigned int q_auto_calibration;
+	unsigned int q_calibration_result;
+	time64_t q_calibration_time;
 	struct wltx_acc_dev *wireless_tx_acc;
 	struct iin_vset_cfg vset_cfg;
 	unsigned int pwm_support;

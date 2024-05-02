@@ -768,6 +768,7 @@ struct sched_rt_entity {
 	ANDROID_KABI_RESERVE(4);
 } __randomize_layout;
 
+#ifdef CONFIG_SCHED_DEADLINE_ENABLE
 struct sched_dl_entity {
 	struct rb_node			rb_node;
 
@@ -836,6 +837,25 @@ struct sched_dl_entity {
 	 */
 	struct hrtimer inactive_timer;
 };
+#else
+struct sched_dl_entity {
+	union {
+		u64 dl_runtime;
+		u64 dl_deadline;
+		u64 dl_period;
+		u64 dl_bw;
+		u64 dl_density;
+		s64 runtime;
+		u64 deadline;
+		unsigned int flags;
+		unsigned int			dl_throttled      : 1;
+		unsigned int			dl_boosted        : 1;
+		unsigned int			dl_yielded        : 1;
+		unsigned int			dl_non_contending : 1;
+		unsigned int			dl_overrun	  : 1;
+	};
+};
+#endif /* CONFIG_SCHED_DEADLINE_ENABLE */
 
 #ifdef CONFIG_UCLAMP_TASK
 /* Number of utilization clamp buckets (shorter alias) */
@@ -1354,7 +1374,9 @@ struct task_struct {
 #ifdef CONFIG_BLK_CGROUP_IOSMART
 	struct blk_throtl_wb_stat wb_stat;
 #endif
-
+#ifdef CONFIG_DFX_BINDER
+	pid_t binder_pid;
+#endif
 	/* VM state: */
 	struct reclaim_state		*reclaim_state;
 
@@ -1504,6 +1526,11 @@ struct task_struct {
 	struct reclaim_acct		*reclaim_acct;
 #endif
 
+#ifdef CONFIG_HW_ALLOC_ACCT
+	u64 alloc_start_time;
+	u64 pgfault_start_time;
+#endif
+
 #ifdef CONFIG_FAULT_INJECTION
 	int				make_it_fail;
 	unsigned int			fail_nth;
@@ -1634,6 +1661,11 @@ struct task_struct {
 #ifdef CONFIG_GCC_PLUGIN_STACKLEAK
 	unsigned long			lowest_stack;
 	unsigned long			prev_lowest_stack;
+#endif
+
+#ifdef CONFIG_ACCESS_TOKENID
+	u64				token;
+	u64				ftoken;
 #endif
 
 /*

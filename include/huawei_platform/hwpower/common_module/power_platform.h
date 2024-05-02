@@ -31,7 +31,11 @@
 #include <huawei_platform/hwpower/common_module/power_glink.h>
 #include <linux/power/huawei_battery.h>
 #include <huawei_platform/power/huawei_charger.h>
+#include <huawei_platform/power/batt_info_pub.h>
 #include <huawei_platform/usb/usb_extra_modem.h>
+
+#define VBUS_ON  1
+#define VBUS_OFF 0
 
 static inline int power_platform_get_filter_soc(int base)
 {
@@ -102,6 +106,11 @@ static inline int power_platform_is_battery_removed(void)
 	return 0;
 }
 
+static inline int power_platform_is_battery_changed(void)
+{
+	return check_battery_sn_changed();
+}
+
 static inline int power_platform_is_battery_exit(void)
 {
 	return 1;
@@ -110,7 +119,7 @@ static inline int power_platform_is_battery_exit(void)
 static inline int power_platform_get_vbus_status(void)
 {
 	/* 1: exist if vbus > 2.8V, otherwise 0: not exist */
-	return (charge_get_vbus() >= 2800) ? 1 : 0;
+	return (charge_get_vbus() >= 2800) ? VBUS_ON : VBUS_OFF;
 }
 
 static inline int power_platform_enable_ext_pmic_boost(int value)
@@ -191,17 +200,10 @@ static inline int power_platform_get_acr_resistance(int *acr_value)
 	return -EPERM;
 }
 
-#ifdef CONFIG_DIRECT_CHARGER
 static inline bool power_platform_in_dc_charging_stage(void)
 {
 	return direct_charge_in_charging_stage() == DC_IN_CHARGING_STAGE;
 }
-#else
-static inline bool power_platform_in_dc_charging_stage(void)
-{
-	return false;
-}
-#endif /* CONFIG_DIRECT_CHARGER */
 
 static inline void power_platform_set_charge_hiz(int enable)
 {

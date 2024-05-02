@@ -166,4 +166,4 @@ enum {
 #define PERF_CTRL_SET_MEMLAT_IMMUTABLE_FLAG \
 	_IOR(PERF_CTRL_MAGIC, SET_MEMLAT_IMMUTABLE_FLAG, unsigned int)
 
-#endif /*__PERF_CTRL_H__*/
+#endif /* __PERF_CTRL_H__ */

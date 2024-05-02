@@ -223,12 +223,6 @@ enum zone_stat_item {
 #if IS_ENABLED(CONFIG_ZSMALLOC)
 	NR_ZSPAGES,		/* allocated in zsmalloc */
 #endif
-#ifdef CONFIG_DFX_MEMCHECK
-	NR_SKB_PAGES,
-	NR_VMALLOC_PAGES,
-	NR_LSLAB_PAGES,
-	NR_BUDDY_PAGES,
-#endif
 	NR_FREE_CMA_PAGES,
 	NR_VM_ZONE_STAT_ITEMS };
 
@@ -920,6 +914,11 @@ static inline struct pglist_data *lruvec_pgdat(struct lruvec *lruvec)
 }
 
 #ifdef CONFIG_HYPERHOLD_FILE_LRU
+static inline struct lruvec *lruvec_node_lruvec(struct lruvec *lruvec)
+{
+	return &lruvec_pgdat(lruvec)->lruvec;
+}
+
 static inline int is_node_lruvec(struct lruvec *lruvec)
 {
 	return &lruvec_pgdat(lruvec)->lruvec == lruvec;

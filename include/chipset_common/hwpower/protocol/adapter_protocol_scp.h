@@ -170,6 +170,10 @@
 #define HWSCP_ADP_B_TYPE1_PS_A_40W          0x33 /* 10v4a */
 #define HWSCP_ADP_B_TYPE1_PS_A_22P5W        0x34 /* 10v2.25a */
 #define HWSCP_ADP_B_TYPE1_YLR_100W          0x3a /* 20v5a version2.0 */
+#define HWSCP_ADP_B_TYPE1_XH_66W            0x3f /* 11V6A */
+#define HWSCP_ADP_B_TYPE1_FCR_66W_1         0x45 /* 20v2a 11v6a */
+#define HWSCP_ADP_B_TYPE1_FRO_88W           0x47 /* 20v4.4a */
+
 #define HWSCP_FACTORY_ID                    0x8e
 
 #define HWSCP_POWER_CURVE_NUM               0x8f

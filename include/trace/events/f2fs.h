@@ -164,6 +164,7 @@ struct f2fs_io_info;
 struct extent_info;
 struct victim_sel_policy;
 struct f2fs_map_blocks;
+struct f2fs_dev_info;
 
 DECLARE_EVENT_CLASS(f2fs__inode,
 
@@ -2041,6 +2042,357 @@ DEFINE_EVENT(f2fs__dedup_map, f2fs_dedup_map_blocks,
 	TP_ARGS(inode, inner)
 );
 #endif /* CONFIG_F2FS_FS_DEDUP */
+
+#ifdef CONFIG_DISK_MAGO
+DECLARE_EVENT_CLASS(f2fs__rw_start,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes,
+			pid_t pid, char *pathname, char *command),
+
+	TP_ARGS(inode, offset, bytes, pid, pathname, command),
+
+	TP_STRUCT__entry(
+		__string(pathbuf, pathname)
+		__field(loff_t, offset)
+		__field(int, bytes)
+		__field(loff_t, i_size)
+		__string(cmdline, command)
+		__field(pid_t, pid)
+		__field(ino_t, ino)
+	),
+
+	TP_fast_assign(
+		/*
+		 * Replace the spaces in filenames and cmdlines
+		 * because this screws up the tooling that parses
+		 * the traces.
+		 */
+		__assign_str(pathbuf, pathname);
+		(void)strreplace(__get_str(pathbuf), ' ', '_');
+		__entry->offset = offset;
+		__entry->bytes = bytes;
+		__entry->i_size = i_size_read(inode);
+		__assign_str(cmdline, command);
+		(void)strreplace(__get_str(cmdline), ' ', '_');
+		__entry->pid = pid;
+		__entry->ino = inode->i_ino;
+	),
+
+	TP_printk("entry_name %s, offset %llu, bytes %d, cmdline %s,"
+		" pid %d, i_size %llu, ino %lu",
+		__get_str(pathbuf), __entry->offset, __entry->bytes,
+		__get_str(cmdline), __entry->pid, __entry->i_size,
+		(unsigned long) __entry->ino)
+);
+
+DECLARE_EVENT_CLASS(f2fs__rw_end,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes),
+
+	TP_ARGS(inode, offset, bytes),
+
+	TP_STRUCT__entry(
+		__field(ino_t,	ino)
+		__field(loff_t,	offset)
+		__field(int,	bytes)
+	),
+
+	TP_fast_assign(
+		__entry->ino		= inode->i_ino;
+		__entry->offset		= offset;
+		__entry->bytes		= bytes;
+	),
+
+	TP_printk("ino %lu, offset %llu, bytes %d",
+		(unsigned long) __entry->ino,
+		__entry->offset, __entry->bytes)
+);
+
+DEFINE_EVENT(f2fs__rw_start, f2fs_dataread_start,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes,
+		pid_t pid, char *pathname, char *command),
+
+	TP_ARGS(inode, offset, bytes, pid, pathname, command)
+);
+
+DEFINE_EVENT(f2fs__rw_end, f2fs_dataread_end,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes),
+
+	TP_ARGS(inode, offset, bytes)
+);
+
+DEFINE_EVENT(f2fs__rw_start, f2fs_datawrite_start,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes,
+		pid_t pid, char *pathname, char *command),
+
+	TP_ARGS(inode, offset, bytes, pid, pathname, command)
+);
+
+DEFINE_EVENT(f2fs__rw_end, f2fs_datawrite_end,
+
+	TP_PROTO(struct inode *inode, loff_t offset, int bytes),
+
+	TP_ARGS(inode, offset, bytes)
+);
+
+TRACE_EVENT(f2fs_get_dm_device,
+
+	TP_PROTO(unsigned int dev, unsigned int type,
+		unsigned int hint),
+
+	TP_ARGS(dev, type, hint),
+
+	TP_STRUCT__entry(
+		__field(unsigned int,	dev)
+		__field(unsigned int,	type)
+		__field(unsigned int,	hint)
+	),
+
+	TP_fast_assign(
+		__entry->dev = dev;
+		__entry->type = type;
+		__entry->hint = hint;
+	),
+
+	TP_printk("dev = %u, type = %u, hint = %u",
+		__entry->dev,
+		__entry->type,
+		__entry->hint)
+);
+
+TRACE_EVENT(f2fs_writepage_type,
+
+	TP_PROTO(unsigned int type, unsigned int dm_dev,
+		unsigned int ino, unsigned int old_blkaddr,
+		unsigned int new_blkaddr),
+
+	TP_ARGS(type, dm_dev, ino, old_blkaddr, new_blkaddr),
+
+	TP_STRUCT__entry(
+		__field(unsigned int,	type)
+		__field(unsigned int,	dm_dev)
+		__field(unsigned int,	ino)
+		__field(unsigned int,	old_blkaddr)
+		__field(unsigned int,	new_blkaddr)
+	),
+
+	TP_fast_assign(
+		__entry->type = type;
+		__entry->dm_dev = dm_dev;
+		__entry->ino = ino;
+		__entry->old_blkaddr = old_blkaddr;
+		__entry->new_blkaddr = new_blkaddr;
+	),
+
+	TP_printk("type = %u, dm_dev = %u, ino = %u, "
+		"old_blkaddr = %u, new_blkaddr = %u",
+		__entry->type,
+		__entry->dm_dev,
+		__entry->ino,
+		__entry->old_blkaddr,
+		__entry->new_blkaddr)
+);
+
+TRACE_EVENT(f2fs_dev_has_space,
+
+	TP_PROTO(unsigned int dev,
+		unsigned int free_blks_base, unsigned int free_blks_ext,
+		unsigned int free_segs_base, unsigned int free_segs_ext),
+
+	TP_ARGS(dev, free_blks_base, free_blks_ext, free_segs_base, free_segs_ext),
+
+	TP_STRUCT__entry(
+		__field(unsigned int,	dev)
+		__field(unsigned int,	free_blks_base)
+		__field(unsigned int,	free_blks_ext)
+		__field(unsigned int,	free_segs_base)
+		__field(unsigned int,	free_segs_ext)
+	),
+
+	TP_fast_assign(
+		__entry->dev = dev;
+		__entry->free_blks_base = free_blks_base;
+		__entry->free_blks_ext = free_blks_ext;
+		__entry->free_segs_base = free_segs_base;
+		__entry->free_segs_ext = free_segs_ext;
+	),
+
+	TP_printk("dev = %u, free_blks_base = %u, free_blks_ext = %u, "
+		"free_segs_base = %u, free_segs_ext = %u",
+		__entry->dev,
+		__entry->free_blks_base,
+		__entry->free_blks_ext,
+		__entry->free_segs_base,
+		__entry->free_segs_ext)
+);
+
+DECLARE_EVENT_CLASS(f2fs__set_dev_tag,
+
+	TP_PROTO(unsigned int gc_dev, unsigned int migrate_tag,
+		ino_t ino, pgoff_t index, struct f2fs_dev_info *info_base,
+		struct f2fs_dev_info *info_ext),
+
+	TP_ARGS(gc_dev, migrate_tag, ino, index, info_base, info_ext),
+
+	TP_STRUCT__entry(
+		__field(unsigned int,	gc_dev)
+		__field(unsigned int,	migrate_tag)
+		__field(ino_t,  ino)
+		__field(pgoff_t,  index)
+		__field(struct f2fs_dev_info*,  info_base)
+		__field(struct f2fs_dev_info*,  info_ext)
+	),
+
+	TP_fast_assign(
+		__entry->gc_dev = gc_dev;
+		__entry->migrate_tag = migrate_tag;
+		__entry->ino = ino;
+		__entry->index = index;
+		__entry->info_base = info_base;
+		__entry->info_ext = info_ext;
+	),
+
+	TP_printk("gc_dev = %u, migrate_tag = %u, inode = %lu, "
+			"index = %u free_segs_base = %u free_segs_ext = %u, "
+			"free_blks_base = %u free_blks_ext = %u",
+		__entry->gc_dev,
+		__entry->migrate_tag,
+		__entry->ino,
+		__entry->index,
+		__entry->info_base->free_segs,
+		__entry->info_ext->free_segs,
+		__entry->info_base->user_block_count - __entry->info_base->written_valid_blocks,
+		__entry->info_ext->user_block_count - __entry->info_ext->written_valid_blocks)
+);
+
+DEFINE_EVENT(f2fs__set_dev_tag, f2fs_set_fio_dev_tag,
+
+	TP_PROTO(unsigned int gc_dev, unsigned int migrate_tag,
+		ino_t ino, pgoff_t index, struct f2fs_dev_info *info_base,
+		struct f2fs_dev_info *info_ext),
+
+	TP_ARGS(gc_dev, migrate_tag, ino, index, info_base, info_ext)
+);
+
+DEFINE_EVENT(f2fs__set_dev_tag, f2fs_set_page_dev_tag,
+
+	TP_PROTO(unsigned int gc_dev, unsigned int migrate_tag,
+		ino_t ino, pgoff_t index, struct f2fs_dev_info *info_base,
+		struct f2fs_dev_info *info_ext),
+
+	TP_ARGS(gc_dev, migrate_tag, ino, index, info_base, info_ext)
+);
+
+DEFINE_EVENT(f2fs__set_dev_tag, f2fs_should_migrate,
+
+	TP_PROTO(unsigned int gc_dev, unsigned int migrate_tag,
+		ino_t ino, pgoff_t index, struct f2fs_dev_info *info_base,
+		struct f2fs_dev_info *info_ext),
+
+	TP_ARGS(gc_dev, migrate_tag, ino, index, info_base, info_ext)
+);
+
+TRACE_EVENT(f2fs_gc_device,
+
+	TP_PROTO(struct super_block *sb, bool sync, bool background,
+			long long dirty_nodes, long long dirty_dents,
+			long long dirty_imeta, unsigned int free_sec,
+			unsigned int free_seg, int reserved_seg,
+			unsigned int prefree_seg, unsigned int gc_dev),
+
+	TP_ARGS(sb, sync, background, dirty_nodes, dirty_dents, dirty_imeta,
+		free_sec, free_seg, reserved_seg, prefree_seg, gc_dev),
+
+	TP_STRUCT__entry(
+		__field(dev_t,		dev)
+		__field(bool,		sync)
+		__field(bool,		background)
+		__field(long long,	dirty_nodes)
+		__field(long long,	dirty_dents)
+		__field(long long,	dirty_imeta)
+		__field(unsigned int,	free_sec)
+		__field(unsigned int,	free_seg)
+		__field(int,		reserved_seg)
+		__field(unsigned int,	prefree_seg)
+		__field(unsigned int,	gc_dev)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= sb->s_dev;
+		__entry->sync		= sync;
+		__entry->background	= background;
+		__entry->dirty_nodes	= dirty_nodes;
+		__entry->dirty_dents	= dirty_dents;
+		__entry->dirty_imeta	= dirty_imeta;
+		__entry->free_sec	= free_sec;
+		__entry->free_seg	= free_seg;
+		__entry->reserved_seg	= reserved_seg;
+		__entry->prefree_seg	= prefree_seg;
+		__entry->gc_dev	= gc_dev;
+	),
+
+	TP_printk("dev = (%d,%d), sync = %d, background = %d, nodes = %lld, "
+		"dents = %lld, imeta = %lld, free_sec:%u, free_seg:%u, "
+		"rsv_seg:%d, prefree_seg:%u gc_dev:%u",
+		show_dev(__entry->dev),
+		__entry->sync,
+		__entry->background,
+		__entry->dirty_nodes,
+		__entry->dirty_dents,
+		__entry->dirty_imeta,
+		__entry->free_sec,
+		__entry->free_seg,
+		__entry->reserved_seg,
+		__entry->prefree_seg,
+		__entry->gc_dev)
+);
+
+TRACE_EVENT(f2fs_select_gc_device,
+
+	TP_PROTO(unsigned int dev,
+		unsigned int wait_ms_base, unsigned int wait_ms_ext,
+		unsigned int gc_preference_base, unsigned int gc_preference_ext,
+		unsigned int min_sleep_time_base, unsigned int min_sleep_time_ext),
+
+	TP_ARGS(dev, wait_ms_base, wait_ms_ext, gc_preference_base,
+		gc_preference_ext, min_sleep_time_base, min_sleep_time_ext),
+
+	TP_STRUCT__entry(
+		__field(unsigned int,	dev)
+		__field(unsigned int,	wait_ms_base)
+		__field(unsigned int,	wait_ms_ext)
+		__field(unsigned int,	gc_preference_base)
+		__field(unsigned int,	gc_preference_ext)
+		__field(unsigned int,	min_sleep_time_base)
+		__field(unsigned int,	min_sleep_time_ext)
+	),
+
+	TP_fast_assign(
+		__entry->dev = dev;
+		__entry->wait_ms_base = wait_ms_base;
+		__entry->wait_ms_ext = wait_ms_ext;
+		__entry->gc_preference_base = gc_preference_base;
+		__entry->gc_preference_ext = gc_preference_ext;
+		__entry->min_sleep_time_base = min_sleep_time_base;
+		__entry->min_sleep_time_ext = min_sleep_time_ext;
+	),
+
+	TP_printk("dev = %u, wait_ms_base = %u, wait_ms_ext = %u, "
+		"gc_preference_base = %u, gc_preference_ext = %u, "
+		"min_sleep_time_base = %u, min_sleep_time_ext = %u",
+		__entry->dev,
+		__entry->wait_ms_base,
+		__entry->wait_ms_ext,
+		__entry->gc_preference_base,
+		__entry->gc_preference_ext,
+		__entry->min_sleep_time_base,
+		__entry->min_sleep_time_ext)
+);
+#endif /* CONFIG_DISK_MAGO */
+
 #endif /* _TRACE_F2FS_H */
 
 /* This part must be outside protection */

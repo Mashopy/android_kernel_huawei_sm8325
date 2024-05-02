@@ -482,6 +482,7 @@ void restore_processor_state(void);
 extern int register_pm_notifier(struct notifier_block *nb);
 extern int unregister_pm_notifier(struct notifier_block *nb);
 extern void ksys_sync_helper(void);
+extern void ksys_sync_helper_for_suspend(void);
 
 #define pm_notifier(fn, pri) {				\
 	static struct notifier_block fn##_nb =			\
@@ -521,7 +522,7 @@ static inline int unregister_pm_notifier(struct notifier_block *nb)
 }
 
 static inline void ksys_sync_helper(void) {}
-
+static inline void ksys_sync_helper_for_suspend(void) {}
 #define pm_notifier(fn, pri)	do { (void)(fn); } while (0)
 
 static inline bool pm_wakeup_pending(void) { return false; }

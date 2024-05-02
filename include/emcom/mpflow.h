@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2020. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2023. All rights reserved.
  * Description: Mpflow feature
  * Author: xialiang xialiang4@huawei.com
  * Create: 2019-05-15
@@ -34,6 +34,7 @@
 
 #define MPFLOW_ERROR (-1)
 #define MPFLOW_OK 0
+#define INVALID_MARK 0
 
 #define EMCOM_MPFLOW_IP_BURST_OFF 0
 #define EMCOM_MPFLOW_IP_BURST_AUTO 1
@@ -77,20 +78,6 @@
 #define EMCOM_MPFLOW_STOP_REASON_SWITCH_TO_WLAN 9
 #define EMCOM_MPFLOW_STOP_REASON_NOT_USER_OWNER 10
 #define EMCOM_MPFLOW_STOP_REASON_APPDIED 11
-
-#define EMCOM_MPFLOW_BIND_NONE 0
-#define EMCOM_MPFLOW_BIND_WIFI0 1
-#define EMCOM_MPFLOW_BIND_LTE0 2
-#define EMCOM_MPFLOW_BIND_WIFI1 3
-#define EMCOM_MPFLOW_BIND_LTE1 4
-#define EMCOM_MPFLOW_BIND_WIFI2 5
-
-
-#define EMCOM_MPFLOW_WIFI0_MASK 1
-#define EMCOM_MPFLOW_LTE0_MASK 2
-#define EMCOM_MPFLOW_WIFI1_MASK 4
-#define EMCOM_MPFLOW_LTE1_MASK 8
-#define EMCOM_MPFLOW_WIFI2_MASK 16
 
 
 #define EMCOM_MPFLOW_BIND_WIFI 1
@@ -149,11 +136,14 @@
 
 #define mpflow_ai_in_range(value, svalue, evalue) ((value) >= (svalue) && (value) <= (evalue))
 
-#define EMCOM_MPFLOW_FALLBACK_LTE_OFFSET 300
-#define EMCOM_MPFLOW_FALLBACK_WLAN_OFFSET 400
+#define EMCOM_MPFLOW_FALLBACK_INDEX_OFFSET 100
+#define EMCOM_MPFLOW_FALLBACK_BASE_OFFSET 300
+#define EMCOM_MPFLOW_FALLBACK_WLAN_OFFSET 300
+#define EMCOM_MPFLOW_FALLBACK_LTE_OFFSET 400
+#define EMCOM_MPFLOW_FALLBACK_WLAN1_OFFSET 500
 #define EMCOM_MPFLOW_FALLBACK_LTE1_OFFSET 600
-#define EMCOM_MPFLOW_FALLBACK_WLAN1_OFFSET 700
-#define EMCOM_MPFLOW_FALLBACK_WLAN2_OFFSET 800
+#define EMCOM_MPFLOW_FALLBACK_WLAN2_OFFSET 700
+
 #define EMCOM_MPROUTE_FALLBACK_OFFSET 900
 
 #define EMCOM_MPFLOW_FALLBACK_NOPAYLOAD 0
@@ -181,14 +171,15 @@
 
 /* Definition of mpflow xengine configuration information */
 typedef enum {
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_NONE = 0,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI0,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_LTE0,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI1,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_LTE1,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI2,
-	BIND_MODE_HIGH_BIT_START = 16,
-	EMCOM_XENGINE_MPFLOW_AI_BINDMODE_RANDOM = (1 << BIND_MODE_HIGH_BIT_START) - 1
+	EMCOM_MPFLOW_BIND_NONE = 0,
+	EMCOM_MPFLOW_BIND_WIFI0,
+	EMCOM_MPFLOW_BIND_LTE0,
+	EMCOM_MPFLOW_BIND_WIFI1,
+	EMCOM_MPFLOW_BIND_LTE1,
+	EMCOM_MPFLOW_BIND_WIFI2,
+	EMCOM_MPFLOW_BIND_P2P,
+	EMCOM_MPFLOW_BIND_ETH,
+	EMCOM_MPFLOW_BIND_MAX
 } emcom_xengine_mpflow_ai_bindmode;
 
 /* Definition of mpflow xengine configuration information */
@@ -476,10 +467,10 @@ struct emcom_xengine_mpflow_ai_info {
 	uint8_t enableflag; /* enable protocol/enable dport */
 	uint8_t port_num; /* config port number */
 	uint8_t running_state; /* 0: none 1: mpflow 2: mprouter */
-	uint16_t rst_mark;
-	uint16_t all_flow_mark;
 	uint16_t rst_bind_mode;
 	uint16_t all_flow_mode;
+	uint32_t rst_to_mark;
+	uint32_t all_flow_mark;
 	int rst_devif;
 	unsigned long rst_duration; /* ms */
 	unsigned long rst_jiffies;
@@ -520,9 +511,9 @@ int8_t emcom_xengine_mpflow_ai_finduid(uid_t uid);
 bool emcom_xengine_mpflow_ai_start(uid_t uid);
 void emcom_xengine_mpflow_ai_stop(const char *pdata, uint16_t len);
 void emcom_xengine_mpflow_ai_bind2device(struct sock *sk, struct sockaddr *uaddr);
-void emcom_xengine_mpflow_ai_ip_config(const char *data, uint16_t len);
+void emcom_xengine_mpflow_ai_ip_bind_cfg(const char *data, uint16_t len);
 void emcom_xengine_mpflow_ai_init_bind_config(const char *data, uint16_t len);
-void emcom_xengine_mpflow_ai_iface_cfg(const char *data, uint16_t len);
+void emcom_xengine_mpflow_ai_port_bind_cfg(const char *data, uint16_t len);
 void emcom_xengine_mpflow_ai_close_all_flow(const uint8_t *data, uint16_t len);
 uint8_t emcom_xengine_mpflow_ip_hash(__be32 addr);
 void emcom_xengine_mpflow_reset(struct tcp_sock *tp);
@@ -539,8 +530,11 @@ bool emcom_xengine_mpflow_ai_get_port(struct sockaddr *addr, uint16_t *port);
 bool emcom_xengine_mpflow_ai_rehash_sk(struct sock *sk);
 void emcom_xengine_mpflow_ai_app_clear(int8_t index, uid_t uid);
 bool emcom_xengine_mpflow_ai_uid_empty(void);
-spinlock_t emcom_xengine_mpflow_ai_get_lock(void);
+void emcom_xengine_mpflow_ai_mproute_reinit(void);
+spinlock_t* emcom_xengine_mpflow_ai_get_lock(void);
 struct emcom_xengine_mpflow_ai_info* emcom_xengine_mpflow_ai_get_info(void);
 struct emcom_xengine_mpflow_stat* emcom_xengine_mpflow_ai_get_stat(void);
+bool emcom_xengine_mpflow_is_bindmode_valid(int bind_mode);
+void emcom_xengine_mpflow_ai_reset_app_port_bind_mode(void);
 
 #endif

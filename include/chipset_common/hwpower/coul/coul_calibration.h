@@ -30,8 +30,8 @@
 struct coul_cali_ops {
 	const char *dev_name;
 	void *dev_data;
-	int (*get_current)(int *value, void *dev_data);
-	int (*get_voltage)(int *value, void *dev_data);
+	int (*get_cali_current)(int *value, void *dev_data);
+	int (*get_cali_voltage)(int *value, void *dev_data);
 	int (*get_current_offset)(int *value, void *dev_data);
 	int (*get_current_gain)(unsigned int *value, void *dev_data);
 	int (*get_voltage_offset)(int *value, void *dev_data);

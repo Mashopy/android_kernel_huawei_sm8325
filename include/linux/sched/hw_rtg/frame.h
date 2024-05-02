@@ -23,10 +23,10 @@
 #include <linux/bitmap.h>
 #include <linux/spinlock.h>
 
-/* FPS value : [1, 120] */
+/* FPS value : [1, 144] */
 #define DEFAULT_FRAME_RATE 60
 #define MIN_FRAME_RATE 1
-#define MAX_FRAME_RATE 120
+#define MAX_FRAME_RATE 144
 
 /* MARGIN value : [-100, 100] */
 #define DEFAULT_VLOAD_MARGIN 16

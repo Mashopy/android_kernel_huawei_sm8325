@@ -63,9 +63,6 @@ struct mutex {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
-#ifdef CONFIG_HW_VIP_THREAD
-	struct task_struct *vip_dep_task;
-#endif
 };
 
 /*
@@ -118,22 +115,12 @@ do {									\
 # define __DEP_MAP_MUTEX_INITIALIZER(lockname)
 #endif
 
-#ifdef CONFIG_HW_VIP_THREAD
-#define __MUTEX_INITIALIZER(lockname) \
-		{ .owner = ATOMIC_LONG_INIT(0) \
-		, .wait_lock = __SPIN_LOCK_UNLOCKED(lockname.wait_lock) \
-		, .wait_list = LIST_HEAD_INIT(lockname.wait_list) \
-		, .vip_dep_task = NULL \
-		__DEBUG_MUTEX_INITIALIZER(lockname) \
-		__DEP_MAP_MUTEX_INITIALIZER(lockname) }
-#else
 #define __MUTEX_INITIALIZER(lockname) \
 		{ .owner = ATOMIC_LONG_INIT(0) \
 		, .wait_lock = __SPIN_LOCK_UNLOCKED(lockname.wait_lock) \
 		, .wait_list = LIST_HEAD_INIT(lockname.wait_list) \
 		__DEBUG_MUTEX_INITIALIZER(lockname) \
 		__DEP_MAP_MUTEX_INITIALIZER(lockname) }
-#endif
 
 #define DEFINE_MUTEX(mutexname) \
 	struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
@@ -148,6 +135,10 @@ extern void __mutex_init(struct mutex *lock, const char *name,
  * Returns true if the mutex is locked, false if unlocked.
  */
 extern bool mutex_is_locked(struct mutex *lock);
+
+#ifdef CONFIG_QCOM_DFX_LOCK_TRACE
+struct task_struct *mutex_owner(struct mutex *lock);
+#endif
 
 /*
  * See kernel/locking/mutex.c for detailed documentation of these APIs.

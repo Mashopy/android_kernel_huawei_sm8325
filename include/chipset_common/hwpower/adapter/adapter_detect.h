@@ -51,11 +51,14 @@ struct adapter_detect_dev {
 	unsigned int init_prot_type;
 	unsigned int rt_prot_type;
 	unsigned int sysfs_prot_type;
+	int mmi_prot_type;
+	bool mmi_prot_type_flag;
 	bool init_prot_type_flag;
 	bool ufcs_ping_fail_flag;
 };
 
 #ifdef CONFIG_ADAPTER_PROTOCOL
+void adapter_detect_mmi_set_protocol_type(int type);
 void adapter_detect_init_protocol_type(void);
 bool adapter_detect_check_protocol_type(unsigned int prot_type);
 unsigned int adapter_detect_get_runtime_protocol_type(void);
@@ -63,7 +66,13 @@ int adapter_detect_ping_ufcs_type(int *adp_mode);
 int adapter_detect_ping_scp_type(int *adp_mode);
 int adapter_detect_ping_fcp_type(int *adp_mode);
 unsigned int adapter_detect_ping_protocol_type(void);
+unsigned int adapter_detect_get_init_protocol_type(void);
+unsigned int adapter_detect_get_sysfs_protocol_type(unsigned int val);
 #else
+static inline void adapter_detect_mmi_set_protocol_type(int type)
+{
+}
+
 static inline void adapter_detect_init_protocol_type(void)
 {
 }
@@ -94,6 +103,16 @@ static inline int adapter_detect_ping_fcp_type(int *adp_mode)
 }
 
 static inline unsigned int adapter_detect_ping_protocol_type(void)
+{
+	return 0;
+}
+
+static inline unsigned int adapter_detect_get_sysfs_protocol_type(unsigned int val)
+{
+	return 0;
+}
+
+static inline unsigned int adapter_detect_get_init_protocol_type(void)
 {
 	return 0;
 }

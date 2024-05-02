@@ -260,6 +260,9 @@ struct tcp_sock {
 		/* Through the hook */
 	u32 key_flow;   /* key flow flag */
 	u32 content_length; /* content_length value in http head. */
+	u32 should_recover; /* whther tcp socket need recover */
+	u32 should_enter_recover; /* whther tcp socket need to check recover */
+	u32 last_rcv_nxt; /* tcp.rcv_nxt when ofo queue become not null */
 #endif
 	u32	srtt_us;	/* smoothed round trip time << 3 in usecs */
 	u32	mdev_us;	/* medium deviation			*/

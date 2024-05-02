@@ -31,6 +31,9 @@ enum post_action {
 #define BF_HW_MAGIC_NUM (0x48574246) /* HWBF */
 
 /*---- export function prototypes ----*/
+#ifdef CONFIG_SHUT_DETECTOR
+enum bootfail_errorcode set_shut_stage(void);
+#endif
 enum bootfail_errorcode get_boot_stage(enum boot_stage *pstage);
 enum bootfail_errorcode set_boot_stage(enum boot_stage stage);
 enum bootfail_errorcode boot_fail_error(struct bootfail_proc_param *pparam);

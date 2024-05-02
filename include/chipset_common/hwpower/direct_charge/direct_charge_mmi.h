@@ -100,8 +100,6 @@ struct dc_mmi_data {
 	int lvc_succ_flag;
 	int sc_succ_flag;
 	int sc4_succ_flag;
-	int protocol_type;
-	bool protocol_set_flag;
 	bool dc_mmi_test_flag;
 	struct notifier_block dc_mmi_nb;
 	struct delayed_work timeout_work;

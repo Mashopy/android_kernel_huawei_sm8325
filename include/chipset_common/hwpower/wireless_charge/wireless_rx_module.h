@@ -30,6 +30,8 @@ int wlrx_evt_init(unsigned int drv_type, struct device *dev);
 void wlrx_evt_deinit(unsigned int drv_type);
 int wlrx_common_init(unsigned int drv_type, struct device *dev);
 void wlrx_common_deinit(unsigned int drv_type);
+int wlrx_sysfs_init(unsigned int drv_type, struct device *dev);
+void wlrx_sysfs_deinit(unsigned int drv_type);
 int wlrx_acc_init(unsigned int drv_type, struct device *dev);
 void wlrx_acc_deinit(unsigned int drv_type);
 int wlrx_fod_init(unsigned int drv_type, struct device *dev);
@@ -60,6 +62,15 @@ static inline int wlrx_common_init(unsigned int drv_type, struct device *dev)
 }
 
 static inline void wlrx_common_deinit(unsigned int drv_type)
+{
+}
+
+static inline int wlrx_sysfs_init(unsigned int drv_type, struct device *dev)
+{
+	return -ENOTSUPP;
+}
+
+static inline void wlrx_sysfs_deinit(unsigned int drv_type)
 {
 }
 

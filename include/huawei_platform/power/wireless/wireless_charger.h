@@ -32,9 +32,6 @@
 #define RX_PWR_ON_GOOD              1
 #define RX_PWR_ON_NOT_GOOD          0
 
-#define WIRELESS_CHRG_SUCC          0
-#define WIRELESS_CHRG_FAIL          1
-
 #define RX_IOUT_MID                 500
 #define TX_BOOST_VOUT               12000
 #define TX_DEFAULT_VOUT             5000
@@ -108,9 +105,6 @@
 #define WLC_FAN_LIMIT_RETRY_CNT             3
 #define WLC_FAN_CTRL_PWR                    10000000 /* 10w */
 
-#define WLC_THERMAL_FORCE_FAN_FULL_SPEED    BIT(0)
-#define WLC_THERMAL_EXIT_SC_MODE            BIT(1)
-
 /* cmd: set tx rpp format */
 #define WLC_SET_RPP_FORMAT_RETRY_CNT        3
 #define WLRX_SET_RPP_FORMAT_RETRY_DELAY     100
@@ -145,14 +139,6 @@ enum tx_cap_info {
 	TX_CAP_TOTAL,
 };
 
-struct wireless_charge_sysfs_data {
-	int en_enable;
-	int nvm_sec_no;
-	int ignore_fan_ctrl;
-	u8 rx_support_mode;
-	u8 thermal_ctrl;
-};
-
 struct wlc_state_record {
 	u8 fan_cur;
 	u8 fan_last;
@@ -183,7 +169,6 @@ struct wlrx_dev_info {
 	struct delayed_work wireless_watchdog_work;
 	struct delayed_work rx_sample_work;
 	struct delayed_work ignore_qval_work;
-	struct wireless_charge_sysfs_data sysfs_data;
 	struct wlc_state_record stat_rcd;
 	struct wlc_rx_evt rx_evt;
 	struct wlrx_pctrl *pctrl;
@@ -211,24 +196,6 @@ struct wlrx_dev_info {
 	u8 start_sample_type;
 };
 
-enum wireless_charge_sysfs_type {
-	WIRELESS_CHARGE_SYSFS_CHIP_INFO = 0,
-	WIRELESS_CHARGE_SYSFS_TX_ADAPTOR_TYPE,
-	WIRELESS_CHARGE_SYSFS_RX_TEMP,
-	WIRELESS_CHARGE_SYSFS_VOUT,
-	WIRELESS_CHARGE_SYSFS_IOUT,
-	WIRELESS_CHARGE_SYSFS_VRECT,
-	WIRELESS_CHARGE_SYSFS_EN_ENABLE,
-	WIRELESS_CHARGE_SYSFS_NORMAL_CHRG_SUCC,
-	WIRELESS_CHARGE_SYSFS_FAST_CHRG_SUCC,
-	WIRELESS_CHARGE_SYSFS_FOD_COEF,
-	WIRELESS_CHARGE_SYSFS_INTERFERENCE_SETTING,
-	WIRELESS_CHARGE_SYSFS_RX_SUPPORT_MODE,
-	WIRELESS_CHARGE_SYSFS_THERMAL_CTRL,
-	WIRELESS_CHARGE_SYSFS_NVM_DATA,
-	WIRELESS_CHARGE_SYSFS_IGNORE_FAN_CTRL,
-};
-
 enum wltx_stage wireless_tx_get_stage(void);
 int wireless_charge_get_rx_iout_limit(void);
 void wireless_charger_pmic_vbus_handler(bool vbus_state);
@@ -249,22 +216,11 @@ void wlc_ignore_vbus_only_event(bool ignore_flag);
 bool wlc_is_pwr_good(void);
 
 #ifdef CONFIG_WIRELESS_CHARGER
-void wlc_set_high_pwr_test_flag(bool flag);
-bool wlc_get_high_pwr_test_flag(void);
 void wlc_reset_wireless_charge(void);
 void wireless_charge_wired_vbus_connect_handler(void);
 void wireless_charge_wired_vbus_disconnect_handler(void);
 void wlrx_switch_to_wired_handler(void);
 #else
-static inline void wlc_set_high_pwr_test_flag(bool flag)
-{
-}
-
-static inline bool wlc_get_high_pwr_test_flag(void)
-{
-	return false;
-}
-
 static inline void wlc_reset_wireless_charge(void)
 {
 }

@@ -11,6 +11,9 @@
 #include <linux/blk-mq.h>
 #include <scsi/scsi.h>
 #include <linux/android_kabi.h>
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/disk_mago_latency.h>
+#endif
 
 struct block_device;
 struct completion;
@@ -651,6 +654,9 @@ struct Scsi_Host {
 	unsigned long last_reset;
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	void *iomt_host_info;
+#endif
+#ifdef CONFIG_DISK_MAGO
+	struct mago_io_latency_stat *mago_latency;
 #endif
 
 	/*

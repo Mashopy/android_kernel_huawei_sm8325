@@ -9,7 +9,14 @@
 
 #include <linux/device.h>
 #include <linux/mod_devicetable.h>
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/notifier.h>
+#include <linux/mmc/core.h>
+#include <linux/mmc/mmc.h>
+#define EXT_CSD_PRE_EOL_INFO_NORMAL     0x01
+#define EXT_CSD_PRE_EOL_INFO_WARNING     0x02
+#define EXT_CSD_PRE_EOL_INFO_URGENT     0x03
+#endif
 struct mmc_cid {
 	unsigned int		manfid;
 	char			prod_name[8];
@@ -330,6 +337,9 @@ struct mmc_card {
 	unsigned int    nr_parts;
 #if defined(CONFIG_SDC_QTI)
 	unsigned int            part_curr;
+#endif
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	u8 *cached_ext_csd;
 #endif
 	unsigned int		bouncesz;	/* Bounce buffer size */
 	struct workqueue_struct *complete_wq;	/* Private workqueue */
