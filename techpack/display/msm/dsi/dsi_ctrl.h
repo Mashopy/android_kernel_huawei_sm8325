@@ -313,6 +313,7 @@ struct dsi_ctrl {
 	u32 cmd_success_line;
 	u32 cmd_success_frame;
 	bool pending_cmd;
+	u32 refcount_non_zero;
 };
 
 /**

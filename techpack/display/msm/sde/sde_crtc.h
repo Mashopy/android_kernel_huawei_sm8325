@@ -112,6 +112,17 @@ enum sde_crtc_fingerprint_state {
 };
 
 /**
+ * enum sde_crtc_stylus_state: states of stylus
+ * @STYLUS_NOT_CONNECT: not connect
+ * @STYLUS_CONNECT_ADSORB: connect and adsorb
+ * @STYLUS_CONNECT_NOT_ADSORB: connect and not adsorb
+ */
+enum sde_crtc_stylus_state {
+	NOT_USE_STYLUS,
+	USE_STYLUS,
+};
+
+/**
  * @connectors    : Currently associated drm connectors for retire event
  * @num_connectors: Number of associated drm connectors for retire event
  * @list:	event list

@@ -290,8 +290,12 @@ enum dsi_cmd_set_type {
 	DSI_CMD_SET_UNFOLD,
 	DSI_CMD_SET_HIGH_VOLTAGE,
 	DSI_CMD_SET_LOW_VOLTAGE,
+	DSI_CMD_SET_PENCIL,
+	DSI_CMD_SET_HANDS,
 	DSI_CMD_SET_MAX
 };
+
+#define DSI_FPS_144 144
 
 /**
  * enum dsi_cmd_set_state - command set state

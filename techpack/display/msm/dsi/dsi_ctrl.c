@@ -3018,6 +3018,22 @@ void dsi_ctrl_enable_status_interrupt(struct dsi_ctrl *dsi_ctrl,
 	SDE_EVT32(dsi_ctrl->cell_index, SDE_EVTLOG_FUNC_ENTRY, intr_idx);
 	spin_lock_irqsave(&dsi_ctrl->irq_info.irq_lock, flags);
 
+	if ((lcd_kit_get_product_type() == LCD_SINGLE_DSI_MULTIPLEX_TYPE) &&
+		(intr_idx == DSI_SINT_CMD_MODE_DMA_DONE)) {
+		if (dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]) {
+			dsi_ctrl->refcount_non_zero++;
+			SDE_EVT32(dsi_ctrl->refcount_non_zero);
+
+			if (dsi_ctrl->refcount_non_zero == 2) {
+				DSI_CTRL_ERR(dsi_ctrl, "refcount_non_zero %d\n",
+					dsi_ctrl->refcount_non_zero);
+				SDE_DBG_DUMP("all", "dbg_bus", "vbif_dbg_bus", "dsi_dbg_bus", "panic");
+			}
+		} else {
+			dsi_ctrl->refcount_non_zero = 0;
+		}
+	}
+
 	if (dsi_ctrl->irq_info.irq_stat_refcount[intr_idx] == 0) {
 		/* enable irq on first request */
 		if (dsi_ctrl->irq_info.irq_stat_mask == 0)
@@ -3036,6 +3052,11 @@ void dsi_ctrl_enable_status_interrupt(struct dsi_ctrl *dsi_ctrl,
 
 	if (event_info)
 		dsi_ctrl->irq_info.irq_stat_cb[intr_idx] = *event_info;
+
+	if (lcd_kit_get_product_type() == LCD_SINGLE_DSI_MULTIPLEX_TYPE)
+		SDE_EVT32(dsi_ctrl->cell_index, intr_idx,
+		dsi_ctrl->irq_info.irq_num, dsi_ctrl->irq_info.irq_stat_mask,
+		dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]);
 
 	spin_unlock_irqrestore(&dsi_ctrl->irq_info.irq_lock, flags);
 }
@@ -3062,6 +3083,11 @@ void dsi_ctrl_disable_status_interrupt(struct dsi_ctrl *dsi_ctrl,
 				dsi_ctrl->irq_info.irq_num != -1)
 				disable_irq_nosync(dsi_ctrl->irq_info.irq_num);
 		}
+
+	if (lcd_kit_get_product_type() == LCD_SINGLE_DSI_MULTIPLEX_TYPE)
+		SDE_EVT32(dsi_ctrl->cell_index, intr_idx,
+		dsi_ctrl->irq_info.irq_num, dsi_ctrl->irq_info.irq_stat_mask,
+		dsi_ctrl->irq_info.irq_stat_refcount[intr_idx]);
 
 	spin_unlock_irqrestore(&dsi_ctrl->irq_info.irq_lock, flags);
 }

@@ -13,6 +13,8 @@
 #include "sde_trace.h"
 #include "sde_dbg.h"
 
+#include "sde_crtc.h"
+
 #ifdef CONFIG_LCD_KIT_DRIVER
 #include "lcd_kit_drm_panel.h"
 #endif
@@ -349,6 +351,56 @@ static void dsi_bridge_mode_set(struct drm_bridge *bridge,
 	DSI_DEBUG("clk_rate: %llu\n", c_bridge->dsi_mode.timing.clk_rate_hz);
 }
 
+static void dsi_drm_send_mode_cmd(struct dsi_bridge *c_bridge,
+                                struct drm_crtc_state *crtc_state)
+{
+	struct sde_crtc_state *sde_cstate;
+	u32 rc;
+	enum sde_crtc_stylus_state stylus_state = NOT_USE_STYLUS;
+	static enum sde_crtc_stylus_state last_stylus_state = NOT_USE_STYLUS;
+
+	if (!c_bridge || !crtc_state) {
+		DSI_ERR("invalid parameters\n");
+		return;
+	}
+
+	sde_cstate = to_sde_crtc_state(crtc_state);
+	stylus_state = sde_crtc_get_property(sde_cstate, CUST_CRTC_PROP_STYLUS_STATE);
+	c_bridge->display->is_stylus = stylus_state == USE_STYLUS;
+	if (stylus_state != last_stylus_state) {
+		SDE_ATRACE_BEGIN("dsi_drm_send_mode_cmd");
+		last_stylus_state = stylus_state;
+		mutex_lock(&c_bridge->display->display_lock);
+		dsi_panel_acquire_panel_lock(c_bridge->display->panel);
+		switch (stylus_state) {
+		case USE_STYLUS:
+			rc = dsi_panel_tx_cmd_set(c_bridge->display->panel, DSI_CMD_SET_PENCIL);
+			if (rc)
+				DSI_ERR("[%s] failed to send stylus state change cmds rc=%d, state=%d\n",
+					c_bridge->display->panel->name, rc, stylus_state);
+				DSI_INFO("set pencil mode\n");
+			break;
+		case NOT_USE_STYLUS:
+			rc = dsi_panel_tx_cmd_set(c_bridge->display->panel, DSI_CMD_SET_HANDS);
+			if (rc)
+				DSI_ERR("[%s] failed to send stylus state change cmds rc=%d, state=%d\n",
+					c_bridge->display->panel->name, rc, stylus_state);
+			DSI_INFO("set hands mode\n");
+			break;
+		default:
+			DSI_ERR("invalid stylus state\n");
+			rc = dsi_panel_tx_cmd_set(c_bridge->display->panel, DSI_CMD_SET_HANDS);
+			if (rc)
+			DSI_ERR("[%s] failed to send stylus state change cmds rc=%d, state=%d\n",
+				c_bridge->display->panel->name, rc, stylus_state);
+			break;
+		}
+		dsi_panel_release_panel_lock(c_bridge->display->panel);
+		mutex_unlock(&c_bridge->display->display_lock);
+		SDE_ATRACE_END("dsi_drm_send_mode_cmd");
+	}
+}
+
 static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 				  const struct drm_display_mode *mode,
 				  struct drm_display_mode *adjusted_mode)
@@ -372,6 +424,9 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 		return false;
 	}
 
+	if (display->panel->enable_supermotion) {
+		dsi_drm_send_mode_cmd(c_bridge, crtc_state);
+	}
 	/*
 	 * if no timing defined in panel, it must be external mode
 	 * and we'll use empty priv info to populate the mode

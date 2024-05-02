@@ -39,6 +39,7 @@
 #define ESD_NO_REG_READ 1
 #endif
 #ifdef CONFIG_HUAWEI_DSM
+#include "securec.h"
 extern struct dsm_client *lcd_dclient;
 int recovery_count = 0;
 #endif
@@ -610,7 +611,11 @@ error:
 static void dsm_client_record_esd_err(uint32_t err_no, struct dsi_panel *panel,
 	char read_value, char expect_value)
 {
+	uint32_t panel_id = lcd_kit_get_current_panel_id(panel);
+
 	if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
+		strncpy_s(lcd_dclient->ic_name, DSM_MAX_IC_NAME_LEN,
+			common_info->panel_name, DSM_MAX_IC_NAME_LEN - 1);
 		dsm_client_record(lcd_dclient,
 			"lcd esd check error: %s panel:read_value=0x%x,expect_value=0x%x\n",
 			panel->type,
@@ -628,6 +633,14 @@ static void dsm_client_record_gpio_esd_err(uint32_t err_no,
 			"lcd esd gpio status error:read_value=0x%x,expect_value=0x%x\n",
 			read_value,
 			expect_value);
+		dsm_client_notify(lcd_dclient, err_no);
+	}
+}
+
+static void dsm_client_record_mipi_err(uint32_t err_no, char* type)
+{
+	if (lcd_dclient && !dsm_client_ocuppy(lcd_dclient)) {
+		dsm_client_record(lcd_dclient, "mipi %s transfer error\n", type);
 		dsm_client_notify(lcd_dclient, err_no);
 	}
 }
@@ -836,11 +849,17 @@ static int dsi_display_read_status(struct dsi_display_ctrl *ctrl,
 #ifdef CONFIG_LCD_KIT_DRIVER
 		if (!dsi_display_cmd_is_write(&cmds[i])) { // read succ return read len
 			if (rc <= 0) {
+#ifdef CONFIG_HUAWEI_DSM
+				dsm_client_record_mipi_err(DSM_LCD_MIPI_ERROR_NO, "rx");
+#endif
 				DSI_ERR("rx cmd transfer failed rc=%d\n", rc);
 				return rc;
 			}
 		} else { // write succ return 0
 			if (rc < 0) {
+#ifdef CONFIG_HUAWEI_DSM
+				dsm_client_record_mipi_err(DSM_LCD_MIPI_ERROR_NO, "tx");
+#endif
 				DSI_ERR("tx cmd transfer failed rc=%d\n", rc);
 				return rc;
 			} else {
@@ -1016,7 +1035,7 @@ static int dsi_display_status_reg_read(struct dsi_display *display)
 	if (rc <= 0) {
 		DSI_ERR("[%s] read status failed on master,rc=%d\n",
 		       display->name, rc);
-		if (config->tp_esd_event) {
+		if ((config->tp_esd_event) || (config->tp_esd_event_support)) {
 			ts_ops = ts_kit_get_ops();
 			if (ts_ops && ts_ops->send_esd_event) {
 				rc = ts_ops->send_esd_event(GPIO_CHECK_TIMES);
@@ -7339,7 +7358,7 @@ int dsi_display_get_modes(struct dsi_display *display,
 			memcpy(sub_mode, &display_mode, sizeof(display_mode));
 			array_idx++;
 
-			if (!dfps_caps.dfps_support || is_cmd_mode)
+			if (!dfps_caps.dfps_support || is_cmd_mode || (display->panel->enable_supermotion && mode_idx == 1 && dfps_caps.dfps_list[i] == DSI_FPS_144))
 				continue;
 
 			curr_refresh_rate = sub_mode->timing.refresh_rate;
@@ -8645,6 +8664,13 @@ int dsi_display_enable(struct dsi_display *display)
 			DSI_MODE_FLAG_POMS)){
 #ifdef CONFIG_LCD_KIT_DRIVER
 		rc = lcd_kit_panel_enable(display->panel);
+		if (display->panel->enable_supermotion) {
+			if (display->is_stylus) {
+				dsi_panel_tx_cmd_set(display->panel, DSI_CMD_SET_PENCIL);
+			} else {
+				dsi_panel_tx_cmd_set(display->panel, DSI_CMD_SET_HANDS);
+			}
+		}
 		lcd_kit_esd_backlight_enable(display->panel);
 		display->frame_number = 0;
 #else

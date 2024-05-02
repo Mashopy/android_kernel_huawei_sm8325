@@ -1798,6 +1798,8 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-unfold-command",
 	"qcom,mdss-panel-high-voltage-command",
 	"qcom,mdss-panel-low-voltage-command",
+	"qcom,mdss-dsi-to-pencil-cmds",
+	"qcom,mdss-dsi-to-hands-cmds",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1828,6 +1830,8 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-unfold-command-state",
 	"qcom,mdss-panel-high-voltage-command-state",
 	"qcom,mdss-panel-low-voltage-command-state",
+	"qcom,mdss-dsi-to-pencil-cmds-state",
+	"qcom,mdss-dsi-to-hands-cmds-state",
 };
 
 int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2138,6 +2142,8 @@ static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 #ifdef CONFIG_LCD_KIT_DRIVER
 	panel->apaod_lp2_need_sendcmd = utils->read_bool(utils->data,
 			"qcom,apaod-lp2-need-sendcmd");
+	panel->enable_supermotion = utils->read_bool(utils->data,
+			"qcom,enable-supermotion");
 #endif
 
 	panel->spr_info.enable = false;
@@ -3506,6 +3512,8 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel)
 		"qcom,esd-only-gpio-detect");
 	esd_config->gpio_detect_support = utils->read_bool(utils->data,
                 "qcom,esd-gpio-detect-support");
+	esd_config->tp_esd_event_support = utils->read_bool(utils->data,
+			"qcom,tp-esd-event");
 	if (esd_config->gpio_detect_support) {
 		esd_config->tp_esd_event = utils->read_bool(utils->data,
 			"qcom,tp-esd-gpio-event");
@@ -3974,7 +3982,8 @@ int dsi_panel_get_mode_count(struct dsi_panel *panel)
 	 */
 	if (panel->panel_mode != DSI_OP_CMD_MODE &&
 		!panel->host_config.ext_bridge_mode &&
-		!panel->panel_mode_switch_enabled)
+		!panel->panel_mode_switch_enabled &&
+		!panel->enable_supermotion)
 		count = SINGLE_MODE_SUPPORT;
 
 	panel->num_timing_nodes = count;

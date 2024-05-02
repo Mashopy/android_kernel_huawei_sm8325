@@ -5468,6 +5468,11 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 		{FINGERPRINT_ON, "fingerpirnt_on"},
 	};
 
+	static const struct drm_prop_enum_list e_stylus_state[] = {
+		{NOT_USE_STYLUS, "not_use_stylus"},
+		{USE_STYLUS, "use_stylus"},
+	};
+
 	SDE_DEBUG("\n");
 
 	if (!crtc || !catalog) {
@@ -5573,6 +5578,12 @@ static void sde_crtc_install_properties(struct drm_crtc *crtc,
 			CRTC_PROP_INFO);
 
 	vfree(info);
+
+	msm_property_install_enum(&sde_crtc->property_info,
+			"stylus_state",
+			0x0, 0, e_stylus_state,
+			ARRAY_SIZE(e_stylus_state), 0,
+			CUST_CRTC_PROP_STYLUS_STATE);
 }
 
 static int _sde_crtc_get_output_fence(struct drm_crtc *crtc,

@@ -182,6 +182,7 @@ struct drm_panel_esd_config {
 	u32 esd_gpio_num1;
 	u32 gpio_normal_value1;
 	bool tp_esd_event;
+	bool tp_esd_event_support;
 	bool esd_only_gpio_detect;
 	u32 *status_valid_params;
 	u32 *status_value;
@@ -281,6 +282,7 @@ struct dsi_panel {
 	struct dsi_panel_ops panel_ops;
 #ifdef CONFIG_LCD_KIT_DRIVER
 	int apaod_lp2_need_sendcmd;
+	int enable_supermotion;
 #endif
 };
 

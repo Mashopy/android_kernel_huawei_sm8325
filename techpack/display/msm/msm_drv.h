@@ -176,7 +176,7 @@ enum msm_mdp_crtc_property {
 	CRTC_PROP_CACHE_STATE,
 	CRTC_PROP_VM_REQ_STATE,
 	CRTC_PROP_FINGERPRINT_STATE,
-
+	CUST_CRTC_PROP_STYLUS_STATE,
 	/* total # of properties */
 	CRTC_PROP_COUNT
 };

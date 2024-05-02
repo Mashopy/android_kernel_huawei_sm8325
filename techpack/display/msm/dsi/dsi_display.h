@@ -300,6 +300,7 @@ struct dsi_display {
 #ifdef CONFIG_LCD_KIT_DRIVER
 	ktime_t lp_to_on_time;
 	u32 frame_number;
+	bool is_stylus;
 #endif
 };
 

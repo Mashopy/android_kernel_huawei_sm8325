@@ -1060,10 +1060,12 @@ static bool _sde_rm_check_lm_and_get_connected_blks(
 			"display preference is not met. display_type: %d lm_features: %x\n",
 			(int)reqs->hw_res.display_type, lm_cfg->features);
 #ifdef CONFIG_LCD_KIT_DRIVER
-		if (lcd_kit_get_product_type() != LCD_SINGLE_DSI_MULTIPLEX_TYPE)
+		if (lcd_kit_get_product_type() != LCD_SINGLE_DSI_MULTIPLEX_TYPE) {
 			return false;
-		else if (!is_conn_primary && !is_conn_secondary)
-			return false;
+		} else {
+			if (!is_conn_primary && !is_conn_secondary)
+				return false;
+		}
 #else
 		return false;
 #endif
@@ -2560,6 +2562,8 @@ int sde_rm_reserve(
 				rsvp_nxt->seq, enc->base.id);
 			SDE_EVT32(enc->base.id, (rsvp_cur) ? rsvp_cur->seq : -1,
 					rsvp_nxt->seq, SDE_EVTLOG_ERROR);
+			if (lcd_kit_get_product_type() == LCD_SINGLE_DSI_MULTIPLEX_TYPE)
+				SDE_DBG_DUMP("all", "dbg_bus","dsi_dbg_bus", "vbif_dbg_bus", "panic");
 			ret = -EINVAL;
 			goto end;
 		}
