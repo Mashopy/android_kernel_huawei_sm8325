@@ -407,6 +407,34 @@ static ssize_t thermal_level_store(struct device *dev,
 
 static DEVICE_ATTR_RW(thermal_level);
 
+static ssize_t video_mb_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct msm_vidc_core *core;
+	int video_load = 0;
+
+	/*
+	 * driver possibly not probed yet or not the main device.
+	 */
+	if (!dev || !dev->driver ||
+		!of_device_is_compatible(dev->of_node, "qcom,msm-vidc"))
+		return 0;
+
+	core = dev_get_drvdata(dev);
+	if (!core) {
+		d_vpr_e("%s: invalid core\n", __func__);
+		return 0;
+	}
+
+	video_load = msm_comm_get_device_load(core, MSM_VIDC_ENCODER, MSM_VIDC_VIDEO, LOAD_ADMISSION_CONTROL);
+	video_load += msm_comm_get_device_load(core, MSM_VIDC_DECODER, MSM_VIDC_VIDEO, LOAD_ADMISSION_CONTROL);
+
+	return scnprintf(buf, PAGE_SIZE, "remainMbpsNum: %d\n",
+			core->resources.max_load - video_load);
+}
+
+static DEVICE_ATTR_RO(video_mb);
+
 static ssize_t sku_version_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -419,6 +447,7 @@ static DEVICE_ATTR_RO(sku_version);
 static struct attribute *msm_vidc_core_attrs[] = {
 		&dev_attr_pwr_collapse_delay.attr,
 		&dev_attr_thermal_level.attr,
+		&dev_attr_video_mb.attr,
 		&dev_attr_sku_version.attr,
 		NULL
 };
