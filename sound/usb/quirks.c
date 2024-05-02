@@ -1440,9 +1440,34 @@ void put_low_power_usb_headphone(void)
 	usb_otg_headphone_vbus_ops.low_power_state = 0;
 }
 
+static bool is_need_lift(struct device* dev)
+{
+	struct device_node *hw_audio_node = NULL;
+	struct device_node *sub_node = NULL;
+
+	hw_audio_node = of_find_compatible_node(NULL, NULL, "hw,hw_audio_info");
+	if (hw_audio_node == NULL) {
+		dev_info(dev, "%s: Cannot find hw audio node\n", __func__);
+		return true;
+	}
+	sub_node = of_get_child_by_name(hw_audio_node, "hardware_info");
+	if (sub_node == NULL) {
+		dev_info(dev, "%s: hardware_info not existed, skip\n", __func__);
+		return true;
+	}
+	if (of_property_read_bool(sub_node, "support_new_ccc"))
+		return false;
+	dev_info(dev, "%s: support_new_ccc is false\n", __func__);
+	return true;
+}
+
 void proprietary_headset_volume_limit_lift(struct usb_device *dev)
 {
 	u8 result = 0;
+	if (!is_need_lift(&dev->dev)) {
+		dev_info(&dev->dev, "the device does not require the proprietary volume control.\n");
+		return;
+	}
 	snd_usb_ctl_msg(dev, usb_rcvctrlpipe(dev, 0),
                         USB_REQ_SET_VOLUME,
                         USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,

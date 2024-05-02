@@ -20,6 +20,7 @@
 #define _HW_AUDIO_INFO_H
 
 #include <linux/kernel.h>
+#include <linux/regmap.h>
 
 #ifndef UNUSED
 #define UNUSED(x) ((void)(x))
@@ -100,6 +101,21 @@ enum pa_num {
 	SIMPLE_PA_NUMBER,
 };
 
+enum {
+	WCD737X_INDEX = 0,
+	WCD938X_INDEX,
+	BOLERO_TX_INDEX,
+	BOLERO_RX_INDEX,
+	BOLERO_VA_INDEX,
+};
+
+enum codec_dump_cmd {
+	UNUSED = 0,
+	GET_CODEC_DUMP_ASYNC = 1,
+	REPORT_CODEC_DUMP_DMD = 2,
+	GET_CODEC_INIT_VALUE = 3,
+};
+
 struct hw_audio_info {
 	unsigned int audio_prop;
 	enum simple_type pa_type;
@@ -114,10 +130,15 @@ struct hw_audio_info {
 	int simple_id_gpio[USE_TWO_GPIO];
 	bool mic_differential_mode;
 	bool is_init_smartpa_type;
+	bool codec_dump_support;
 	char product_identifier[PRODUCT_IDENTIFIER_BUFF_SIZE];
 	char smartpa_type_str[SMARTPA_TYPE_BUFF_SIZE];
 	char smartpa_num_str[SMARTPA_NUM_BUFF_SIZE];
 };
 
+void codec_info_register(unsigned int codec_type, struct regmap *regmap, unsigned int max_reg_num,
+	unsigned int interval, unsigned int reg_base);
+void codec_info_unregister(unsigned int codec_type);
+void report_codec_dump_dmd(void);
 #endif
 
