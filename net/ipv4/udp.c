@@ -135,6 +135,10 @@
 #include <emcom/emcom_xengine.h>
 #endif
 
+#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
+#include <hwnet/booster/hw_packet_filter_bypass.h>
+#endif
+
 struct udp_table udp_table __read_mostly;
 EXPORT_SYMBOL(udp_table);
 
@@ -2884,6 +2888,10 @@ int udp_abort(struct sock *sk, int err)
 	 */
 	if (sock_flag(sk, SOCK_DEAD))
 		goto out;
+
+#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
+	socket_close_chr(sk);
+#endif
 
 	sk->sk_err = err;
 	sk->sk_error_report(sk);

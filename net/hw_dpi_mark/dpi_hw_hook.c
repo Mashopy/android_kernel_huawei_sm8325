@@ -509,6 +509,70 @@ void add_dpi_rule(const char *data)
 	}
 }
 
+static DEFINE_RWLOCK(g_tcp_recover_lock);
+static uid_t g_tcp_recover_white_list[TCP_RECOVER_RULE_MAX_SIZE] = {0};
+static int g_tcp_recover_next_index = 0;
+int get_tcp_recover_somark(struct sock *sk)
+{
+	uid_t uid = sk->sk_uid.val;
+	int is_tcp_recover_scene = 0;
+	int this_uid_index;
+	for (this_uid_index = 0; this_uid_index < g_tcp_recover_next_index; ++this_uid_index) {
+		if (g_tcp_recover_white_list[this_uid_index] == uid) {
+			is_tcp_recover_scene = 1;
+			break;
+		}
+	}
+	return is_tcp_recover_scene;
+}
+
+void delete_tcp_recover_rule(uid_t uid)
+{
+	int this_uid_index;
+	int temp_next_index = 0;
+
+	write_lock_bh(&g_tcp_recover_lock);
+	for (this_uid_index = 0; this_uid_index < g_tcp_recover_next_index; ++this_uid_index) {
+		if (g_tcp_recover_white_list[this_uid_index] != uid) {
+			g_tcp_recover_white_list[temp_next_index] = g_tcp_recover_white_list[this_uid_index];
+			temp_next_index++;
+		}
+	}
+	g_tcp_recover_next_index = temp_next_index;
+	write_unlock_bh(&g_tcp_recover_lock);
+}
+
+void add_tcp_recover_rule(uid_t uid, uint32_t is_tcp_recover_scene)
+{
+	int this_uid_index;
+
+	if (g_tcp_recover_next_index < 0)
+		return;
+	for (this_uid_index = 0; this_uid_index < g_tcp_recover_next_index; ++this_uid_index) {
+		if (g_tcp_recover_white_list[this_uid_index] == uid) {
+			if (!is_tcp_recover_scene)
+				delete_tcp_recover_rule(uid);
+			return;
+		}
+	}
+	write_lock_bh(&g_tcp_recover_lock);
+	if (is_tcp_recover_scene && g_tcp_recover_next_index < TCP_RECOVER_RULE_MAX_SIZE) {
+		g_tcp_recover_white_list[g_tcp_recover_next_index] = uid;
+		g_tcp_recover_next_index++;
+		pr_info("add_tcp_recover_rule uid=%d is_tcp_recover_scene=%d \n", uid, is_tcp_recover_scene);
+	}
+	write_unlock_bh(&g_tcp_recover_lock);
+}
+
+static bool _proc_cmd_dmr(int cmd, dpi_mark_rule_t *p_dmr)
+{
+	if (p_dmr == NULL) {
+		pr_info("dpi_hw_hook proc_cmd %d p_dmr is null\n", cmd);
+		return false;
+	}
+	return true;
+}
+
 /* process the cmd, opt not used currently */
 static void _proc_cmd(int cmd, int opt, const char *data, u32 len)
 {
@@ -535,22 +599,23 @@ static void _proc_cmd(int cmd, int opt, const char *data, u32 len)
 		mplk_add_nw_bind(p_dmr->dmr_app_uid, p_dmr->dmr_mplk_netid);
 		break;
 	case NETLINK_MPLK_UNBIND_NETWORK:
-		if (p_dmr == NULL) {
-			pr_info("dpi_hw_hook proc_cmd NETLINK_MPLK_UNBIND_NETWORK p_dmr is null\n");
+		if (!_proc_cmd_dmr(cmd, p_dmr))
 			return;
-		}
 		mplk_del_nw_bind(p_dmr->dmr_app_uid);
 		break;
 	case NETLINK_MPLK_RESET_SOCKET:
 		pr_info("mplk not support reset command now\n");
 		break;
 	case NETLINK_MPLK_CLOSE_SOCKET:
-		if (p_dmr == NULL) {
-			pr_info("dpi_hw_hook proc_cmd NETLINK_MPLK_CLOSE_SOCKET p_dmr is null\n");
+		if (!_proc_cmd_dmr(cmd, p_dmr))
 			return;
-		}
 		mplk_close_socket_by_uid(p_dmr->dmr_mplk_strategy,
 			p_dmr->dmr_app_uid);
+		break;
+	case NETLINK_SET_TCP_RECOVER_TO_KERNEL:
+		if (!_proc_cmd_dmr(cmd, p_dmr))
+			return;
+		add_tcp_recover_rule(p_dmr->dmr_app_uid, p_dmr->dmr_mplk_strategy);
 		break;
 	default:
 		pr_info("hwdpi:kernel_hw_receive cmd=%d is wrong\n", cmd);
@@ -603,8 +668,6 @@ static void netlink_init(void)
 void mark_skb_by_rule(struct sk_buff *skb, int tag)
 {
 	struct sock *sk = skb->sk;
-	uid_t skb_uid;
-	kuid_t kuid;
 	int i;
 	struct iphdr *iph = ip_hdr(skb);
 
@@ -630,9 +693,7 @@ void mark_skb_by_rule(struct sk_buff *skb, int tag)
 				return;
 			}
 			if (iph != NULL && iph->protocol == mask->tmgp_tp) {
-				kuid = sock_i_uid(sk);
-				skb_uid = kuid.val;
-				if (skb_uid == mask->tmgp_uid) {
+				if (sk->sk_uid.val == mask->tmgp_uid) {
 					sk->sk_hwdpi_mark = sk->sk_hwdpi_mark | MR_TMGP_2;
 					skb->mark = mask->tmgp_mark;
 					return;
@@ -648,7 +709,7 @@ static unsigned int dpimark_hook_localout(void *ops, struct sk_buff *skb,
 	const struct nf_hook_state *state)
 {
 	/* match the packet for optimization */
-	if (skb != NULL && skb->sk != NULL && skb->sk->sk_state == TCP_ESTABLISHED)
+	if (skb != NULL && skb->sk != NULL && skb->sk->sk_state > 0)
 		mark_skb_by_rule(skb, g_mark_tag);
 
 	return NF_ACCEPT;

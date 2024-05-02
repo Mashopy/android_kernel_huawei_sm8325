@@ -194,6 +194,13 @@ static void netlink_event_receive(struct sk_buff *netlink_skb)
 		kfree_skb(skb);
 		return;
 	}
+
+	if (nlh->nlmsg_len != NLMSG_LENGTH(sizeof(msg_rev))) {
+		wifi_audio_log_err("nlmsg_len is error");
+		kfree_skb(skb);
+		return;
+	}
+
 	sec_ret = memcpy_s(&msg_rev, sizeof(msg_rev), NLMSG_DATA(nlh), sizeof(msg_rev));
 	if (sec_ret != 0) {
 		wifi_audio_log_err("memcpy_s ERROR! bt_netlink_event_receive return");

@@ -56,6 +56,7 @@
 
 #define RTNL_MAX_TYPE		50
 #define RTNL_SLAVE_MAX_TYPE	36
+#define RTNL_LOCK_HOLD_MAX_MS	300
 
 struct rtnl_link {
 	rtnl_doit_func		doit;
@@ -66,10 +67,18 @@ struct rtnl_link {
 };
 
 static DEFINE_MUTEX(rtnl_mutex);
+static u64 start_hold_time;
+#ifdef CONFIG_QCOM_DFX_LOCK_TRACE
+void *get_rtnl_mutex(void)
+{
+	return (void *)&rtnl_mutex;
+}
+#endif
 
 void rtnl_lock(void)
 {
 	mutex_lock(&rtnl_mutex);
+	start_hold_time = local_clock();
 }
 EXPORT_SYMBOL(rtnl_lock);
 
@@ -92,10 +101,18 @@ EXPORT_SYMBOL(rtnl_kfree_skbs);
 void __rtnl_unlock(void)
 {
 	struct sk_buff *head = defer_kfree_skb_list;
+	u64 hold_time;
 
 	defer_kfree_skb_list = NULL;
+	hold_time = div_u64(local_clock() - start_hold_time, NSEC_PER_MSEC);
 
 	mutex_unlock(&rtnl_mutex);
+
+	if (hold_time > RTNL_LOCK_HOLD_MAX_MS) {
+		pr_err("%s[%d] hold rtnl_lock too long: %llums\n", current->comm,
+		       current->pid, hold_time);
+		dump_stack();
+	}
 
 	while (head) {
 		struct sk_buff *next = head->next;

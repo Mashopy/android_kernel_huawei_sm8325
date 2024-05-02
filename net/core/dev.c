@@ -3686,6 +3686,10 @@ struct netdev_queue *netdev_core_pick_tx(struct net_device *dev,
 	if (sender_cpu >= (u32)NR_CPUS)
 		skb->sender_cpu = raw_smp_processor_id() + 1;
 #endif
+	if (skb->protocol == htons(ETH_P_MINTP)) {
+		queue_index = netdev_cap_txqueue(dev, skb->queue_mapping);
+		return netdev_get_tx_queue(dev, queue_index);
+	}
 
 	if (dev->real_num_tx_queues != 1) {
 		const struct net_device_ops *ops = dev->netdev_ops;

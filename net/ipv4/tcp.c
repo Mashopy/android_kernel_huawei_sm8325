@@ -303,6 +303,13 @@
 #ifdef CONFIG_HW_BOOSTER
 #include <hwnet/booster/hongbao_wechat.h>
 #endif
+#ifdef CONFIG_HW_NETWORK_DCP
+#include <hwnet/network_dcp/network_dcp_handle.h>
+#endif
+
+#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
+#include <hwnet/booster/hw_packet_filter_bypass.h>
+#endif
 
 struct percpu_counter tcp_orphan_count;
 EXPORT_SYMBOL_GPL(tcp_orphan_count);
@@ -1512,6 +1519,9 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	int ret;
 
 	lock_sock(sk);
+#ifdef CONFIG_HW_NETWORK_DCP
+	dcp_send_data_packet(sk);
+#endif
 	ret = tcp_sendmsg_locked(sk, msg, size);
 	release_sock(sk);
 
@@ -2348,6 +2358,10 @@ void tcp_set_state(struct sock *sk, int state)
 #endif
 #ifdef CONFIG_HUAWEI_XENGINE
 	emcom_xengine_mpflow_fallback(sk, EMCOM_MPFLOW_FALLBACK_NOPAYLOAD, state);
+#endif
+
+#ifdef CONFIG_HW_NETWORK_DCP
+	dcp_tcp_state_change(sk, state);
 #endif
 
 	/* We defined a new enum for TCP states that are exported in BPF
@@ -3307,8 +3321,9 @@ int tcp_setsockopt(struct sock *sk, int level, int optname, char __user *optval,
 	const struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (level != SOL_TCP)
-		return icsk->icsk_af_ops->setsockopt(sk, level, optname,
-						     optval, optlen);
+		/* Paired with WRITE_ONCE() in do_ipv6_setsockopt() and tcp_v6_connect() */
+		return READ_ONCE(icsk->icsk_af_ops)->setsockopt(sk, level, optname,
+								optval, optlen);
 	return do_tcp_setsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(tcp_setsockopt);
@@ -3830,8 +3845,9 @@ int tcp_getsockopt(struct sock *sk, int level, int optname, char __user *optval,
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
 	if (level != SOL_TCP)
-		return icsk->icsk_af_ops->getsockopt(sk, level, optname,
-						     optval, optlen);
+		/* Paired with WRITE_ONCE() in do_ipv6_setsockopt() and tcp_v6_connect() */
+		return READ_ONCE(icsk->icsk_af_ops)->getsockopt(sk, level, optname,
+								optval, optlen);
 	return do_tcp_getsockopt(sk, level, optname, optval, optlen);
 }
 EXPORT_SYMBOL(tcp_getsockopt);
@@ -4040,6 +4056,9 @@ int tcp_abort(struct sock *sk, int err)
 	bh_lock_sock(sk);
 
 	if (!sock_flag(sk, SOCK_DEAD)) {
+#ifdef CONFIG_HW_PACKET_FILTER_BYPASS
+		socket_close_chr(sk);
+#endif
 		sk->sk_err = err;
 		/* This barrier is coupled with smp_rmb() in tcp_poll() */
 		smp_wmb();

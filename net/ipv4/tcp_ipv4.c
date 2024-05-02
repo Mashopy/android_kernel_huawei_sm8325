@@ -98,6 +98,10 @@
 #include <emcom/emcom_xengine.h>
 #endif
 
+#ifdef CONFIG_HW_NETWORK_DCP
+#include <hwnet/network_dcp/network_dcp_handle.h>
+#endif
+
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
 			       __be32 daddr, __be32 saddr, const struct tcphdr *th);
@@ -237,6 +241,10 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 
 #ifdef CONFIG_HW_NETWORK_SLICE
 	slice_rules_lookup(sk, uaddr, IPPROTO_TCP);
+#endif
+
+#ifdef CONFIG_HW_NETWORK_DCP
+	dcp_tcp_v4_change_soackaddr(sk, usin);
 #endif
 
 	nexthop = daddr = usin->sin_addr.s_addr;

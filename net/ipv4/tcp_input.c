@@ -120,6 +120,10 @@
 #include <huawei_platform/power/hw_klinkaware.h>
 #endif
 
+#ifdef CONFIG_HW_DPIMARK_MODULE
+#include <hwnet/hw_dpi_mark/dpi_hw_hook.h>
+#endif
+
 int sysctl_tcp_max_orphans __read_mostly = NR_FILE;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
@@ -5648,6 +5652,19 @@ static bool tcp_reset_check(const struct sock *sk, const struct sk_buff *skb)
 					       TCPF_CLOSING));
 }
 
+static bool tcp_should_recover(struct sock *sk, const struct tcphdr *th)
+{
+#ifdef CONFIG_HW_NETWORK_QOE
+	struct tcp_sock *tp = tcp_sk(sk);
+	if (sk != NULL && th != NULL && tp->should_recover) {
+		pr_warn("tcp_should_recover: uid:%d isTcpRecoverScene:%d src_port:%u dst_port:%u is_ipv6:%d\n",
+			sk->sk_uid.val, tp->should_recover, ntohs(th->source), ntohs(th->dest), is_v6_sock(sk));
+		return true;
+	}
+#endif
+	return false;
+}
+
 /* Does PAWS and seqno based validation of an incoming segment, flags will
  * play significant role here.
  */
@@ -5656,6 +5673,11 @@ static bool tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	bool rst_seq_match = false;
+
+	if (tcp_should_recover(sk, th)) {
+		tcp_reset(sk);
+		goto discard;
+	}
 
 	/* RFC1323: H1. Apply PAWS check first. */
 	if (tcp_fast_parse_options(sock_net(sk), skb, th, tp) &&
@@ -5787,6 +5809,9 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb)
 	const struct tcphdr *th = (const struct tcphdr *)skb->data;
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int len = skb->len;
+#ifdef CONFIG_HW_NETWORK_QOE
+	u32 tp_recover_seq;
+#endif
 #ifdef CONFIG_TCP_ARGO
 	u32 seq;
 	u32 end_seq;
@@ -5820,7 +5845,6 @@ void tcp_rcv_established(struct sock *sk, struct sk_buff *skb)
 #ifdef CONFIG_HUAWEI_KSTATE
 	pg_hook_dl_stub(sk, skb, tp->tcp_header_len);
 #endif
-
 	/*	pred_flags is 0xS?10 << 16 + snd_wnd
 	 *	if header_prediction is to be made
 	 *	'S' will always be tp->tcp_header_len >> 2
@@ -5979,6 +6003,9 @@ step5:
 
 	/* Process urgent data. */
 	tcp_urg(sk, skb, th);
+#ifdef CONFIG_HW_NETWORK_QOE
+	tp_recover_seq = TCP_SKB_CB(skb)->seq;
+#endif
 #ifdef CONFIG_TCP_ARGO
 	seq = TCP_SKB_CB(skb)->seq;
 	end_seq = TCP_SKB_CB(skb)->end_seq;
@@ -6000,6 +6027,8 @@ step5:
 #ifdef CONFIG_HW_NETWORK_QOE
 		update_ofo_rtt_for_qoe(sk);
 		update_ofo_tstamp_for_qoe(sk);
+		if (get_tcp_recover_somark(sk))
+			update_should_enter_recover(sk, tp_recover_seq);
 #endif
 	return;
 
