@@ -911,6 +911,7 @@ void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 		 * Nothing was reported previously
 		 * report a headphone or unsupported
 		 */
+		mbhc->g_plug_type = MBHC_PLUG_TYPE_HEADPHONE;
 		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADPHONE);
 	} else if (plug_type == MBHC_PLUG_TYPE_GND_MIC_SWAP) {
 		if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADPHONE)
@@ -1026,9 +1027,14 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	/* Set the detection type appropriately */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
 				 !detection_type);
-
 	pr_debug("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
 			mbhc->current_plug, detection_type);
+
+	if (mbhc->use_ana_hs_insert_flag) {
+		detection_type = g_anahs_state;
+		pr_debug("%s: use ana_hs sw insert flag, detection_type: %d\n", __func__, detection_type);
+	}
+
 	if (mbhc->mbhc_fn->wcd_cancel_hs_detect_plug)
 		mbhc->mbhc_fn->wcd_cancel_hs_detect_plug(mbhc,
 						&mbhc->correct_plug_swch);
@@ -1086,7 +1092,7 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 		set_typec_uart_switch(mbhc, 0);
 
 		/* disable MIC_BIAS_2 for avoid pop when plug out */
-		if (mbhc->mbhc_cb->mbhc_micbias_control)
+		if ((mbhc->mbhc_cb->mbhc_micbias_control) && (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET))
 			mbhc->mbhc_cb->mbhc_micbias_control(component,
 				MIC_BIAS_2, MICB_DISABLE);
 		/* Disable external voltage source to micbias if present */
@@ -1935,11 +1941,13 @@ static void ana_hs_plug_out_detect(void *priv)
 
 	if (mbhc->mbhc_cb->mbhc_micbias_control) {
 		pr_err("%s() micbias2 AO disable\n", __func__);
-		mbhc->mbhc_cb->mbhc_micbias_control(mbhc->component, MIC_BIAS_2, MICB_DISABLE);
+		if (mbhc->g_plug_type != MBHC_PLUG_TYPE_HEADPHONE)
+			mbhc->mbhc_cb->mbhc_micbias_control(mbhc->component, MIC_BIAS_2, MICB_DISABLE);
 	} else {
 		pr_err("%s() bad mbhc mic ctrl\n", __func__);
 	}
 
+	mbhc->g_plug_type = MBHC_PLUG_TYPE_INVALID;
 	g_anahs_state = 0;
 	ana_hs_plug_handler();
 }
@@ -2000,6 +2008,7 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_component *component,
 	const char *gnd_switch = "qcom,msm-mbhc-gnd-swh";
 	const char *hs_thre = "qcom,msm-mbhc-hs-mic-max-threshold-mv";
 	const char *hph_thre = "qcom,msm-mbhc-hs-mic-min-threshold-mv";
+	const char *read_elect_insert_irq = NULL;
 
 	pr_debug("%s: enter\n", __func__);
 
@@ -2215,8 +2224,17 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_component *component,
 		goto err_btn_release_irq;
 	}
 
-	mbhc->disable_elect_insert_irq =
-		of_property_read_bool(card->dev->of_node, "disable_elect_insert_irq");
+	mbhc->use_ana_hs_insert_flag =
+		of_property_read_bool(card->dev->of_node, "use_ana_hs_insert_flag");
+	pr_debug("%s:mbhc->use_ana_hs_insert_flag = %u\n", __func__,
+		mbhc->use_ana_hs_insert_flag);
+
+	mbhc->disable_elect_insert_irq = 0;
+	of_property_read_string(card->dev->of_node, "disable_elect_insert_irq", &read_elect_insert_irq);
+	if (read_elect_insert_irq) {
+		if (strcmp(read_elect_insert_irq, DTSI_ENABLE_ON) == 0)
+			mbhc->disable_elect_insert_irq = 1;
+	}
 	pr_debug("%s:mbhc->disable_elect_insert_irq = %u\n", __func__,
 		mbhc->disable_elect_insert_irq);
 	if (!mbhc->disable_elect_insert_irq) {

@@ -151,6 +151,7 @@ do {                                                    \
 #define WCD_MBHC_BTN_PRESS_COMPL_TIMEOUT_MS  50
 #define ANC_DETECT_RETRY_CNT 7
 #define WCD_MBHC_SPL_HS_CNT  1
+#define DTSI_ENABLE_ON "true"
 
 enum wcd_mbhc_detect_logic {
 	WCD_DETECTION_LEGACY,
@@ -625,6 +626,8 @@ struct wcd_mbhc {
 	bool disable_elect_insert_irq;
 	unsigned int delay_for_headset_reverse_insertion;
 	int micbias2_ao;
+	int g_plug_type;
+	bool use_ana_hs_insert_flag;
 };
 
 void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,

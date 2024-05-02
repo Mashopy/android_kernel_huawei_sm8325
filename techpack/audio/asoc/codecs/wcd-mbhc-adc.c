@@ -856,6 +856,11 @@ correct_plug_type:
 					goto report;
 				} else {
 					plug_type = MBHC_PLUG_TYPE_GND_MIC_SWAP;
+#ifdef CONFIG_ANA_HS
+					ana_hs_mic_gnd_swap();
+#endif
+					pr_debug("%s: cross connection found, Plug type %d\n",
+							__func__, plug_type);
 				}
 			} else {
 				no_gnd_mic_swap_cnt++;

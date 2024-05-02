@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/irq.h>
@@ -1745,6 +1746,8 @@ static int swrm_slvdev_datapath_control(struct swr_master *master, bool enable)
 		dev_dbg(&master->dev, "%s: pm_runtime auto suspend triggered\n",
 			__func__);
 		pm_runtime_mark_last_busy(swrm->dev);
+		if (!enable)
+			pm_runtime_set_autosuspend_delay(swrm->dev, 80);
 		pm_runtime_put_autosuspend(swrm->dev);
 	}
 exit:
@@ -2862,6 +2865,7 @@ static int swrm_probe(struct platform_device *pdev)
 	mutex_init(&swrm->clklock);
 	mutex_init(&swrm->devlock);
 	mutex_init(&swrm->pm_lock);
+	mutex_init(&swrm->runtime_lock);
 	swrm->wlock_holders = 0;
 	swrm->pm_state = SWRM_PM_SLEEPABLE;
 	init_waitqueue_head(&swrm->pm_wq);
@@ -3033,6 +3037,7 @@ err_irq_fail:
 	mutex_destroy(&swrm->iolock);
 	mutex_destroy(&swrm->clklock);
 	mutex_destroy(&swrm->pm_lock);
+	mutex_destroy(&swrm->runtime_lock);
 	pm_qos_remove_request(&swrm->pm_qos_req);
 
 err_pdata_fail:
@@ -3072,6 +3077,7 @@ static int swrm_remove(struct platform_device *pdev)
 	mutex_destroy(&swrm->clklock);
 	mutex_destroy(&swrm->force_down_lock);
 	mutex_destroy(&swrm->pm_lock);
+	mutex_destroy(&swrm->runtime_lock);
 	pm_qos_remove_request(&swrm->pm_qos_req);
 	devm_kfree(&pdev->dev, swrm);
 	return 0;
@@ -3106,6 +3112,7 @@ static int swrm_runtime_resume(struct device *dev)
 		__func__, swrm->state);
 	trace_printk("%s: pm_runtime: resume, state:%d\n",
 		__func__, swrm->state);
+	mutex_lock(&swrm->runtime_lock);
 	mutex_lock(&swrm->reslock);
 
 	if (swrm_request_hw_vote(swrm, LPASS_HW_CORE, true)) {
@@ -3117,6 +3124,7 @@ static int swrm_runtime_resume(struct device *dev)
 		if (swrm->req_clk_switch)
 			swrm->req_clk_switch = false;
 		mutex_unlock(&swrm->reslock);
+		mutex_unlock(&swrm->runtime_lock);
 		return 0;
 	}
 	if (swrm_request_hw_vote(swrm, LPASS_AUDIO_CORE, true)) {
@@ -3134,6 +3142,7 @@ static int swrm_runtime_resume(struct device *dev)
 					pr_err("%s: irq data is NULL\n",
 						__func__);
 					mutex_unlock(&swrm->reslock);
+					mutex_unlock(&swrm->runtime_lock);
 					return IRQ_NONE;
 				}
 				mutex_lock(&swrm->irq_lock);
@@ -3228,6 +3237,7 @@ exit:
 	if (swrm->req_clk_switch)
 		swrm->req_clk_switch = false;
 	mutex_unlock(&swrm->reslock);
+	mutex_unlock(&swrm->runtime_lock);
 
 	trace_printk("%s: pm_runtime: resume done, state:%d\n",
 		__func__, swrm->state);
@@ -3253,6 +3263,7 @@ static int swrm_runtime_suspend(struct device *dev)
 		swrm->state = SWR_MSTR_SSR;
 		return 0;
 	}
+	mutex_lock(&swrm->runtime_lock);
 	mutex_lock(&swrm->reslock);
 	mutex_lock(&swrm->force_down_lock);
 	current_state = swrm->state;
@@ -3359,8 +3370,12 @@ exit:
 	if (!hw_core_err)
 		swrm_request_hw_vote(swrm, LPASS_HW_CORE, false);
 	mutex_unlock(&swrm->reslock);
+	mutex_unlock(&swrm->runtime_lock);
 	trace_printk("%s: pm_runtime: suspend done state: %d\n",
 		__func__, swrm->state);
+	dev_dbg(dev, "%s: pm_runtime: suspend done state: %d\n",
+		__func__, swrm->state);
+	pm_runtime_set_autosuspend_delay(dev, auto_suspend_timer);
 	return ret;
 }
 #endif /* CONFIG_PM */
@@ -3843,7 +3858,21 @@ static int swrm_suspend(struct device *dev)
 		dev_dbg(swrm->dev, "%s: suspending system, state %d, wlock %d\n",
 			 __func__, swrm->pm_state,
 			swrm->wlock_holders);
-		swrm->pm_state = SWRM_PM_ASLEEP;
+		/*
+		 * before updating the pm_state to ASLEEP, check if device is
+		 * runtime suspended or not. If it is not, then first make it
+		 * runtime suspend, and then update the pm_state to ASLEEP.
+		*/
+		mutex_unlock(&swrm->pm_lock); /* release pm_lock before dev suspend */
+		swrm_device_suspend(swrm->dev); /* runtime suspend the device */
+		mutex_lock(&swrm->pm_lock); /* acquire pm_lock and update state */
+		if (swrm->pm_state == SWRM_PM_SLEEPABLE) {
+			swrm->pm_state = SWRM_PM_ASLEEP;
+		} else if (swrm->pm_state == SWRM_PM_AWAKE) {
+			ret = -EBUSY;
+			mutex_unlock(&swrm->pm_lock);
+			goto check_ebusy;
+		}
 	} else if (swrm->pm_state == SWRM_PM_AWAKE) {
 		/*
 		 * unlock to wait for pm_state == SWRM_PM_SLEEPABLE
@@ -3896,6 +3925,7 @@ static int swrm_suspend(struct device *dev)
 			pm_runtime_enable(dev);
 		}
 	}
+check_ebusy:
 	if (ret == -EBUSY) {
 		/*
 		 * There is a possibility that some audio stream is active

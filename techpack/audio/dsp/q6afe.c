@@ -30,10 +30,21 @@
 #include "algorithm_dft.h"
 #include "voice_bigdata.h"
 #include "dsp_trace_utils.h"
+#include "hme_vqm_report.h"
 
 #ifdef CONFIG_HUAWEI_QCOM_ADSP_MISC
 #include <dsp/hw_adsp_apr_interface.h>
 #endif
+
+#ifdef CONFIG_HW_AUDIO_INFO
+#include "hw_audio_info.h"
+#endif
+
+#ifdef CONFIG_BLACKBOX
+#include "platform/linux/blackbox_subsystem.h"
+#endif
+
+#include "microphone_debug.h"
 
 #define CONFIG_SND_SOC_AWINIC_AW882XX
 #ifdef CONFIG_SND_SOC_AWINIC_AW882XX
@@ -58,6 +69,10 @@
 #define ENVP_BUF_NUM 8
 #define RESP_TIMEOUT_MAX 3
 #define ERROR_CODE_VALUE 131
+
+#define MIC_IS_BLOCK 1
+#define MIC_NO_BLOCK 0
+
 
 #define DSM_AUDIO_ADSP_SETUP_FAIL_ERROR_NO 921001013
 
@@ -1096,6 +1111,38 @@ static int afe_event_buf_put(struct vqm_log_info *info)
 	return 0;
 }
 
+static void check_micblk(struct vqm_log_info *info)
+{
+	static int left_mic_status = MICROPHONE_DEBUG_BUILTIN_MIC_GOOD;
+	voice_bsd_3a_dump_micblk_log  *mic_blk_info = NULL;
+
+	switch (info->alarm_id) {
+	case HIFI_LOG_LOG_CALL_QUALITY_VOICE_PARA_MSG:
+		microphone_debug_set_state(left_mic_status);
+		left_mic_status = MICROPHONE_DEBUG_BUILTIN_MIC_GOOD;
+		break;
+	case HIFI_ERR_LOG_VOICE_MIC_MICBLK_MSG:
+		mic_blk_info = (voice_bsd_3a_dump_micblk_log *)info->data;
+		if ((mic_blk_info->left_mic_dis_times != 0) ||
+			(mic_blk_info->left_mic_blk_times[0] != 0) ||
+			(mic_blk_info->left_mic_blk_times[1] != 0))
+			left_mic_status = MICROPHONE_DEBUG_BUILTIN_MIC_BAD;
+		pr_info("left mic status=%d,dis times=%u,blk times0=%u,blk times1=%u\n",
+			left_mic_status, mic_blk_info->left_mic_dis_times,
+			mic_blk_info->left_mic_blk_times[0], mic_blk_info->left_mic_blk_times[1]);
+		break;
+	default:
+		break;
+	}
+}
+
+static int vqm_dump_codec_reg(hme_vqm_result *vqm_result)
+{
+	if (vqm_result->i_diagnoses_pos == BSD_POS_MICIN)
+		report_codec_dump_dmd();
+	return 0;
+}
+
 static void afe_debug_work_fn(struct work_struct *work)
 {
 	int ret;
@@ -1115,6 +1162,9 @@ static void afe_debug_work_fn(struct work_struct *work)
 			pr_err("receive a 3A DMD message from adsp!\n");
 			voice_3a_dmd_report_to_imonitor((voice_3a_om_dmd_t *)info->data);
 		} else {
+			if (info->alarm_id == HIFI_ERR_LOG_VOICE_BSD_ALARM)
+				vqm_dump_codec_reg((hme_vqm_result *)info->data);
+
 			vqm_fill_event_buffer(pevent_buf, size, info);
 
 			ret = q6core_send_uevent(this_afe.uevent_debug, pevent_buf);
@@ -1122,9 +1172,9 @@ static void afe_debug_work_fn(struct work_struct *work)
 				pr_err("uevent failed ret=%d\n", ret);
 			}
 		}
+		check_micblk(info);
 		info = afe_event_buf_get();
 	}
-
 	kfree(pevent_buf);
 }
 
@@ -1761,6 +1811,10 @@ static int afe_apr_send_pkt(void *data, wait_queue_head_t *wait)
 			panic("%s: adsp respone timeout, need reset\n", __func__);
 #else
 			pr_err("%s: adsp respone timeout, need reset\n", __func__);
+#ifdef CONFIG_BLACKBOX
+			save_crash_reason_data("adsp", "afe_apr_send_pkt timeout",
+				strlen("afe_apr_send_pkt timeout") + 1);
+#endif
 			subsystem_restart("adsp");
 #endif /* DBG_AUDIO_QCOM */
 			resp_time_out_cnt = 0;
@@ -4748,6 +4802,10 @@ static int afe_send_cmd_port_start(u16 port_id)
 		panic("%s: adsp respone timeout, need reset\n", __func__);
 #else
 		pr_err("%s: adsp respone timeout, need reset\n", __func__);
+#ifdef CONFIG_BLACKBOX
+		save_crash_reason_data("adsp", "afe_send_cmd_port_start timeout",
+			strlen("afe_send_cmd_port_start timeout") + 1);
+#endif
 		subsystem_restart("adsp");
 #endif /* DBG_AUDIO_QCOM */
 		resp_time_out_cnt_val = 0;

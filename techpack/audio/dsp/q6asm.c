@@ -45,6 +45,9 @@
 #include "adsp_err.h"
 #include "dsp_trace_utils.h"
 #include "voice_bigdata.h"
+#ifdef CONFIG_BLACKBOX
+#include "platform/linux/blackbox_subsystem.h"
+#endif
 
 #define TIMEOUT_MS  1000
 #define TRUE        0x01
@@ -8869,6 +8872,10 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 		panic("%s: timeout. waited for memory_map\n", __func__);
 #else
 		pr_err("%s: timeout. waited for memory_map\n", __func__);
+#ifdef CONFIG_BLACKBOX
+		save_crash_reason_data("adsp", "q6asm_memory_map_regions timeout",
+			strlen("q6asm_memory_map_regions timeout") + 1);
+#endif
 		subsystem_restart("adsp");
 #endif /* DBG_AUDIO_QCOM */
 		rc = -ETIMEDOUT;

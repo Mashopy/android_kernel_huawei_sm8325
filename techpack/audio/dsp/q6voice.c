@@ -3989,11 +3989,12 @@ int voc_register_vocproc_vol_table(void)
 
 	pr_debug("%s\n", __func__);
 
-	mutex_lock(&common.common_lock);
 	for (i = 0; i < MAX_VOC_SESSIONS; i++) {
+		mutex_lock(&common.common_lock);
 		v = &common.voice[i];
 
 		mutex_lock(&v->lock);
+		mutex_unlock(&common.common_lock);
 		if (is_voc_state_active(v->voc_state)) {
 			result2 = voice_send_cvp_register_vol_cal_cmd(v);
 			if (result2 < 0) {
@@ -4007,7 +4008,6 @@ int voc_register_vocproc_vol_table(void)
 		mutex_unlock(&v->lock);
 	}
 
-	mutex_unlock(&common.common_lock);
 	return result;
 }
 

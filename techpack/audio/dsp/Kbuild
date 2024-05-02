@@ -222,6 +222,12 @@ LINUX_INC +=	-Iinclude/linux
 INCS +=		$(COMMON_INC) \
 		$(UAPI_INC)
 
+ifdef CONFIG_HW_AUDIO_INFO
+	KDIR := $(TOP)/kernel/msm-5.4
+	AUDIOINFO := -I$(srctree)/sound/hw_audio/
+	INCS += $(AUDIOINFO)
+endif
+
 EXTRA_CFLAGS += $(INCS)
 
 

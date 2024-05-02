@@ -2925,7 +2925,12 @@ static void msm_pcm_routing_process_voice(u16 reg, u16 val, int set)
 			voc_be_media_format.bits_per_sample =
 						msm_bedais[reg].format;
 			/* Defaulting this to 1 for voice call usecases */
-			voc_be_media_format.channel_mapping[0] = 1;
+			if (voc_be_media_format.num_channels == 2) {
+				voc_be_media_format.channel_mapping[0] = 1;
+				voc_be_media_format.channel_mapping[1] = 2;
+			} else {
+				voc_be_media_format.channel_mapping[0] = 1;
+			}
 
 			voc_set_device_config(session_id, path_type,
 					      &voc_be_media_format);
@@ -31604,6 +31609,11 @@ static int msm_routing_put_app_type_gain_control(struct snd_kcontrol *kcontrol,
 	int ret = 0;
 	unsigned long copp;
 	struct msm_pcm_routing_bdai_data *bedai;
+	struct audproc_softvolume_params softvol = {
+		.period = 40,
+		.step = 0,
+		.rampingcurve = 0
+	};
 	int dir = ucontrol->value.integer.value[0] ? SESSION_TYPE_TX :
 						     SESSION_TYPE_RX;
 	int app_type = ucontrol->value.integer.value[1];
@@ -31637,6 +31647,7 @@ static int msm_routing_put_app_type_gain_control(struct snd_kcontrol *kcontrol,
 			for (j = 0; j < MAX_COPPS_PER_PORT; j++) {
 				if (!test_bit(j, &copp))
 					continue;
+				ret |= adm_set_softvolume(bedai->port_id, j, &softvol);
 				ret |= adm_set_volume(bedai->port_id, j, gain);
 			}
 		}

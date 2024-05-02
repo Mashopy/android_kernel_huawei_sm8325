@@ -21,6 +21,10 @@
 #include "bolero-clk-rsc.h"
 #include "asoc/bolero-slave-internal.h"
 
+#ifdef CONFIG_HW_AUDIO_INFO
+#include "hw_audio_info.h"
+#endif
+
 #define DRV_NAME "bolero_codec"
 
 #define BOLERO_VERSION_ENTRY_SIZE 32
@@ -40,6 +44,7 @@ static u16 bolero_mclk_mux_tbl[MAX_MACRO][MCLK_MUX_MAX] = {
 };
 
 static bool bolero_is_valid_codec_dev(struct device *dev);
+
 
 int bolero_set_port_map(struct snd_soc_component *component,
 			u32 size, void *data)
@@ -645,6 +650,25 @@ bool bolero_is_va_macro_registered(struct device *dev)
 }
 EXPORT_SYMBOL(bolero_is_va_macro_registered);
 
+#define BOLERO_REG_INTERVAL 4
+static void register_bolero_codec_info(struct device *dev,
+	struct bolero_priv *priv, u16 macro_id)
+{
+#ifdef CONFIG_HW_AUDIO_INFO
+	if (macro_id == TX_MACRO)
+		codec_info_register(BOLERO_TX_INDEX, priv->regmap,
+			BOLERO_CDC_TX_MACRO_MAX + 1, BOLERO_REG_INTERVAL, TX_START_OFFSET);
+	else if (macro_id == RX_MACRO)
+		codec_info_register(BOLERO_RX_INDEX, priv->regmap,
+			BOLERO_CDC_RX_MACRO_MAX + 1, BOLERO_REG_INTERVAL, RX_START_OFFSET);
+	else if (macro_id == VA_MACRO)
+		codec_info_register(BOLERO_VA_INDEX, priv->regmap,
+			BOLERO_CDC_VA_MACRO_MAX + 1, BOLERO_REG_INTERVAL, VA_START_OFFSET);
+	dev_info(dev, "%s:register codec %d dump info, version = %u\n",
+		__func__, macro_id, priv->version);
+#endif
+}
+
 /**
  * bolero_register_macro - Registers macro to bolero
  *
@@ -731,6 +755,7 @@ int bolero_register_macro(struct device *dev, u16 macro_id,
 		}
 	}
 	mutex_unlock(&priv->macro_lock);
+	register_bolero_codec_info(dev, priv, macro_id);
 	return 0;
 }
 EXPORT_SYMBOL(bolero_register_macro);
@@ -1244,6 +1269,12 @@ static void bolero_soc_codec_remove(struct snd_soc_component *component)
 	struct bolero_priv *priv = dev_get_drvdata(component->dev);
 	int macro_idx;
 
+#ifdef CONFIG_HW_AUDIO_INFO
+	codec_info_unregister(BOLERO_TX_INDEX);
+	codec_info_unregister(BOLERO_RX_INDEX);
+	codec_info_unregister(BOLERO_VA_INDEX);
+	dev_info(component->dev, "%s:unregister bolero codec\n", __func__);
+#endif
 	snd_event_client_deregister(priv->dev);
 	/* call exit for supported macros */
 	for (macro_idx = START_MACRO; macro_idx < MAX_MACRO; macro_idx++)

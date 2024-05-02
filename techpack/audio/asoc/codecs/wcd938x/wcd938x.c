@@ -10,6 +10,7 @@
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/component.h>
+#include <linux/pm_wakeup.h>
 #include <sound/soc.h>
 #include <sound/tlv.h>
 #include <soc/soundwire.h>
@@ -25,6 +26,10 @@
 #include "wcd938x.h"
 #include "internal.h"
 #include "asoc/bolero-slave-internal.h"
+
+#ifdef CONFIG_HW_AUDIO_INFO
+#include "hw_audio_info.h"
+#endif
 
 #define NUM_SWRS_DT_PARAMS 5
 #define WCD938X_VARIANT_ENTRY_SIZE 32
@@ -43,7 +48,6 @@
 #define NUM_ATTEMPTS 5
 
 extern void adm_set_viop_ec_enable(bool is_enable);
-
 #define DAPM_MICBIAS1_STANDALONE "MIC BIAS1 Standalone"
 #define DAPM_MICBIAS2_STANDALONE "MIC BIAS2 Standalone"
 #define DAPM_MICBIAS3_STANDALONE "MIC BIAS3 Standalone"
@@ -109,6 +113,8 @@ static int wcd938x_handle_post_irq(void *data);
 static int wcd938x_reset(struct device *dev);
 static int wcd938x_reset_low(struct device *dev);
 static int wcd938x_get_adc_mode(int val);
+
+struct wakeup_source *swr_ssr_ws;
 
 static const struct regmap_irq wcd938x_irqs[WCD938X_NUM_IRQS] = {
 	REGMAP_IRQ_REG(WCD938X_IRQ_MBHC_BUTTON_PRESS_DET, 0, 0x01),
@@ -2112,6 +2118,32 @@ int wcd938x_swr_dmic_register_notifier(struct snd_soc_component *component,
 }
 EXPORT_SYMBOL(wcd938x_swr_dmic_register_notifier);
 
+static void swr_wakeup_lock(struct wakeup_source *ws)
+{
+	if (!ws || !ws->name) {
+		pr_err("ws or name is null\n");
+		return;
+	}
+
+	if (!ws->active) {
+		pr_info("wakeup source %s lock\n", ws->name);
+		__pm_stay_awake(ws);
+	}
+}
+
+static void swr_wakeup_unlock(struct wakeup_source *ws)
+{
+	if (!ws || !ws->name) {
+		pr_err("ws or name is null\n");
+		return;
+	}
+
+	if (ws->active) {
+		pr_info("wakeup source %s unlock\n", ws->name);
+		__pm_relax(ws);
+	}
+}
+
 static int wcd938x_event_notify(struct notifier_block *block,
 				unsigned long val,
 				void *data)
@@ -2161,6 +2193,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 		break;
 	case BOLERO_SLV_EVT_SSR_DOWN:
 		wcd938x->dev_up = false;
+		swr_wakeup_lock(swr_ssr_ws);
 		if(wcd938x->notify_swr_dmic)
 			blocking_notifier_call_chain(&wcd938x->notifier,
 						     WCD938X_EVT_SSR_DOWN,
@@ -2200,6 +2233,7 @@ static int wcd938x_event_notify(struct notifier_block *block,
 						     NULL);
 		if (wcd938x->usbc_hs_status)
 			mdelay(500);
+		swr_wakeup_unlock(swr_ssr_ws);
 		break;
 	case BOLERO_SLV_EVT_CLK_NOTIFY:
 		snd_soc_component_update_bits(component,
@@ -3894,6 +3928,10 @@ static void wcd938x_soc_codec_remove(struct snd_soc_component *component)
 			__func__);
 		return;
 	}
+#ifdef CONFIG_HW_AUDIO_INFO
+	codec_info_unregister(WCD938X_INDEX);
+	dev_info(component->dev, "%s:unregister 938x codec\n", __func__);
+#endif
 	if (wcd938x->register_notifier)
 		wcd938x->register_notifier(wcd938x->handle,
 						&wcd938x->nblock,
@@ -4236,6 +4274,11 @@ static int wcd938x_bind(struct device *dev)
 		goto err_irq;
 	}
 	wcd938x->dev_up = true;
+#ifdef CONFIG_HW_AUDIO_INFO
+	codec_info_register(WCD938X_INDEX, wcd938x->regmap,
+		WCD938X_MAX_REGISTER - WCD938X_BASE_ADDRESS, 1, WCD938X_BASE_ADDRESS);
+	dev_info(dev, "%s:register codec reg dump\n", __func__);
+#endif
 
 	return ret;
 err_irq:
@@ -4395,6 +4438,10 @@ static int wcd938x_probe(struct platform_device *pdev)
 
 	wcd938x->wakeup = wcd938x_wakeup;
 
+	swr_ssr_ws = wakeup_source_register(dev, "swr_ssr");
+	if (!swr_ssr_ws)
+		pr_err("swr_ssr wakeup source register failed\n");
+
 	return component_master_add_with_match(dev,
 					&wcd938x_comp_ops, match);
 
@@ -4411,6 +4458,8 @@ static int wcd938x_remove(struct platform_device *pdev)
 
 	wcd938x = platform_get_drvdata(pdev);
 	component_master_del(&pdev->dev, &wcd938x_comp_ops);
+	if (swr_ssr_ws)
+		wakeup_source_unregister(swr_ssr_ws);
 	mutex_destroy(&wcd938x->micb_lock);
 	mutex_destroy(&wcd938x->wakeup_lock);
 	dev_set_drvdata(&pdev->dev, NULL);

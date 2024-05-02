@@ -27,6 +27,10 @@
 #include "internal.h"
 #include "asoc/bolero-slave-internal.h"
 
+#ifdef CONFIG_HW_AUDIO_INFO
+#include "hw_audio_info.h"
+#endif
+
 #define WCD937X_VARIANT_ENTRY_SIZE 32
 
 #define NUM_SWRS_DT_PARAMS 5
@@ -195,6 +199,10 @@ static int wcd937x_init_reg(struct snd_soc_component *component)
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_L, 0x1F, 0x04);
 		snd_soc_component_update_bits(component,
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_R, 0x1F, 0x04);
+		snd_soc_component_update_bits(component,
+				WCD937X_BIAS_VBG_FINE_ADJ, 0xF0, 0xB0);
+		snd_soc_component_update_bits(component,
+				WCD937X_HPH_NEW_INT_RDAC_GAIN_CTL, 0xF0, 0x50);
 	}
 	return 0;
 }
@@ -488,6 +496,12 @@ static int wcd937x_codec_hphl_dac_event(struct snd_soc_dapm_widget *w,
 		set_bit(HPH_COMP_DELAY, &wcd937x->status_mask);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+		if ((snd_soc_component_read32(component,
+			WCD937X_DIGITAL_EFUSE_REG_16) == 0x02) &&
+			((snd_soc_component_read32(component,
+				WCD937X_ANA_HPH) & 0x0C) == 0x0C))
+				snd_soc_component_update_bits(component,
+				WCD937X_RX_BIAS_HPH_LOWPOWER, 0xF0, 0x90);
 		if (hph_mode == CLS_AB_HIFI || hph_mode == CLS_H_HIFI)
 			snd_soc_component_update_bits(component,
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_L,
@@ -529,6 +543,12 @@ static int wcd937x_codec_hphl_dac_event(struct snd_soc_dapm_widget *w,
 				WCD937X_HPH_NEW_INT_HPH_TIMER1, 0x02, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		if ((snd_soc_component_read32(component,
+			WCD937X_DIGITAL_EFUSE_REG_16) == 0x02) &&
+			((snd_soc_component_read32(component,
+				WCD937X_ANA_HPH) & 0x0C) == 0x0C))
+				snd_soc_component_update_bits(component,
+				WCD937X_RX_BIAS_HPH_LOWPOWER, 0xF0, 0x80);
 		snd_soc_component_update_bits(component,
 			WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_L,
 			0x0F, 0x01);
@@ -562,6 +582,12 @@ static int wcd937x_codec_hphr_dac_event(struct snd_soc_dapm_widget *w,
 		set_bit(HPH_COMP_DELAY, &wcd937x->status_mask);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+		if ((snd_soc_component_read32(component,
+			WCD937X_DIGITAL_EFUSE_REG_16) == 0x02) &&
+			((snd_soc_component_read32(component,
+			WCD937X_ANA_HPH) & 0x0C) == 0x0C))
+				snd_soc_component_update_bits(component,
+				WCD937X_RX_BIAS_HPH_LOWPOWER, 0xF0, 0x90);
 		if (hph_mode == CLS_AB_HIFI || hph_mode == CLS_H_HIFI)
 			snd_soc_component_update_bits(component,
 				WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_R,
@@ -603,6 +629,12 @@ static int wcd937x_codec_hphr_dac_event(struct snd_soc_dapm_widget *w,
 				WCD937X_HPH_NEW_INT_HPH_TIMER1, 0x02, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+		if ((snd_soc_component_read32(component,
+			WCD937X_DIGITAL_EFUSE_REG_16) == 0x02) &&
+			((snd_soc_component_read32(component,
+				WCD937X_ANA_HPH) & 0x0C) == 0x0C))
+			snd_soc_component_update_bits(component,
+				WCD937X_RX_BIAS_HPH_LOWPOWER, 0xF0, 0x80);
 		snd_soc_component_update_bits(component,
 			WCD937X_HPH_NEW_INT_RDAC_HD2_CTL_R,
 			0x0F, 0x01);
@@ -2902,6 +2934,10 @@ static void wcd937x_soc_codec_remove(struct snd_soc_component *component)
 	if (!wcd937x)
 		return;
 
+#ifdef CONFIG_HW_AUDIO_INFO
+	codec_info_unregister(WCD737X_INDEX);
+	dev_info(component->dev, "%s:unregister 937x codec\n", __func__);
+#endif
 	if (wcd937x->register_notifier)
 		wcd937x->register_notifier(wcd937x->handle,
 						&wcd937x->nblock,
@@ -3320,7 +3356,12 @@ static int wcd937x_bind(struct device *dev)
 				__func__);
 		goto err_irq;
 	}
-
+#ifdef CONFIG_HW_AUDIO_INFO
+	codec_info_register(WCD737X_INDEX, wcd937x->regmap,
+		(WCD937X_MAX_REGISTER - WCD937X_BASE_ADDRESS),
+		1, WCD937X_BASE_ADDRESS);
+	dev_info(dev, "%s:register codec reg dump\n", __func__);
+#endif
 	return ret;
 err_irq:
 	wcd_irq_exit(&wcd937x->irq_info, wcd937x->virq);

@@ -18,6 +18,10 @@
 #include <linux/slab.h>
 #include <soc/qcom/boot_stats.h>
 #include <soc/qcom/subsystem_restart.h>
+#ifdef CONFIG_BLACKBOX
+#include "platform/linux/blackbox_subsystem.h"
+#endif
+
 
 #define Q6_PIL_GET_DELAY_MS 100
 #define BOOT_CMD 1
@@ -236,6 +240,10 @@ static ssize_t adsp_ssr_store(struct kobject *kobj,
 
 	if (ssr_command != SSR_RESET_CMD)
 		return -EINVAL;
+#ifdef CONFIG_BLACKBOX
+	save_crash_reason_data("adsp", "adsp_ssr_store trigger restart",
+		strlen("adsp_ssr_store trigger restart") + 1);
+#endif
 
 	adsp_restart_subsys();
 	dev_dbg(&pdev->dev, "%s :: ADSP restarted\n", __func__);

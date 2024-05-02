@@ -33,6 +33,8 @@ extern "C" {
 #define RET_TRUE                    0
 #define RET_FALSE                   1
 
+#define MICBLK_IND_BUTT             2
+
 enum BIGDATA_REPORT_ID {
     REPORT_HANDSET = 0,
     REPORT_HANDFREE,
@@ -124,6 +126,25 @@ typedef struct {
     unsigned short data2;
 } voice_3a_om_dmd_t;
 
+typedef struct {
+		unsigned int mic_blk_times;
+		unsigned int top_mic_blk_times[MICBLK_IND_BUTT];
+		unsigned int right_mic_blk_times[MICBLK_IND_BUTT];
+		unsigned int left_mic_blk_times[MICBLK_IND_BUTT];
+		unsigned int head_mic_blk_times[MICBLK_IND_BUTT];
+		unsigned int mic_blk_change_nvid[MICBLK_IND_BUTT];
+		unsigned int mic_err_times;
+		unsigned int top_mic_dis_times;
+		unsigned int right_mic_dis_times;
+		unsigned int left_mic_dis_times;
+		unsigned int head_mic_dis_times;
+		short        top_mic_rms;
+		short        right_mic_rms;
+		short        left_mic_rms;
+		short        head_mic_rms;
+		short        mic_blk_rate;
+		short        mic_err_rate;
+} voice_bsd_3a_dump_micblk_log;
 
 extern void voice_bigdata_proc(void *bigdata);
 extern void voice_3a_dmd_report_to_imonitor(    voice_3a_om_dmd_t *dmddata);
