@@ -45,6 +45,10 @@
 #include <linux/show_mem_notifier.h>
 #include <linux/memory_hotplug.h>
 
+#ifdef CONFIG_HUAWEI_LMK_DBG
+#include <linux/lowmem_dbg.h>
+#endif
+
 #include <platform/trace/events/rainbow.h>
 
 #include <asm/tlb.h>
@@ -414,6 +418,7 @@ static void select_bad_process(struct oom_control *oc)
 	}
 }
 
+#ifndef CONFIG_HUAWEI_LMK_DBG
 static int dump_task(struct task_struct *p, void *arg)
 {
 	struct oom_control *oc = arg;
@@ -436,9 +441,11 @@ static int dump_task(struct task_struct *p, void *arg)
 		return 0;
 	}
 
-	pr_info("[%7d] %5d %5d %8lu %8lu %8ld %8lu         %5hd %s\n",
+	pr_info("[%7d] %5d %5d %8lu %8lu %8lu %8lu %8ld %8lu         %5hd %s\n",
 		task->pid, from_kuid(&init_user_ns, task_uid(task)),
 		task->tgid, task->mm->total_vm, get_mm_rss(task->mm),
+		get_mm_counter(task->mm, MM_ANONPAGES),
+		get_mm_counter(task->mm, MM_FILEPAGES),
 		mm_pgtables_bytes(task->mm),
 		get_mm_counter(task->mm, MM_SWAPENTS),
 		task->signal->oom_score_adj, task->comm);
@@ -460,7 +467,7 @@ static int dump_task(struct task_struct *p, void *arg)
 static void dump_tasks(struct oom_control *oc)
 {
 	pr_info("Tasks state (memory values in pages):\n");
-	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
+	pr_info("[  pid  ]   uid  tgid total_vm      rss rss_anon rss_file pgtables_bytes swapents oom_score_adj name\n");
 
 	if (is_memcg_oom(oc))
 		mem_cgroup_scan_tasks(oc->memcg, dump_task, oc);
@@ -472,11 +479,10 @@ static void dump_tasks(struct oom_control *oc)
 			dump_task(p, oc);
 
 		trace_mm_mem_stats_show(0);
-		trace_mm_vmalloc_detail_show(0);
-
 		rcu_read_unlock();
 	}
 }
+#endif
 
 static void dump_oom_summary(struct oom_control *oc, struct task_struct *victim)
 {
@@ -509,8 +515,13 @@ static void dump_header(struct oom_control *oc, struct task_struct *p)
 		show_mem_call_notifiers();
 	}
 
-	if (sysctl_oom_dump_tasks)
+	if (sysctl_oom_dump_tasks) {
+#ifdef CONFIG_HUAWEI_LMK_DBG
+		lowmem_dbg(0); /* 0 means verbose log */
+#else
 		dump_tasks(oc);
+#endif
+	}
 	if (p)
 		dump_oom_summary(oc, p);
 }

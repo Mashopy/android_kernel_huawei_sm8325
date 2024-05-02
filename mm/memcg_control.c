@@ -51,7 +51,7 @@
 
 #define MAX_APP_SCORE 1000
 #define MAX_RATIO 100
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #define MIN_SWAPPINESS 0
 #define MAX_SWAPPINESS 200
 #endif
@@ -81,7 +81,7 @@ static struct zswapd_param zswap_param[ZSWAPD_MAX_LEVEL_NUM];
 #define INACTIVE_FILE_RATIO 90
 #define ACTIVE_FILE_RATIO 70
 #define MAX_RECLAIM_SIZE 100
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #define MAX_SWAP_FULL_RATIO 100
 #define MIN_SWAP_FULL_RATIO 30
 #endif
@@ -93,7 +93,7 @@ atomic64_t free_swap_threshold = ATOMIC64_INIT(0);
 atomic_t inactive_file_ratio = ATOMIC_INIT(INACTIVE_FILE_RATIO);
 atomic_t active_file_ratio = ATOMIC_INIT(ACTIVE_FILE_RATIO);
 atomic64_t zram_crit_thres = ATOMIC_LONG_INIT(0);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 atomic64_t swap_full_ratio = ATOMIC64_INIT(MAX_SWAP_FULL_RATIO);
 #endif
 #define AREA_ANON_REFAULT_THRESHOLD 22000
@@ -115,6 +115,7 @@ atomic64_t empty_round_check_threshold =
 #ifdef CONFIG_RAMTURBO
 bool enable_zram_anon_comp = true;
 #endif
+bool enable_zswapd_drop_caches = false;
 #endif /* CONFIG_HYPERHOLD_ZSWAPD */
 
 /**
@@ -318,8 +319,7 @@ static int mem_cgroup_force_swapin_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
 static int mem_cgroup_hp_dr_swappiness_write(struct cgroup_subsys_state *css,
 				struct cftype *cft, u64 val)
 {
@@ -336,7 +336,6 @@ static u64 mem_cgroup_hp_dr_swappiness_read(struct cgroup_subsys_state *css,
 {
 	return get_hyperhold_dr_swappiness();
 }
-#endif
 #endif
 
 #ifdef CONFIG_RAMTURBO
@@ -376,7 +375,7 @@ static ssize_t mem_cgroup_force_shrink_all_by_reclaim(struct kernfs_open_file *o
 	struct css_task_iter it;
 	const char *mcg_name = (memcg->name == NULL) ? "NULL" : memcg->name;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (is_swap_full()) {
 		pr_debug("RAMTURBO: %s intercepted! SwapUsed full", __func__);
 		return nbytes;
@@ -424,7 +423,7 @@ static ssize_t mem_cgroup_force_shrink_all(struct kernfs_open_file *of,
 	unsigned long total_reclaimed_pages = 0;
 	const char *mcg_name = (NULL == memcg->name) ? "NULL" : memcg->name;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (is_swap_full()) {
 		pr_debug("RAMTURBO: %s intercepted! SwapUsed full", __func__);
 		return nbytes;
@@ -478,7 +477,7 @@ static ssize_t mem_cgroup_swapout_bg_tasks_write(struct kernfs_open_file *of,
 }
 #endif /* CONFIG_RAMTURBO */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 static int mem_cgroup_hp_swappiness_write(struct cgroup_subsys_state *css,
 				struct cftype *cft, u64 val)
 {
@@ -515,6 +514,7 @@ static u64 swap_full_ratio_read(struct cgroup_subsys_state *css,
 	return get_swap_full_ratio();
 }
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 static int mem_cgroup_hyperhold_crypto_switch_write(struct cgroup_subsys_state *css,
 				struct cftype *cft, u64 val)
 {
@@ -533,6 +533,7 @@ static u64 mem_cgroup_hyperhold_crypto_switch_read(struct cgroup_subsys_state *c
 
 	return get_hyperhold_crypto_switch();
 }
+#endif
 #endif
 static ssize_t mem_cgroup_name_write(struct kernfs_open_file *of, char *buf,
 				size_t nbytes, loff_t off)
@@ -618,7 +619,7 @@ static int memcg_eswap_stat_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #ifdef CONFIG_MEMCG_SKIP_RECLAIM
 static int mem_cgroup_skip_reclaim_anon_write(struct cgroup_subsys_state *css,
 				struct cftype *cft, u64 val)
@@ -842,6 +843,27 @@ static int zram_critical_thres_write(struct cgroup_subsys_state *css,
 	atomic64_set(&zram_crit_thres, val);
 
 	return 0;
+}
+
+static int mem_cgroup_enable_zswapd_drop_caches_write(struct cgroup_subsys_state *css,
+				struct cftype *cft, u64 val)
+{
+	if (val == 1)
+		enable_zswapd_drop_caches = true;
+	else
+		enable_zswapd_drop_caches = false;
+
+	return 0;
+}
+
+static u64 mem_cgroup_enable_zswapd_drop_caches_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	return enable_zswapd_drop_caches ? 1 : 0;
+}
+
+inline bool is_zswapd_drop_caches_enabled(void)
+{
+	return enable_zswapd_drop_caches;
 }
 
 static ssize_t zswapd_pressure_event_control(struct kernfs_open_file *of,
@@ -1112,7 +1134,7 @@ static int report_app_info_show(struct seq_file *m, void *v)
 	unsigned long anon_size;
 	unsigned long zram_size;
 	unsigned long eswap_size;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	unsigned long eswap_parfile_size;
 #endif
 	unsigned long swap_out_size;
@@ -1138,7 +1160,7 @@ static int report_app_info_show(struct seq_file *m, void *v)
 				LRU_INACTIVE_ANON, MAX_NR_ZONES);
 		eswap_size = hyperhold_read_mcg_stats(memcg,
 				MCG_DISK_STORED_PG_SZ);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		eswap_parfile_size = hyperhold_read_mcg_stats(memcg,
 				MCG_DISK_FILE_STORED_PG_SZ);
 #endif
@@ -1153,12 +1175,12 @@ static int report_app_info_show(struct seq_file *m, void *v)
 		anon_size *= PAGE_SIZE / SZ_1K;
 		zram_size *= PAGE_SIZE / SZ_1K;
 		eswap_size *= PAGE_SIZE / SZ_1K;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		eswap_parfile_size *= PAGE_SIZE / SZ_1K;
 #endif
 
 #ifdef CONFIG_HYPERHOLD_CORE
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		seq_printf(m, "%s,%llu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n",
 			strlen(memcg->name) ? memcg->name : "root", score,
 			anon_size, zram_size, eswap_size, eswap_parfile_size,
@@ -1299,7 +1321,7 @@ static void mem_health_vmstat_show(struct seq_file *m)
 	seq_printf(m, "zswapd_swapout:%lu\n", vm_buf[ZSWAPD_SWAPOUT]);
 	seq_printf(m, "zswapd_snapshot_times:%lu\n",
 		vm_buf[ZSWAPD_SNAPSHOT_TIMES]);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	seq_printf(m, "zswapd_swapfull_times:%lu\n",
 		vm_buf[ZSWAPD_SWAPFULL_TIMES]);
 #endif
@@ -1317,6 +1339,13 @@ static void mem_health_vmstat_show(struct seq_file *m)
 	seq_printf(m, "dr_scanned_file:%lu\n", vm_buf[DR_SCAN_FILE]);
 	seq_printf(m, "freeze_wake_up:%lu\n", vm_buf[FREEZE_RECLAIM_TIMES]);
 	seq_printf(m, "freeze_reclaimed:%lu\n", vm_buf[FREEZE_RECLAIMED]);
+	seq_printf(m, "page_trylock_failed:%lu\n", vm_buf[PAGE_TRY_LOCK_FAILED]);
+	seq_printf(m, "page_ref_active:%lu\n", vm_buf[PAGE_REF_ACTIVATE]);
+	seq_printf(m, "page_ref_keep:%lu\n", vm_buf[PAGE_REF_KEEP]);
+	seq_printf(m, "page_unmap_failed:%lu\n", vm_buf[PAGE_UNMAP_FAILED]);
+	seq_printf(m, "page_not_remove:%lu\n", vm_buf[PAGE_NOT_REMOVE]);
+	seq_printf(m, "page_ref_freeze:%lu\n", vm_buf[PAGE_REF_FREEZE]);
+	seq_printf(m, "zswapd_drop_cache_times:%lu\n", vm_buf[ZSWAPD_DROP_CACHE]);
 	kfree(vm_buf);
 #endif
 }
@@ -1534,7 +1563,7 @@ void memcg_eswap_info_show(struct seq_file *m)
 	unsigned long file;
 	unsigned long zram;
 	unsigned long eswap;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	unsigned long eswap_parfile;
 #endif
 	mz = mem_cgroup_nodeinfo(memcg, 0);
@@ -1551,14 +1580,14 @@ void memcg_eswap_info_show(struct seq_file *m)
 		lruvec_lru_size(lruvec, LRU_INACTIVE_FILE, MAX_NR_ZONES);
 	zram = hyperhold_read_mcg_stats(memcg, MCG_ZRAM_PG_SZ);
 	eswap = hyperhold_read_mcg_stats(memcg, MCG_DISK_STORED_PG_SZ);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	eswap_parfile = hyperhold_read_mcg_stats(memcg, MCG_DISK_FILE_STORED_PG_SZ);
 #endif
 	anon *= PAGE_SIZE / SZ_1K;
 	file *= PAGE_SIZE / SZ_1K;
 	zram *= PAGE_SIZE / SZ_1K;
 	eswap *= PAGE_SIZE / SZ_1K;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	eswap_parfile *= PAGE_SIZE / SZ_1K;
 	seq_printf(m,
 		"Anon:\t%12lu kB\n"
@@ -1586,19 +1615,21 @@ void memcg_eswap_info_show(struct seq_file *m)
 #endif
 
 static struct cftype memcg_policy_files[] = {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	{
 		.name = "hp_swappiness",
 		.flags = CFTYPE_ONLY_ON_ROOT,
 		.write_u64 = mem_cgroup_hp_swappiness_write,
 		.read_u64 = mem_cgroup_hp_swappiness_read,
 	},
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	{
 		.name = "crypto_switch",
 		.flags = CFTYPE_ONLY_ON_ROOT,
 		.write_u64 = mem_cgroup_hyperhold_crypto_switch_write,
 		.read_u64 = mem_cgroup_hyperhold_crypto_switch_read,
 	},
+#endif
 	{
 		.name = "swap_full_ratio",
 		.flags = CFTYPE_ONLY_ON_ROOT,
@@ -1815,6 +1846,12 @@ static struct cftype memcg_policy_files[] = {
 #ifdef CONFIG_HYPERHOLD_DEBUG
 		.read_u64 = zram_critical_thres_read,
 #endif
+	},
+	{
+		.name = "zswapd_drop_caches_enable",
+		.flags = CFTYPE_ONLY_ON_ROOT,
+		.write_u64 = mem_cgroup_enable_zswapd_drop_caches_write,
+		.read_u64 = mem_cgroup_enable_zswapd_drop_caches_read,
 	},
 #endif
 #ifdef CONFIG_HYPERHOLD_DEBUG

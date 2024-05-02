@@ -94,6 +94,15 @@ config HYPERHOLD_DEBUG
         help
           This macro controls the debugging functions of HyperHold.
 
+config PARA_SWAPD
+	bool "Enable parallel kz/swapd to reclaim anon page per memcg"
+	default n
+	depends on HYPERHOLD_ZSWAPD
+	help
+	  Para swapd is a new implement of shrink_anon/shrink_hyperhold_anon.
+	  It separately reclaim anon page by memcg, and limit running cpu to
+	  middle cluster.
+
 config DISCONTIGMEM
 	def_bool y
 	depends on (!SELECT_MEMORY_MODEL && ARCH_DISCONTIGMEM_ENABLE) || DISCONTIGMEM_MANUAL
@@ -942,8 +951,6 @@ config OOM_TASK_PRIORITY_ADJ_LIMIT
 
 endmenu
 
-source "drivers/memcheck/impl/Kconfig"
-
 config HUAWEI_SLOW_PATH_COUNT
 	bool "page alloc enter slow path count"
 	default n
@@ -1039,3 +1046,12 @@ config HW_MM_POLICY
 	default n
 	help
 	  Huawei memory policy.
+
+source "mm/alloc_acct/Kconfig"
+
+config KSWAPD_PROTECT_DCACHE
+	bool "Kswapd protect some fs dcaches"
+	depends on PROC_FS
+	default n
+	help
+	 Kswapd protect some fs dcaches

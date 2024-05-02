@@ -20,6 +20,7 @@
 #include <linux/migrate.h>
 #include <linux/vmalloc.h>
 #include <linux/swap_slots.h>
+#include <linux/swap_cgroup.h>
 #include <linux/huge_mm.h>
 #ifdef CONFIG_HW_PAGE_TRACKER
 #include <linux/hw/page_tracker.h>
@@ -457,11 +458,13 @@ struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		struct vm_area_struct *vma, unsigned long addr, bool do_poll)
 {
 	bool page_was_allocated;
+	struct mem_cgroup *mcg = get_memcg_from_swap_entry(entry);
 	struct page *retpage = __read_swap_cache_async(entry, gfp_mask,
 			vma, addr, &page_was_allocated);
 
 	if (page_was_allocated)
 		swap_readpage(retpage, do_poll);
+	swap_entry_memcg_put(mcg);
 
 	return retpage;
 }
@@ -562,6 +565,7 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 	bool do_poll = true, page_allocated;
 	struct vm_area_struct *vma = vmf->vma;
 	unsigned long addr = vmf->address;
+	struct mem_cgroup *mcg = NULL;
 
 	mask = swapin_nr_pages(offset) - 1;
 	if (!mask)
@@ -586,11 +590,14 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 	blk_start_plug(&plug);
 	for (offset = start_offset; offset <= end_offset ; offset++) {
 		/* Ok, do the async read-ahead now */
+		mcg = get_memcg_from_swap_entry(entry);
 		page = __read_swap_cache_async(
 			swp_entry(swp_type(entry), offset),
 			gfp_mask, vma, addr, &page_allocated);
-		if (!page)
+		if (!page) {
+			swap_entry_memcg_put(mcg);
 			continue;
+		}
 		if (page_allocated) {
 			swap_readpage(page, false);
 			if (offset != entry_offset) {
@@ -598,6 +605,7 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
 				count_vm_event(SWAP_RA);
 			}
 		}
+		swap_entry_memcg_put(mcg);
 		put_page(page);
 	}
 	blk_finish_plug(&plug);
@@ -743,6 +751,7 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 	unsigned int i;
 	bool page_allocated;
 	struct vma_swap_readahead ra_info = {0,};
+	struct mem_cgroup *mcg = NULL;
 
 	swap_ra_info(vmf, &ra_info);
 	if (ra_info.win == 1)
@@ -759,10 +768,13 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 		entry = pte_to_swp_entry(pentry);
 		if (unlikely(non_swap_entry(entry)))
 			continue;
+		mcg = get_memcg_from_swap_entry(entry);
 		page = __read_swap_cache_async(entry, gfp_mask, vma,
 					       vmf->address, &page_allocated);
-		if (!page)
+		if (!page) {
+			swap_entry_memcg_put(mcg);
 			continue;
+		}
 		if (page_allocated) {
 			swap_readpage(page, false);
 			if (i != ra_info.offset) {
@@ -770,6 +782,7 @@ static struct page *swap_vma_readahead(swp_entry_t fentry, gfp_t gfp_mask,
 				count_vm_event(SWAP_RA);
 			}
 		}
+		swap_entry_memcg_put(mcg);
 		put_page(page);
 	}
 	blk_finish_plug(&plug);

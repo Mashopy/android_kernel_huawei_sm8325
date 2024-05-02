@@ -1153,12 +1153,6 @@ const char * const vmstat_text[] = {
 #endif
 	"nr_free_cma",
 
-#ifdef CONFIG_DFX_MEMCHECK
-	"nr_skb_pages",
-	"nr_vmalloc_pages",
-	"nr_lslab_pages",
-	"nr_buddy_pages",
-#endif
 	/* enum numa_stat_item counters */
 #ifdef CONFIG_NUMA
 	"numa_hit",
@@ -1350,6 +1344,7 @@ const char * const vmstat_text[] = {
 	"zswapd_reclaimed",
 	"zswapd_scanned",
 	"zswapd_swapfull_times",
+	"zswapd_drop_cache_times",
 #endif
 #ifdef CONFIG_HYPERHOLD
 	"kswapd_reclaimed_anon",
@@ -1363,6 +1358,12 @@ const char * const vmstat_text[] = {
 	"freeze_reclaim_times",
 	"freeze_reclaimed",
 #endif
+	"page_trylock_failed",
+	"page_ref_activate",
+	"page_ref_keep",
+	"page_unmap_failed",
+	"page_not_remove",
+	"page_ref_freeze",
 #endif /* CONFIG_VM_EVENT_COUNTERS */
 };
 #endif /* CONFIG_PROC_FS || CONFIG_SYSFS || CONFIG_NUMA */

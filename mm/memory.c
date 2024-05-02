@@ -48,6 +48,7 @@
 #include <linux/hugetlb.h>
 #include <linux/mman.h>
 #include <linux/swap.h>
+#include <linux/swap_cgroup.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
 #include <linux/memremap.h>
@@ -3059,11 +3060,15 @@ vm_fault_t do_swap_page(struct vm_fault *vmf)
 					      | __GFP_OFFLINABLE, vma,
 					      vmf->address);
 			if (page) {
+				struct mem_cgroup *mcg = NULL;
+
 				__SetPageLocked(page);
 				__SetPageSwapBacked(page);
 				set_page_private(page, entry.val);
+				mcg = get_memcg_from_swap_entry(entry);
 				lru_cache_add_anon(page);
 				swap_readpage(page, true);
+				swap_entry_memcg_put(mcg);
 			}
 		} else if (vmf->flags & FAULT_FLAG_SPECULATIVE) {
 			/*

@@ -2015,6 +2015,34 @@ bool wb_over_bg_thresh(struct bdi_writeback *wb)
 	return false;
 }
 
+#ifdef CONFIG_DISK_MAGO
+/**
+ * wb_ov_bg_dm_thresh - IO need goto fast device.
+ *
+ * Return: true if need.
+ */
+bool dm_wb_over_bg_thresh(unsigned int dirty_ratio)
+{
+	unsigned long available_memory, dirty;
+	unsigned int bg_dm_ratio;
+	unsigned long bg_dm_thresh;
+
+	if (dirty_ratio == 0)
+		return false;
+	if (dirty_ratio > 100)
+		dirty_ratio = 100;
+
+	available_memory = global_dirtyable_memory();
+	dirty = global_node_page_state(NR_FILE_DIRTY);
+	bg_dm_ratio = (dirty_ratio * PAGE_SIZE) / 100;
+	bg_dm_thresh = (bg_dm_ratio * available_memory) / PAGE_SIZE;
+	if (dirty >= bg_dm_thresh)
+		return true;
+
+	return false;
+}
+#endif
+
 /*
  * sysctl handler for /proc/sys/vm/dirty_writeback_centisecs
  */

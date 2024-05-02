@@ -25,6 +25,7 @@
 #include <linux/vmpressure.h>
 #include <linux/vmstat.h>
 #include <linux/file.h>
+#include <linux/fs.h>
 #include <linux/writeback.h>
 #include <linux/blkdev.h>
 #include <linux/buffer_head.h>
@@ -68,6 +69,7 @@
 
 #include <linux/hyperhold_inf.h>
 #include <linux/memcg_policy.h>
+#include <linux/parallel_swapd.h>
 #ifdef CONFIG_RAMTURBO
 #include <linux/ratelimit.h>
 #endif
@@ -82,7 +84,7 @@ static struct task_struct *snapshotd_task;
 /*
  * From 0 .. 100.  Higher means more swappy.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #define DEFAULT_HYPERHOLD_SWAPPINESS 100
 
 static int hyperhold_swappiness = DEFAULT_HYPERHOLD_SWAPPINESS;
@@ -105,8 +107,7 @@ static int get_hyperhold_swappiness()
 }
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
 #define DEFAULT_HYPERHOLD_DR_SWAPPINESS 0
 
 static int hyperhold_dr_swappiness = DEFAULT_HYPERHOLD_DR_SWAPPINESS;
@@ -120,7 +121,6 @@ int get_hyperhold_dr_swappiness(void)
 {
 	return hyperhold_dr_swappiness;
 }
-#endif
 #endif
 
 static unsigned long move_pages_to_page_list(struct lruvec *lruvec,
@@ -184,11 +184,7 @@ unsigned long reclaim_all_anon_memcg(struct pglist_data *pgdat,
 		.may_unmap = 1,
 		.may_swap = 1,
 	};
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	enum lru_list lru = LRU_INACTIVE_ANON;
 
-	reclaimacct_shrinklist_start(is_file_lru(lru));
-#endif
 	count_vm_event(FREEZE_RECLAIM_TIMES);
 	move_pages_to_page_list(lruvec,
 			LRU_INACTIVE_ANON, &page_list);
@@ -202,9 +198,6 @@ unsigned long reclaim_all_anon_memcg(struct pglist_data *pgdat,
 		putback_lru_page(page);
 	}
 
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_end(is_file_lru(lru));
-#endif
 	return nr_reclaimed;
 }
 
@@ -214,8 +207,7 @@ static inline bool is_swap_not_allowed(struct scan_control *sc, int swappiness)
 	return !sc->may_swap || !swappiness || !get_nr_swap_pages();
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
 static inline int get_direct_swappiness(void)
 {
 #if defined(CONFIG_HYPERHOLD_CORE) && defined(CONFIG_HYPERHOLD_ZSWAPD)
@@ -224,7 +216,6 @@ static inline int get_direct_swappiness(void)
 	return direct_vm_swappiness;
 #endif
 }
-#endif
 #endif
 
 static void get_scan_counts(struct pglist_data *pgdat,
@@ -246,11 +237,9 @@ static void get_scan_counts(struct pglist_data *pgdat,
 	int z;
 	unsigned long total_high_wmark = 0;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
-	if (ramturbo_enable() && (!current_is_kswapd() || is_in_direct_reclaim()))
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
+	if (ramturbo_enable() && !current_is_kswapd())
 		swappiness = get_direct_swappiness();
-#endif
 #endif
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
@@ -607,8 +596,18 @@ bool shrink_nodes(pg_data_t *pgdat, struct scan_control *sc)
 
 		get_scan_counts(pgdat, sc, nr, &node_lru_pages);
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		reclaimacct_get_nr_to_scan(nr);
+#endif
+
 		/* Shrink the Total-File-LRU */
 		shrink_file(pgdat, sc, nr);
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		/* Check whether kswapd is blocked by dr after shrink_file */
+		if (current_is_kswapd() && waitqueue_active(&pgdat->pfmemalloc_wait))
+			kswapd_change_block_status();
+#endif
 
 		/* Shrink Anon by iterating score_list */
 		shrink_anon(pgdat, sc, nr);
@@ -620,6 +619,11 @@ bool shrink_nodes(pg_data_t *pgdat, struct scan_control *sc)
 					sc->nr_scanned - nr_scanned,
 					node_lru_pages);
 #else
+#ifdef CONFIG_HW_RECLAIM_ACCT
+			/* Check whether kswapd is blocked by dr after shrink_anon */
+			if (current_is_kswapd() && waitqueue_active(&pgdat->pfmemalloc_wait))
+				 kswapd_change_block_status();
+#endif
 			shrink_slab(sc->gfp_mask, pgdat->node_id, root,
 						sc->priority);
 #endif
@@ -718,7 +722,7 @@ bool shrink_nodes(pg_data_t *pgdat, struct scan_control *sc)
 }
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0))
+#ifdef CONFIG_RAMTURBO
 bool is_swap_full(void)
 {
 	const unsigned int percent_constant = 100;
@@ -735,7 +739,7 @@ static pid_t zswapd_pid = -1;
 static unsigned long long area_last_anon_pagefault;
 static unsigned long last_anon_snapshot_time;
 unsigned long long global_anon_refault_ratio;
-unsigned long long zswapd_skip_interval;
+unsigned long long zswapd_skip_interval = 1000;
 bool last_round_is_empty;
 unsigned long last_zswapd_time;
 
@@ -1067,6 +1071,43 @@ bool zram_watermark_exceed(void)
 	return false;
 }
 
+static bool too_many_file_cache(void)
+{
+	unsigned long freemem;
+	unsigned long active_file;
+	unsigned long inactive_file;
+	unsigned long active_anon;
+	unsigned long inactive_anon;
+	long free_swap;
+
+	if (!is_zswapd_drop_caches_enabled())
+		return false;
+
+	/* skip when free > 40M */
+	freemem = global_zone_page_state(NR_FREE_PAGES);
+	if (freemem > 10 * SZ_1K)
+		return false;
+
+	/* skip when anon > 1200M */
+	active_anon = global_node_page_state(NR_ACTIVE_ANON);
+	inactive_anon = global_node_page_state(NR_INACTIVE_ANON);
+	if (active_anon + inactive_anon > 1200 * SZ_1M / PAGE_SIZE)
+		return false;
+
+	/* skip when free_swap > 2G */
+	free_swap = get_nr_swap_pages();
+	if (free_swap > 2L * SZ_1G / PAGE_SIZE)
+		return false;
+
+	/* skip when file < 2G */
+	active_file = global_node_page_state(NR_ACTIVE_FILE);
+	inactive_file = global_node_page_state(NR_INACTIVE_FILE);
+	if (active_file + inactive_file < 2L * SZ_1G / PAGE_SIZE)
+		return false;
+
+	return true;
+}
+
 void wakeup_zswapd(pg_data_t *pgdat)
 {
 	unsigned long curr_interval;
@@ -1083,17 +1124,21 @@ void wakeup_zswapd(pg_data_t *pgdat)
 		wakeup_snapshotd();
 
 	/* wake up when the buffer is lower than min_avail_buffer */
-	if (min_buffer_is_suitable())
+	if (min_buffer_is_suitable() && !too_many_file_cache()) {
+		parad_stat_add(PARAD_ZSWAPD_SUITABLE, 1);
 		return;
+	}
 
 	curr_interval =
 		jiffies_to_msecs(jiffies - last_zswapd_time);
 	if (curr_interval < zswapd_skip_interval) {
 		count_vm_event(ZSWAPD_EMPTY_ROUND_SKIP_TIMES);
+		parad_stat_add(PARAD_ZSWAPD_INTERVAL, 1);
 		return;
 	}
 
 	atomic_set(&pgdat->zswapd_wait_flag, 1);
+	parad_stat_add(PARAD_ZSWAPD_REALWAKE, 1);
 	wake_up_interruptible(&pgdat->zswapd_wait);
 }
 
@@ -1188,21 +1233,35 @@ static unsigned long zswapd_shrink_list(enum lru_list lru,
 {
 #ifdef CONFIG_HW_RECLAIM_ACCT
 	unsigned long nr_reclaimed;
+	unsigned long nr_scanned = sc->nr_scanned;
+	struct reclaim_acct *tmp_ra = NULL;
 
-	reclaimacct_shrinklist_start(is_file_lru(lru));
+	reclaimacct_substage_start(RA_SHRINKANON, NULL);
 #endif
 	if (is_active_lru(lru)) {
 		if (inactive_list_is_low(lruvec, is_file_lru(lru), sc, true))
 			zswapd_shrink_active_list(nr_to_scan, lruvec, sc, lru);
 #ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_shrinklist_end(is_file_lru(lru));
+		reclaimacct_substage_end(RA_SHRINKANON, 0, 0, NULL);
 #endif
 		return 0;
 	}
 
 #ifdef CONFIG_HW_RECLAIM_ACCT
+	/*
+	 * If the zswapd procedure contains direct_reclaim, the data in
+	 * struct reclaim_acct is cleared after the direct_reclaim is complete.
+	 * Retain the data in struct reclaim_acct to prevent this scenario.
+	 */
+	tmp_ra = current->reclaim_acct;
+	current->reclaim_acct = NULL;
+
 	nr_reclaimed = shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
-	reclaimacct_shrinklist_end(is_file_lru(lru));
+
+	current->reclaim_acct = tmp_ra;
+	tmp_ra = NULL;
+
+	reclaimacct_substage_end(RA_SHRINKANON, nr_reclaimed, sc->nr_scanned - nr_scanned, NULL);
 	return nr_reclaimed;
 #else
 	return shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
@@ -1238,7 +1297,11 @@ static void zswapd_shrink_anon_memcg(struct pglist_data *pgdat,
 
 }
 
+#ifdef CONFIG_PARA_SWAPD
+static bool zswapd_shrink_anon_legacy(pg_data_t *pgdat, struct scan_control *sc)
+#else
 static bool zswapd_shrink_anon(pg_data_t *pgdat, struct scan_control *sc)
+#endif
 {
 	unsigned long nr[NR_LRU_LISTS];
 	struct mem_cgroup *memcg = NULL;
@@ -1326,9 +1389,7 @@ static unsigned long __reclaim_anon_memcg(struct pglist_data *pgdat,
 		.may_unmap = 1,
 		.may_swap = 1,
 	};
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_start(is_file_lru(lru));
-#endif
+
 	count_vm_event(FREEZE_RECLAIM_TIMES);
 	move_pages_to_page_list(lruvec,
 			lru, &page_list);
@@ -1347,9 +1408,6 @@ static unsigned long __reclaim_anon_memcg(struct pglist_data *pgdat,
 		putback_lru_page(page);
 	}
 
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_end(is_file_lru(lru));
-#endif
 	return nr_reclaimed;
 }
 
@@ -1384,9 +1442,6 @@ unsigned long all_active_reclaim_by_memcg(struct pglist_data *pgdat,
 		.may_swap = 1,
 	};
 
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_start(false);
-#endif
 	start_active = jiffies;
 	lru_active_anon_size = lruvec_lru_size(lruvec, LRU_ACTIVE_ANON, MAX_NR_ZONES);
 	while (lru_active_anon_size) {
@@ -1399,12 +1454,6 @@ unsigned long all_active_reclaim_by_memcg(struct pglist_data *pgdat,
 		__func__, lru_active_anon_size, (lru_active_anon_size * PAGE_SIZE),
 		jiffies_to_msecs(end_active - start_active),
 		(lru_active_anon_size * PAGE_SIZE / SZ_1M * (jiffies_to_msecs(end_active - start_active))));
-
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_end(false);
-
-	reclaimacct_shrinklist_start(false);
-#endif
 
 	start_inactive = jiffies;
 	move_pages_to_page_list(lruvec,
@@ -1423,9 +1472,6 @@ unsigned long all_active_reclaim_by_memcg(struct pglist_data *pgdat,
 		putback_lru_page(page);
 	}
 
-#ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_shrinklist_end(false);
-#endif
 	end_inactive = jiffies;
 
 	pr_debug("RAMTURBO: %s inactive_lru shrinked %lupages(%luBytes) takes %lums, speed=%luMB/ms",
@@ -1444,6 +1490,164 @@ unsigned long all_active_reclaim_by_memcg(struct pglist_data *pgdat,
 	return nr_reclaimed;
 }
 #endif /* end of CONFIG_RAMTURBO */
+
+#ifdef CONFIG_PARA_SWAPD
+static void parad_zwork_fn(struct work_struct *work)
+{
+	struct mm_parad_work *parad =
+		container_of(work, struct mm_parad_work, work);
+	struct mem_cgroup *memcg  = parad->memcg;
+	struct pglist_data *pgdat = parad->pgdat;
+	struct scan_control sc;
+	unsigned long nr_scanned, nr_reclaimed, nr_reclaimed_anon,
+		isolate_count, nr_writedblock, nr_scanned_file, nr_scanned_anon,
+		start = parad_get_counter();
+
+	spin_lock_irq(&pgdat->lru_lock);
+	sc = *parad->sc;
+	spin_unlock_irq(&pgdat->lru_lock);
+
+	nr_scanned        = sc.nr_scanned;
+	nr_scanned_file   = sc.nr_scanned_file;
+	nr_scanned_anon   = sc.nr_scanned_anon;
+	nr_reclaimed      = sc.nr_reclaimed;
+	nr_reclaimed_anon = sc.nr_reclaimed_anon;
+	isolate_count     = sc.isolate_count;
+#ifdef CONFIG_HUAWEI_SWAP_ZDATA
+	nr_writedblock    = sc.nr_writedblock;
+#endif
+
+	zswapd_shrink_anon_memcg(pgdat, memcg, &sc, parad->nr);
+
+	/* give back the real reclaimed info of per memcg to k/zswapd sc */
+	spin_lock_irq(&pgdat->lru_lock);
+	parad->sc->nr_scanned        += sc.nr_scanned - nr_scanned;
+	parad->sc->nr_reclaimed      += sc.nr_reclaimed - nr_reclaimed;
+	parad->sc->nr_reclaimed_anon += sc.nr_reclaimed_anon - nr_reclaimed_anon;
+	parad->sc->isolate_count     += sc.isolate_count - isolate_count;
+#ifdef CONFIG_HUAWEI_SWAP_ZDATA
+	parad->sc->nr_writedblock    += sc.nr_writedblock - nr_writedblock;
+#endif
+	parad->sc->nr_scanned_file   += sc.nr_scanned_file - nr_scanned_file;
+	parad->sc->nr_scanned_anon   += sc.nr_scanned_anon - nr_scanned_anon;
+	spin_unlock_irq(&pgdat->lru_lock);
+
+	parad_stat_add(PARAD_ZSWAPD_WORK, parad_get_counter() - start);
+	clear_bit(F_PARAD_RECLAIMING, &parad->flags);
+	css_put(&memcg->css);
+}
+
+static bool zswapd_shrink_anon(pg_data_t *pgdat, struct scan_control *sc)
+{
+	bool ret;
+	struct mem_cgroup *memcg = NULL;
+	struct mm_parad_work *parad;
+	const unsigned int percent_constant = 100;
+
+	unsigned long nr_scanned = sc->nr_scanned,
+		      nr_reclaimed = sc->nr_reclaimed,
+		      start = parad_get_counter();
+
+	if (get_parad_enable() == 0) {
+		ret = zswapd_shrink_anon_legacy(pgdat, sc);
+		goto out;
+	}
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_substage_start(RA_SHRINKANON, NULL);
+#endif
+
+	while ((memcg = get_next_memcg(memcg))) {
+		u64 nr_active, nr_inactive, nr_zram, nr_eswap, zram_ratio;
+		struct lruvec *lruvec = NULL;
+#ifdef CONFIG_MEMCG_SKIP_RECLAIM
+		if (memcg->skip_reclaim_anon)
+			continue;
+#endif
+		lruvec = mem_cgroup_lruvec(pgdat, memcg);
+
+		/* reclaim and try to meet the high buffer watermark */
+		if (high_buffer_is_suitable()) {
+			get_next_memcg_break(memcg);
+			break;
+		}
+
+		/*
+		 * WARNING: need lru_lock of sc ?
+		 **/
+		if (sc->nr_reclaimed >= sc->nr_to_reclaim) {
+			get_next_memcg_break(memcg);
+			break;
+		}
+
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+		/* Skip if it is a protect memcg. */
+		if (is_prot_memcg(memcg, false))
+			continue;
+#endif
+
+		if (get_memcg_anon_refault_status(memcg)) {
+			count_vm_event(ZSWAPD_MEMCG_REFAULT_SKIP);
+			continue;
+		}
+
+		nr_active = lruvec_lru_size(lruvec, LRU_ACTIVE_ANON,
+				MAX_NR_ZONES);
+		nr_inactive = lruvec_lru_size(lruvec,
+				LRU_INACTIVE_ANON, MAX_NR_ZONES);
+		nr_zram = hyperhold_read_mcg_stats(memcg, MCG_ZRAM_PG_SZ);
+		nr_eswap =
+			hyperhold_read_mcg_stats(memcg, MCG_DISK_STORED_PG_SZ);
+
+		zram_ratio = (nr_zram + nr_eswap) * percent_constant /
+			(nr_inactive + nr_active + nr_zram + nr_eswap + 1);
+
+		if (zram_ratio >= (u32)atomic_read(
+				&memcg->memcg_reclaimed.ub_mem2zram_ratio)) {
+			count_vm_event(ZSWAPD_MEMCG_RATIO_SKIP);
+			continue;
+		}
+
+		if (test_and_set_bit(F_PARAD_RECLAIMING, &memcg->zpara.flags))
+			continue;
+
+		parad = &memcg->zpara;
+		parad->nr[LRU_ACTIVE_ANON] = nr_active >> (unsigned int)sc->priority;
+		parad->nr[LRU_INACTIVE_ANON] =
+				nr_inactive >> (unsigned int)sc->priority;
+		parad->nr[LRU_ACTIVE_FILE] = 0;
+		parad->nr[LRU_INACTIVE_FILE] = 0;
+
+		if (!parad->nr[LRU_ACTIVE_ANON] && !parad->nr[LRU_INACTIVE_ANON]) {
+			clear_bit(F_PARAD_RECLAIMING, &parad->flags);
+			continue;
+		}
+
+		parad->memcg = memcg;
+		parad->pgdat = pgdat;
+		parad->sc    = sc;
+
+		css_get(&memcg->css);
+		INIT_WORK(&parad->work, parad_zwork_fn);
+		queue_work(mm_parad_wq, &parad->work);
+	}
+
+	flush_workqueue(mm_parad_wq);
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_substage_end(RA_SHRINKANON,
+		sc->nr_reclaimed - nr_reclaimed, sc->nr_scanned - nr_scanned, NULL);
+#endif
+
+	ret = sc->nr_scanned >= sc->nr_to_reclaim;
+out:
+	parad_stat_add(PARAD_ZSWAPD, parad_get_counter() - start);
+	parad_stat_add(PARAD_ZSWAPD_NR_SCANNED, sc->nr_scanned - nr_scanned);
+	parad_stat_add(PARAD_ZSWAPD_NR_RECLAIMED, sc->nr_reclaimed - nr_reclaimed);
+
+	return ret;
+}
+#endif
 
 static u64 __calc_nr_to_reclaim(void)
 {
@@ -1570,6 +1774,40 @@ u64 get_do_eswap_size(bool refault)
 	return size;
 }
 
+static void zswapd_drop_caches(struct super_block *sb, void *unused)
+{
+	struct inode *inode = NULL;
+	struct inode *toput_inode = NULL;
+	unsigned long nr_pages = 0;
+	spin_lock(&sb->s_inode_list_lock);
+	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
+		spin_lock(&inode->i_lock);
+		/*
+		 * We must skip inodes in unusual state. We may also skip
+		 * inodes without pages but we deliberately won't in case
+		 * we need to reschedule to avoid softlockups.
+		 */
+		if ((inode->i_state & (I_FREEING|I_WILL_FREE|I_NEW)) ||
+		    (inode->i_mapping->nrpages == 0 && !need_resched())) {
+			spin_unlock(&inode->i_lock);
+			continue;
+		}
+		__iget(inode);
+		spin_unlock(&inode->i_lock);
+		spin_unlock(&sb->s_inode_list_lock);
+
+		nr_pages = invalidate_mapping_pages(inode->i_mapping, 0, -1);
+		iput(toput_inode);
+		toput_inode = inode;
+
+		cond_resched();
+		spin_lock(&sb->s_inode_list_lock);
+	}
+	spin_unlock(&sb->s_inode_list_lock);
+	iput(toput_inode);
+	pr_info("zswapd: zswapd drop %lu pages", nr_pages);
+}
+
 static int zswapd(void *p)
 {
 	pg_data_t *pgdat = (pg_data_t *)p;
@@ -1605,24 +1843,39 @@ static int zswapd(void *p)
 		count_vm_event(ZSWAPD_WAKEUP);
 		zswapd_pressure_report(LEVEL_LOW);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 		if (ramturbo_enable() && is_swap_full()) {
 			zswapd_pressure_report(LEVEL_CRITICAL);
 			count_vm_event(ZSWAPD_CRITICAL_PRESS);
 		}
 #endif
-
+		if (too_many_file_cache()) {
+			iterate_supers(zswapd_drop_caches, NULL);
+			count_vm_event(DROP_PAGECACHE);
+			count_vm_event(ZSWAPD_DROP_CACHE);
+			pr_info("zswapd: too many file cache and low free, drop cache!");
+		}
 		if (get_area_anon_refault_status()) {
 			refault = true;
 			count_vm_event(ZSWAPD_REFAULT);
+		    parad_stat_add(PARAD_ZSWAPD_REFAULT, 1);
 			goto do_eswap;
 		}
+		parad_stat_add(PARAD_ZSWAPD_SHRINK_ANON, 1);
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		reclaimacct_start(ZSWAPD_RECLAIM);
+#endif
 
 #ifdef CONFIG_RAMTURBO
 		if (unlikely(is_zram_anon_comp_enabled()))
 			zswapd_shrink_node(pgdat);
 #else
 		zswapd_shrink_node(pgdat);
+#endif
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		reclaimacct_end(ZSWAPD_RECLAIM);
 #endif
 
 		last_zswapd_time = jiffies;
@@ -1656,6 +1909,10 @@ do_eswap:
 			}
 		}
 	}
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_destroy();
+#endif
 
 	return 0;
 }

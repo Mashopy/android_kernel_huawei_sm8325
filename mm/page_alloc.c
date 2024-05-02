@@ -72,8 +72,8 @@
 #include <linux/hw/page_tracker.h>
 #endif
 #include <linux/psi.h>
-#include <platform/trace/hooks/memcheck.h>
 #include <linux/khugepaged.h>
+#include <linux/parallel_swapd.h>
 
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
@@ -82,6 +82,9 @@
 #include "shuffle.h"
 #ifdef CONFIG_HW_RECLAIM_ACCT
 #include <chipset_common/reclaim_acct/reclaim_acct.h>
+#endif
+#ifdef CONFIG_HW_ALLOC_ACCT
+#include <linux/alloc_acct.h>
 #endif
 
 #ifdef CONFIG_HW_MEMORY_MONITOR
@@ -92,6 +95,10 @@
 
 #ifdef CONFIG_HUAWEI_SLOW_PATH_COUNT
 #include <linux/mm_debug/slowpath_count.h>
+#endif
+
+#ifdef CONFIG_HUAWEI_LMK_DBG
+#include <linux/lowmem_dbg.h>
 #endif
 
 #ifdef CONFIG_ANDROID_LOW_MEMORY_KILLER_DAEMON
@@ -4016,6 +4023,10 @@ static void warn_alloc_show_mem(gfp_t gfp_mask, nodemask_t *nodemask)
 {
 	unsigned int filter = SHOW_MEM_FILTER_NODES;
 
+#ifdef CONFIG_HUAWEI_LMK_DBG
+	lowmem_dbg(0); /* 0 means verbose log */
+	return;
+#endif
 	/*
 	 * This documents exceptions given to allocations in certain
 	 * contexts that are allowed to allocate outside current's set
@@ -4449,11 +4460,11 @@ retry:
 	if (!page && !drained) {
 		unreserve_highatomic_pageblock(ac, false);
 #ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_drainallpages_start();
+		reclaimacct_substage_start(RA_DRAINALLPAGES, NULL);
 #endif
 		drain_all_pages(NULL);
 #ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_drainallpages_end();
+		reclaimacct_substage_end(RA_DRAINALLPAGES, 0, 0, NULL);
 #endif
 		drained = true;
 		goto retry;
@@ -4700,15 +4711,6 @@ check_retry_cpuset(int cpuset_mems_cookie, struct alloc_context *ac)
 	return false;
 }
 
-#ifdef CONFIG_RAMTURBO
-static atomic64_t g_dr_num = ATOMIC_LONG_INIT(0);
-
-bool is_in_direct_reclaim(void)
-{
-	return atomic64_read(&g_dr_num) > 0;
-}
-#endif
-
 static inline struct page *
 __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 						struct alloc_context *ac)
@@ -4737,9 +4739,6 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	delayacct_allocpages_start();
 #endif
 
-#ifdef CONFIG_RAMTURBO
-	atomic64_inc(&g_dr_num);
-#endif
 retry_cpuset:
 	compaction_retries = 0;
 	no_progress_loops = 0;
@@ -4775,6 +4774,9 @@ retry_cpuset:
 	if (page)
 		goto got_pg;
 
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_allocpage_start();
+#endif
 	/*
 	 * For costly allocations, try direct compaction first, as it's likely
 	 * that we have enough base pages and don't need to reclaim. For non-
@@ -4883,7 +4885,7 @@ retry:
 
 	/* Try direct reclaim and then allocating */
 #ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_directreclaim_start();
+	reclaimacct_start(DIRECT_RECLAIMS);
 #endif
 #ifdef CONFIG_HUAWEI_SLOW_PATH_COUNT
 	pgalloc_count_inc(1, order);
@@ -4891,7 +4893,7 @@ retry:
 	page = __alloc_pages_direct_reclaim(gfp_mask, order, alloc_flags, ac,
 							&did_some_progress);
 #ifdef CONFIG_HW_RECLAIM_ACCT
-	reclaimacct_directreclaim_end();
+	reclaimacct_end(DIRECT_RECLAIMS);
 #endif
 	if (page)
 		goto got_pg;
@@ -5003,8 +5005,8 @@ got_pg:
 #ifdef CONFIG_HW_MEMORY_MONITOR
 	delayacct_allocpages_end(order);
 #endif
-#ifdef CONFIG_RAMTUBRO
-	atomic64_dec(&g_dr_num);
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_allocpage_end(order);
 #endif
 	return page;
 }
@@ -5035,8 +5037,10 @@ static inline bool prepare_alloc_pages(gfp_t gfp_mask, unsigned int order,
 	might_sleep_if(gfp_mask & __GFP_DIRECT_RECLAIM);
 
 #ifdef CONFIG_HYPERHOLD_ZSWAPD
-	if (gfp_mask & __GFP_KSWAPD_RECLAIM)
+	if (gfp_mask & __GFP_KSWAPD_RECLAIM) {
 		wake_all_zswapd();
+		parad_stat_add(PARAD_ZSWAPD_WAKEUP, 1);
+	}
 #endif
 
 	if (should_fail_alloc_page(gfp_mask, order))
@@ -5138,9 +5142,6 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
-	if (page)
-		trace_mm_set_buddy_track(page, order, _RET_IP_);
-
 #ifdef CONFIG_HW_PAGE_TRACKER
 	if (page)
 		page_tracker_set_trace(page, _RET_IP_, order); /*lint !e571*/
@@ -5232,9 +5233,6 @@ static struct page *__page_frag_cache_refill(struct page_frag_cache *nc,
 
 	nc->va = page ? page_address(page) : NULL;
 
-	if (likely(page))
-		trace_mm_set_skb_pages_zone_state(page, get_order(nc->size), true);
-
 	return page;
 }
 
@@ -5313,12 +5311,8 @@ void page_frag_free(void *addr)
 {
 	struct page *page = virt_to_head_page(addr);
 
-	if (unlikely(put_page_testzero(page))) {
-		if (likely(page))
-			trace_mm_set_skb_pages_zone_state(page, compound_order(page), false);
-
+	if (unlikely(put_page_testzero(page)))
 		free_the_page(page, compound_order(page));
-	}
 }
 EXPORT_SYMBOL(page_frag_free);
 
@@ -7342,8 +7336,6 @@ void __init free_area_init_node(int nid, unsigned long *zones_size,
 
 	alloc_node_mem_map(pgdat);
 	pgdat_set_deferred_range(pgdat);
-
-	mm_buddy_track_map(0);
 
 	free_area_init_core(pgdat);
 }

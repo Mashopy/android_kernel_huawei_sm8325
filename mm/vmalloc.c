@@ -452,23 +452,6 @@ static void purge_vmap_area_lazy(void);
 static BLOCKING_NOTIFIER_HEAD(vmap_notify_list);
 static unsigned long lazy_max_pages(void);
 
-#ifdef CONFIG_DFX_MEMCHECK
-void vmap_area_list_lock(void)
-{
-	spin_lock(&vmap_area_lock);
-}
-
-void vmap_area_list_unlock(void)
-{
-	spin_unlock(&vmap_area_lock);
-}
-
-struct list_head *get_vmap_area_list(void)
-{
-	return &vmap_area_list;
-}
-#endif
-
 static atomic_long_t nr_vmalloc_pages;
 
 unsigned long vmalloc_nr_pages(void)
@@ -2360,7 +2343,6 @@ static void __vunmap(const void *addr, int deallocate_pages)
 
 			BUG_ON(!page);
 			__free_pages(page, 0);
-			mm_set_vmalloc_page_zone_state(page, false);
 		}
 		atomic_long_sub(area->nr_pages, &nr_vmalloc_pages);
 
@@ -2545,7 +2527,6 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 			atomic_long_add(area->nr_pages, &nr_vmalloc_pages);
 			goto fail;
 		}
-		mm_set_vmalloc_page_zone_state(page, true);
 		area->pages[i] = page;
 #ifdef CONFIG_HW_PAGE_TRACKER
 		page_tracker_set_type(page, TRACK_VMALLOC, 0);
@@ -3541,6 +3522,23 @@ void pcpu_free_vm_areas(struct vm_struct **vms, int nr_vms)
 	kfree(vms);
 }
 #endif	/* CONFIG_SMP */
+
+void vmap_lock()
+{
+	mutex_lock(&vmap_purge_lock);
+	spin_lock(&vmap_area_lock);
+}
+
+void vmap_unlock()
+{
+	spin_unlock(&vmap_area_lock);
+	mutex_unlock(&vmap_purge_lock);
+}
+
+struct list_head *vmap_get_list()
+{
+	return &vmap_area_list;
+}
 
 #ifdef CONFIG_PROC_FS
 static void *s_start(struct seq_file *m, loff_t *pos)

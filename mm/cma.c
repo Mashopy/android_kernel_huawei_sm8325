@@ -31,7 +31,8 @@
 #include <linux/delay.h>
 #include <linux/show_mem_notifier.h>
 #include <trace/events/cma.h>
-
+#undef CREATE_TRACE_POINTS
+#include <platform/trace/hooks/memcheck.h>
 #ifdef CONFIG_FCMA
 #include <linux/fcma.h>
 #endif
@@ -561,7 +562,6 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 	}
 
 	trace_cma_alloc(pfn, page, count, align);
-	atomic_long_add(count, &cma_used_count);
 
 	/*
 	 * CMA can allocate multiple page blocks, which results in different
@@ -571,9 +571,11 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 	if (page) {
 		for (i = 0; i < count; i++)
 			page_kasan_tag_reset(page + i);
+		atomic_long_add(count, &cma_used_count);
 	}
 
 	if (ret && !no_warn) {
+		trace_cma_report((char *)cma->name, cma->count, count);
 		pr_err("%s: %s: alloc failed, req-size: %zu pages, ret: %d\n",
 			__func__, cma->name, count, ret);
 		cma_debug_show_areas(cma);

@@ -158,8 +158,7 @@ static inline slab_flags_t kmem_cache_flags(unsigned int object_size,
 #endif
 
 /* Common flags available with current configuration */
-#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | \
-	   SLAB_CACHE_FLAGS | SLAB_MM_TRACE | SLAB_MM_NOTRACE)
+#define CACHE_CREATE_MASK (SLAB_CORE_FLAGS | SLAB_DEBUG_FLAGS | SLAB_CACHE_FLAGS)
 
 /* Common flags permitted for kmem_cache_create */
 #define SLAB_FLAGS_PERMITTED (SLAB_CORE_FLAGS | \
@@ -172,9 +171,7 @@ static inline slab_flags_t kmem_cache_flags(unsigned int object_size,
 			      SLAB_NOLEAKTRACE | \
 			      SLAB_RECLAIM_ACCOUNT | \
 			      SLAB_TEMPORARY | \
-			      SLAB_ACCOUNT | \
-			      SLAB_MM_TRACE | \
-			      SLAB_MM_NOTRACE)
+			      SLAB_ACCOUNT)
 
 bool __kmem_cache_empty(struct kmem_cache *);
 int __kmem_cache_shutdown(struct kmem_cache *);

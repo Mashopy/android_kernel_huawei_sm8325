@@ -18,30 +18,6 @@ enum {
 	REF_TYPE_MAX,
 };
 
-static int g_enable_stop_page_referencing = 0;
-
-static struct ctl_table stop_page_ref_table[] = {
-	{
-		.procname	= "enable_stop_page_referencing",
-		.data		= &g_enable_stop_page_referencing,
-		.maxlen		= sizeof(g_enable_stop_page_referencing),
-		.mode		= 0660,
-		.proc_handler	= proc_dointvec_minmax,
-		.extra1		= SYSCTL_ZERO,
-		.extra2		= SYSCTL_ONE,
-	},
-	{ }
-};
-
-static struct ctl_table vm_table[] = {
-	{
-		.procname	= "vm",
-		.mode		= 0555,
-		.child		= stop_page_ref_table,
-	},
-	{ }
-};
-
 #ifdef CONFIG_STOP_PAGE_REF_DEBUG
 #define LIST_NUM  2
 static atomic64_t page_ref_nums[LIST_NUM][REF_TYPE_MAX];
@@ -181,7 +157,6 @@ static int __init page_ref_info_init(void)
 #ifdef CONFIG_STOP_PAGE_REF_DEBUG
 	proc_create("page_ref_info", 0440, NULL, &page_ref_info_fops);
 #endif
-	register_sysctl_table(vm_table);
 	return 0;
 }
 module_init(page_ref_info_init);

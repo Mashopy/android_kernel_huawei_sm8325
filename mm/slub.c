@@ -34,11 +34,9 @@
 #include <linux/prefetch.h>
 #include <linux/memcontrol.h>
 #include <linux/random.h>
-
 #ifdef CONFIG_HW_PAGE_TRACKER
 #include <linux/hw/page_tracker.h>
 #endif
-
 #include <trace/events/kmem.h>
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
 #include <chipset_common/security/saudit.h>
@@ -48,7 +46,8 @@
 #include <linux/debugfs.h>
 #include <linux/jhash.h>
 #endif
-
+#undef CREATE_TRACE_POINTS
+#include <platform/trace/hooks/memcheck.h>
 #ifdef CONFIG_SLUB_DEBUG
 #include <linux/debugfs.h>
 #endif
@@ -56,15 +55,7 @@
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
 #include <chipset_common/security/saudit.h>
 #endif
-#include <platform/trace/hooks/memcheck.h>
 #include "internal.h"
-
-#ifdef CONFIG_SLAB_LEAK_DEBUG
-#include <log/log_usertype.h>
-#include <linux/ratelimit.h>
-
-const static int slab_leak_threshold = 500;
-#endif
 
 #ifdef CONFIG_HW_SLUB_DF
 static void set_harden_double_free_check_flags(bool status);
@@ -2885,40 +2876,6 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
 		memset((void *)((char *)obj + s->offset), 0, sizeof(void *));
 }
 
-#ifdef CONFIG_SLAB_LEAK_DEBUG
-static void get_slab_objs(struct kmem_cache *s, struct slabinfo *sinfo)
-{
-	unsigned long nr_objs = 0;
-	int node;
-	struct kmem_cache_node *n;
-
-	for_each_kmem_cache_node(s, node, n) {
-		nr_objs += node_nr_objs(n);
-	}
-
-	sinfo->num_objs = nr_objs;
-}
-
-static void check_cache_size(struct kmem_cache *s)
-{
-	struct slabinfo sinfo;
-	unsigned long size = 0;
-	const char *comm_name = "hilogcat";
-	static DEFINE_RATELIMIT_STATE(ratelimit_kmalloc, 5*HZ, 2);
-
-	get_slab_objs(s, &sinfo);
-	size = sinfo.num_objs * s->size / 1024 / 1024;
-	if (size > slab_leak_threshold &&
-		strstr(current->comm, comm_name) == NULL &&
-		__ratelimit(&ratelimit_kmalloc)) {
-		pr_err("%s, slab may leak, cache_name = %s, cache_size = %lu ",
-			__func__, cache_name(s), sinfo.num_objs * s->size);
-		show_stack(current, NULL);
-	}
-	return;
-}
-#endif
-
 /*
  * Inlined fastpath so that allocation functions (kmalloc, kmem_cache_alloc)
  * have the fastpath folded into their functions. So no function call
@@ -2941,11 +2898,7 @@ static __always_inline void *slab_alloc_node(struct kmem_cache *s,
 	if (!s)
 		return NULL;
 
-#ifdef CONFIG_SLAB_LEAK_DEBUG
-	if (get_logusertype_flag() == BETA_USER) {
-		check_cache_size(s);
-	}
-#endif
+	trace_slub_obj_report(s);
 
 redo:
 	/*
@@ -3024,9 +2977,6 @@ redo:
 		memset(object, 0, s->object_size);
 
 	slab_post_alloc_hook(s, gfpflags, 1, &object);
-
-	if (likely(object) && (s->flags & SLAB_MM_TRACE))
-		trace_mm_set_slub_alloc_track(addr);
 
 	return object;
 }
@@ -3300,11 +3250,8 @@ static __always_inline void slab_free(struct kmem_cache *s, struct page *page,
 	 * With KASAN enabled slab_free_freelist_hook modifies the freelist
 	 * to remove objects, whose reuse must be delayed.
 	 */
-	if (slab_free_freelist_hook(s, &head, &tail)) {
+	if (slab_free_freelist_hook(s, &head, &tail))
 		do_slab_free(s, page, head, tail, cnt, addr);
-		if (s->flags & SLAB_MM_TRACE)
-			trace_mm_set_slub_free_track(addr);
-    }
 }
 
 #ifdef CONFIG_KASAN_GENERIC
@@ -4290,7 +4237,6 @@ void kfree(const void *x)
 		kfree_hook(object);
 		mod_node_page_state(page_pgdat(page), NR_SLAB_UNRECLAIMABLE,
 				    -(1 << order));
-		trace_mm_track_lslub_pages(page, order, _RET_IP_, false);
 		__free_pages(page, order);
 		return;
 	}

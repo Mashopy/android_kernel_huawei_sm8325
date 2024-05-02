@@ -462,6 +462,13 @@ unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	if (freeable == 0 || freeable == SHRINK_EMPTY)
 		return freeable;
 
+	if (unlikely(freeable < 0)) {
+		pr_err("shrink_slab: %pS freeable = %ld is negative, nr_deferred = %ld\n",
+			shrinker->scan_objects, freeable,
+			atomic_long_read(&shrinker->nr_deferred[nid]));
+		return 0;
+	}
+
 	/*
 	 * copy the current shrinker scan count into a local variable
 	 * and zero it so that other concurrent shrinker invocations
@@ -518,6 +525,9 @@ unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	trace_mm_shrink_slab_start(shrinker, shrinkctl, nr,
 				   freeable, delta, total_scan, priority);
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_substage_start(RA_SHRINKSLAB, shrinker);
+#endif
 	/*
 	 * Normally, we should not scan less than batch_size objects in one
 	 * pass to avoid too frequent shrinker calls, but if the slab has less
@@ -566,6 +576,10 @@ unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 						&shrinker->nr_deferred[nid]);
 	else
 		new_nr = atomic_long_read(&shrinker->nr_deferred[nid]);
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_substage_end(RA_SHRINKSLAB, freed, scanned, shrinker);
+#endif
 
 	trace_mm_shrink_slab_end(shrinker, nid, freed, nr, new_nr, total_scan);
 	return freed;
@@ -700,13 +714,7 @@ unsigned long shrink_slab(gfp_t gfp_mask, int nid,
 			.nid = nid,
 			.memcg = memcg,
 		};
-#ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_shrinkslab_start();
-#endif
 		ret = do_shrink_slab(&sc, shrinker, priority);
-#ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_shrinkslab_end(shrinker->scan_objects);
-#endif
 		if (ret == SHRINK_EMPTY)
 			ret = 0;
 		freed += ret;
@@ -930,8 +938,11 @@ static int __remove_mapping(struct address_space *mapping, struct page *page,
 	 * and thus under the i_pages lock, then this ordering is not required.
 	 */
 	refcount = 1 + compound_nr(page);
-	if (!page_ref_freeze(page, refcount))
+	if (!page_ref_freeze(page, refcount)) {
+		if (current_is_kswapd() && page_is_file_cache(page))
+			count_vm_event(PAGE_REF_FREEZE);
 		goto cannot_free;
+	}
 	/* note: atomic_cmpxchg in page_ref_freeze provides the smp_rmb */
 	if (unlikely(PageDirty(page))) {
 		page_ref_unfreeze(page, refcount);
@@ -1063,6 +1074,10 @@ static enum page_references page_check_references(struct page *page,
 	if (vm_flags & VM_LOCKED)
 		return PAGEREF_RECLAIM;
 
+	/* rmap lock contention: rotate */
+	if (referenced_ptes == -1)
+		return PAGEREF_KEEP;
+
 	if (referenced_ptes) {
 		if (PageSwapBacked(page))
 			return PAGEREF_ACTIVATE;
@@ -1185,8 +1200,11 @@ unsigned long shrink_page_list(struct list_head *page_list,
 			goto keep;
 		}
 #endif
-		if (!trylock_page(page))
+		if (!trylock_page(page)) {
+			if (current_is_kswapd() && page_is_file_cache(page))
+				count_vm_event(PAGE_TRY_LOCK_FAILED);
 			goto keep;
+		}
 
 		VM_BUG_ON_PAGE(PageActive(page), page);
 		if (pgdat)
@@ -1320,8 +1338,12 @@ unsigned long shrink_page_list(struct list_head *page_list,
 
 		switch (references) {
 		case PAGEREF_ACTIVATE:
+			if (current_is_kswapd() && page_is_file_cache(page))
+				count_vm_event(PAGE_REF_ACTIVATE);
 			goto activate_locked;
 		case PAGEREF_KEEP:
+			if (current_is_kswapd() && page_is_file_cache(page))
+				count_vm_event(PAGE_REF_KEEP);
 			stat->nr_ref_keep += nr_pages;
 			goto keep_locked;
 		case PAGEREF_RECLAIM:
@@ -1404,6 +1426,8 @@ unsigned long shrink_page_list(struct list_head *page_list,
 #endif
 			if (!try_to_unmap(page, flags, sc->target_vma)) {
 				stat->nr_unmap_fail += nr_pages;
+				if (current_is_kswapd() && page_is_file_cache(page))
+					count_vm_event(PAGE_UNMAP_FAILED);
 				goto activate_locked;
 			}
 		}
@@ -1526,8 +1550,11 @@ unsigned long shrink_page_list(struct list_head *page_list,
 
 			count_vm_event(PGLAZYFREED);
 			count_memcg_page_event(page, PGLAZYFREED);
-		} else if (!mapping || !__remove_mapping(mapping, page, true))
+		} else if (!mapping || !__remove_mapping(mapping, page, true)) {
+			if (current_is_kswapd() && page_is_file_cache(page))
+				count_vm_event(PAGE_NOT_REMOVE);
 			goto keep_locked;
+		}
 
 		unlock_page(page);
 free_it:
@@ -2364,12 +2391,13 @@ static void shrink_active_list(unsigned long nr_to_scan,
 			}
 		}
 
+		/* Referenced or rmap lock contention: rotate */
 #ifdef CONFIG_STOP_PAGE_REF
 		if (page_referenced_spr(page, 0, sc->target_mem_cgroup,
-					&vm_flags,  ACTIVE_REF)) {
+					&vm_flags, ACTIVE_REF) != 0) {
 #else
 		if (page_referenced(page, 0, sc->target_mem_cgroup,
-				    &vm_flags)) {
+				    &vm_flags) != 0) {
 #endif
 			nr_rotated += hpage_nr_pages(page);
 			/*
@@ -2558,22 +2586,26 @@ unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 				 struct lruvec *lruvec, struct scan_control *sc)
 {
 #ifdef CONFIG_HW_RECLAIM_ACCT
+	unsigned long nr_scanned = sc->nr_scanned;
 	unsigned long nr_reclaimed;
+	unsigned int stub;
 
-	reclaimacct_shrinklist_start(is_file_lru(lru));
+	stub = is_file_lru(lru) ? RA_SHRINKFILE : RA_SHRINKANON;
+	reclaimacct_substage_start(stub, NULL);
 #endif
 	if (is_active_lru(lru)) {
 		if (inactive_list_is_low(lruvec, is_file_lru(lru), sc, true))
 			shrink_active_list(nr_to_scan, lruvec, sc, lru);
 #ifdef CONFIG_HW_RECLAIM_ACCT
-		reclaimacct_shrinklist_end(is_file_lru(lru));
+		reclaimacct_substage_end(stub, 0, 0, NULL);
 #endif
 		return 0;
 	}
 
 #ifdef CONFIG_HW_RECLAIM_ACCT
 	nr_reclaimed = shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
-	reclaimacct_shrinklist_end(is_file_lru(lru));
+	reclaimacct_substage_end(stub, nr_reclaimed, sc->nr_scanned - nr_scanned, NULL);
+
 	return nr_reclaimed;
 #else
 	return shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
@@ -4351,13 +4383,23 @@ kswapd_try_sleep:
 		 */
 		trace_mm_vmscan_kswapd_wake(pgdat->node_id, classzone_idx,
 						alloc_order);
+
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		reclaimacct_start(KSWAPD_RECLAIM);
+#endif
 		reclaim_order = balance_pgdat(pgdat, alloc_order, classzone_idx);
+#ifdef CONFIG_HW_RECLAIM_ACCT
+		reclaimacct_end(KSWAPD_RECLAIM);
+#endif
 		if (reclaim_order < alloc_order)
 			goto kswapd_try_sleep;
 	}
 
 	tsk->flags &= ~(PF_MEMALLOC | PF_SWAPWRITE | PF_KSWAPD);
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	reclaimacct_destroy();
+#endif
 	return 0;
 }
 

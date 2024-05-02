@@ -26,9 +26,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/kmem.h>
 
-#undef CREATE_TRACE_POINTS
-#include <platform/trace/hooks/memcheck.h>
-
 #include "slab.h"
 #ifdef CONFIG_QCOM_MINIDUMP_PANIC_DUMP
 #include <soc/qcom/minidump.h>
@@ -341,9 +338,6 @@ int slab_unmergeable(struct kmem_cache *s)
 		return 1;
 #endif
 
-	if (s->flags & SLAB_MM_NOTRACE)
-		return 1;
-
 	return 0;
 }
 
@@ -364,9 +358,6 @@ struct kmem_cache *find_mergeable(unsigned int size, unsigned int align,
 	flags = kmem_cache_flags(size, flags, name, NULL);
 
 	if (flags & SLAB_NEVER_MERGE)
-		return NULL;
-
-	if (flags & SLAB_MM_NOTRACE)
 		return NULL;
 
 	list_for_each_entry_reverse(s, &slab_root_caches, root_caches_node) {
@@ -1353,9 +1344,6 @@ void *kmalloc_order(size_t size, gfp_t flags, unsigned int order)
 		ret = page_address(page);
 		mod_node_page_state(page_pgdat(page), NR_SLAB_UNRECLAIMABLE,
 				    1 << order);
-#if !defined(CONFIG_TRACING)
-		trace_mm_track_lslub_pages(page, order, _RET_IP_, true);
-#endif
 	}
 	ret = kasan_kmalloc_large(ret, size, flags);
 	/* As ret might get tagged, call kmemleak hook after KASAN. */
@@ -1368,10 +1356,6 @@ EXPORT_SYMBOL(kmalloc_order);
 void *kmalloc_order_trace(size_t size, gfp_t flags, unsigned int order)
 {
 	void *ret = kmalloc_order(size, flags, order);
-
-	if (likely(ret))
-		trace_mm_track_lslub_pages((struct page *)virt_to_page(ret), order, _RET_IP_, true);
-
 	trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << order, flags);
 	return ret;
 }

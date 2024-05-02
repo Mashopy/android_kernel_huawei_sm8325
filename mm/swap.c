@@ -641,6 +641,10 @@ static void lru_lazyfree_fn(struct page *page, struct lruvec *lruvec,
 		 * pages
 		 */
 		ClearPageSwapBacked(page);
+#ifdef CONFIG_HYPERHOLD_FILE_LRU
+		if (!is_prot_page(page))
+			lruvec = lruvec_node_lruvec(lruvec);
+#endif
 		add_page_to_lru_list(page, lruvec, LRU_INACTIVE_FILE);
 
 		__count_vm_events(PGLAZYFREE, hpage_nr_pages(page));
