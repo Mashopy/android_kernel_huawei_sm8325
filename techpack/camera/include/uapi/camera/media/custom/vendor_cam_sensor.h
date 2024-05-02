@@ -95,6 +95,7 @@ struct custom_sensor_fuseid_info {
 	__u16 read_enable_addr;
 	__u8 read_enable_val;
 	__u8 step;
+	bool is_retry;
 	__u8 setting_exists;
 } __attribute__((packed));
 
@@ -103,6 +104,7 @@ struct custom_sensor_probe_info {
 	__u8 sensor_reg_settings_type;
 	struct custom_sensor_fuseid_info sensor_fuseid_info;
 	__s32 position_id;
+	__u16 match_id_retry_times_without_powerdown;
 } __attribute__((packed));
 
 struct custom_module_probe_info {

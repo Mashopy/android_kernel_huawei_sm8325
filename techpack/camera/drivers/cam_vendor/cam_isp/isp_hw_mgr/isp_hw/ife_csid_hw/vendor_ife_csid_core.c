@@ -67,7 +67,7 @@ void vendor_ife_error_notify(csiphy_error_scene errno)
 bool vendor_ife_error_found(struct cam_ife_csid_hw *csid_hw)
 {
 	/* this is only workaround only for bali */
-	if (vendor_skip_pre_stream_overflow(csid_hw->csi2_rx_cfg.phy_sel) == false)
+	if (vendor_skip_pre_stream_overflow(csid_hw->csi2_rx_cfg.phy_sel) == true)
 		return false;
 	return true;
 }

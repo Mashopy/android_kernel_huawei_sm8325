@@ -251,6 +251,7 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 {
 	struct i2c_settings_list *i2c_list;
 	int32_t rc = 0;
+	int32_t ret = 0;
 
 	if (a_ctrl == NULL || i2c_set == NULL) {
 		CAM_ERR(CAM_ACTUATOR, "Invalid Args");
@@ -272,6 +273,8 @@ int32_t cam_actuator_apply_settings(struct cam_actuator_ctrl_t *a_ctrl,
 			CAM_ERR(CAM_ACTUATOR,
 				"Failed to apply settings: %d",
 				rc);
+			ret = rc;
+			rc = vendor_actuator_retry_dw9781(&(a_ctrl->io_master_info), i2c_list, ret);
 		} else {
 			CAM_DBG(CAM_ACTUATOR,
 				"Success:request ID: %d",

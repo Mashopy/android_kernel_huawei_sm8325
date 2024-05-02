@@ -33,7 +33,10 @@ static void vendor_register_sensor_node(struct camera_elem_t *dev)
 	camera->ois_id = dev->ois_id;
 	camera->eeprom_id = dev->eeprom_id;
 	camera->phy_id = dev->phy_id;
+	camera->va_id = dev->va_id;
+	mutex_lock(&g_lock);
 	list_add(&camera->node, &g_camera_list);
+	mutex_unlock(&g_lock);
 }
 
 static int vendor_register_vcm_node(int vcm_id, struct cam_actuator_ctrl_t *a_ctrl)
@@ -88,6 +91,7 @@ struct cam_sensor_ctrl_t* vendor_get_sensor_ctrl(int slot_id, int64_t device_typ
 {
 	struct camera_elem_t *camera = NULL;
 	int camera_slot_id;
+	int camera_va_slot_id = -1;  /* invalid default value */
 	mutex_lock(&g_lock);
 	list_for_each_entry(camera, &g_camera_list, node) {
 		switch (device_type) {
@@ -96,6 +100,7 @@ struct cam_sensor_ctrl_t* vendor_get_sensor_ctrl(int slot_id, int64_t device_typ
 			break;
 		case CAM_ACTUATOR:
 			camera_slot_id = camera->vcm_id;
+			camera_va_slot_id = camera->va_id;
 			break;
 		case CAM_EEPROM:
 			camera_slot_id = camera->eeprom_id;
@@ -111,7 +116,7 @@ struct cam_sensor_ctrl_t* vendor_get_sensor_ctrl(int slot_id, int64_t device_typ
 			mutex_unlock(&g_lock);
 			return NULL;
 		}
-		if (slot_id == camera_slot_id) {
+		if (slot_id == camera_slot_id || slot_id == camera_va_slot_id) {
 			debug_dbg("get dev info");
 			mutex_unlock(&g_lock);
 			return camera->s_ctrl;
@@ -183,6 +188,8 @@ void vendor_sensor_ctrl_register(struct cam_sensor_ctrl_t *s_ctrl)
 	sensor_adapter.vcm_id = s_ctrl->sensordata->subdev_id[SUB_MODULE_ACTUATOR];
 	sensor_adapter.ois_id = s_ctrl->sensordata->subdev_id[SUB_MODULE_OIS];
 	sensor_adapter.eeprom_id = s_ctrl->sensordata->subdev_id[SUB_MODULE_EEPROM];
+	sensor_adapter.va_id = s_ctrl->sensordata->subdev_id[SUB_MODULE_VA];
+	sensor_adapter.phy_id = s_ctrl->sensordata->subdev_id[SUB_MODULE_CSIPHY];
 	sensor_adapter.s_ctrl = s_ctrl;
 	INIT_LIST_HEAD(&(s_ctrl->i2c_data.sensor_fuseid_reg_settings.list_head));
 	vendor_register_sensor_node(&sensor_adapter);
@@ -199,10 +206,12 @@ void cam_crtl_exit(void)
 	struct camera_elem_t *camera = NULL;
 	struct list_head *pos = NULL;
 	struct list_head *q = NULL;
-	mutex_destroy(&g_lock);
+	mutex_lock(&g_lock);
 	list_for_each_safe(pos, q, &g_camera_list) {
 		camera = list_entry(pos, struct camera_elem_t, node);
 		list_del(pos);
 		kfree(camera);
 	}
+	mutex_unlock(&g_lock);
+	mutex_destroy(&g_lock);
 }

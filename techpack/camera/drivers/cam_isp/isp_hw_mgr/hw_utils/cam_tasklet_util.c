@@ -337,20 +337,24 @@ static void cam_tasklet_action(unsigned long data)
 
 	tasklet_info = (struct cam_tasklet_info *)data;
 
-	while (!cam_tasklet_dequeue_cmd(tasklet_info, &tasklet_cmd)) {
-		cam_common_util_thread_switch_delay_detect(
-			"Tasklet schedule",
-			tasklet_cmd->tasklet_enqueue_ts,
-			CAM_TASKLET_SCHED_TIME_THRESHOLD);
-		curr_time = ktime_get();
+	if (tasklet_info != NULL) {
+		while (!cam_tasklet_dequeue_cmd(tasklet_info, &tasklet_cmd)) {
+			cam_common_util_thread_switch_delay_detect(
+				"Tasklet schedule",
+				tasklet_cmd->tasklet_enqueue_ts,
+				CAM_TASKLET_SCHED_TIME_THRESHOLD);
+			curr_time = ktime_get();
 
-		tasklet_cmd->bottom_half_handler(tasklet_cmd->handler_priv,
-			tasklet_cmd->payload);
+			tasklet_cmd->bottom_half_handler(tasklet_cmd->handler_priv,
+				tasklet_cmd->payload);
 
-		cam_common_util_thread_switch_delay_detect(
-			"Tasklet execution",
-			curr_time,
-			CAM_TASKLET_EXE_TIME_THRESHOLD);
-		cam_tasklet_put_cmd(tasklet_info, (void **)(&tasklet_cmd));
+			cam_common_util_thread_switch_delay_detect(
+				"Tasklet execution",
+				curr_time,
+				CAM_TASKLET_EXE_TIME_THRESHOLD);
+			cam_tasklet_put_cmd(tasklet_info, (void **)(&tasklet_cmd));
+		}
+	} else {
+		CAM_ERR(CAM_ISP, "tasklet_info is NULL");
 	}
 }

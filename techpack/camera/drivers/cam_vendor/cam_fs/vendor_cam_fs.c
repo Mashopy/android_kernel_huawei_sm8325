@@ -17,23 +17,22 @@
 #include "securec.h"
 #include "cam_debug_util.h"
 #include "vendor_cam_fs.h"
+#include <linux/pm_wakeup.h>
+
+extern int vibrator_register_notifier(struct notifier_block *nb);
 
 struct camerafs_class {
 	struct class *classptr;
 	struct device *p_device;
 };
 
-struct camerafs_ois_class {
-	struct class *classptr;
-	struct device *p_device;
-};
-
-static struct camerafs_ois_class g_camerafs_ois;
-
+static struct camerafs_class g_camerafs_ois;
 static struct camerafs_class g_camerafs;
 
 static dev_t g_devnum;
-static dev_t g_osi_devnum;
+static dev_t g_ois_devnum;
+
+struct wakeup_source *g_actuator_protect_wl;
 
 #define CAMERAFS_NODE "node"
 #define CAMERAFS_OIS_NODE "ois"
@@ -45,9 +44,13 @@ wait_queue_head_t g_ois_que;
 static int g_cross_width = -1;
 static int g_cross_height = -1;
 
-spinlock_t pix_lock = __SPIN_LOCK_UNLOCKED("camerafs");
+static struct cameraprotect_info g_protect_info;
+static char g_protect_data_updated = false;
+static wait_queue_head_t g_read_wait = __WAIT_QUEUE_HEAD_INITIALIZER(g_read_wait);
 
-int register_camerafs_ois_attr(struct device_attribute *attr);
+spinlock_t pix_lock = __SPIN_LOCK_UNLOCKED("camerafs");
+spinlock_t protect_lock = __SPIN_LOCK_UNLOCKED("cameraprotect");
+
 /* add for ois mmi test */
 static ssize_t hw_ois_test_mmi_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -89,7 +92,87 @@ static ssize_t hw_ois_test_mmi_store(struct device *dev,
 static struct device_attribute g_hw_ois_pixel =
 	__ATTR(ois_pixel, 0664, hw_ois_test_mmi_show, hw_ois_test_mmi_store);
 
-int register_camerafs_attr(struct device_attribute *attr);
+static ssize_t hw_actuator_protect_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int ret = -1;
+
+	CAM_INFO(CAM_CUSTOM, "Enter: %s", __func__);
+
+	if (!g_protect_data_updated)
+		if (wait_event_interruptible(g_read_wait, g_protect_data_updated) != 0)
+			return 0;
+	CAM_INFO(CAM_CUSTOM, "Enter: %s, get event %d", __func__, g_protect_data_updated);
+	spin_lock(&pix_lock);
+
+	g_protect_data_updated = false;
+
+	if (g_protect_info.actuator_status == 0) {
+		__pm_wakeup_event(g_actuator_protect_wl, 2900 + 1000); /* wake up pm core for 2900ms + 1000ms for schedule */
+		CAM_INFO(CAM_CUSTOM, "Enter: %s, wake up", __func__);
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", g_protect_info.actuator_status);
+
+	CAM_INFO(CAM_CUSTOM, "Enter: %s, %d, %d", __func__, g_protect_info.actuator_status, g_protect_data_updated);
+
+	spin_unlock(&pix_lock);
+
+	return ret;
+}
+
+void hw_actuator_protect_work(struct cameraprotect_info *protect_info)
+{
+	spin_lock(&pix_lock);
+	if (protect_info != NULL && g_protect_info.actuator_status != protect_info->actuator_status) {
+		memcpy_s(&g_protect_info, sizeof(g_protect_info), protect_info, sizeof(struct cameraprotect_info));
+		g_protect_data_updated = true;
+		wake_up_interruptible(&g_read_wait);
+		CAM_ERR(CAM_CUSTOM, "Enter: %s, updated %d", __func__, g_protect_data_updated);
+	}
+	CAM_ERR(CAM_CUSTOM, "Enter: %s %d, %d, protect_info %d, %d, g_protect_data_updated %d", __func__,
+		g_protect_info.actuator_status, g_protect_info.actuator_shake_time,
+		protect_info->actuator_status, protect_info->actuator_shake_time, g_protect_data_updated);
+	spin_unlock(&pix_lock);
+}
+
+static ssize_t hw_actuator_protect_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct cameraprotect_info protect_info;
+	if (sscanf_s(buf, "%d%d", &protect_info.actuator_status, &protect_info.actuator_shake_time) <= 0) {
+		CAM_INFO(CAM_CUSTOM, "%s: write data width height error", __func__);
+		return -1;
+	}
+
+	hw_actuator_protect_work(&protect_info);
+
+	return count;
+}
+
+static struct device_attribute g_hw_actuator_protect =
+	__ATTR(actuator_protect, 0664, hw_actuator_protect_show, hw_actuator_protect_store);
+
+int register_camerafs_attr(struct device_attribute *attr, struct camerafs_class *fs_class);
+
+int cam_vib_notifier_cb(struct notifier_block *nb,
+	unsigned long time, void *bar)
+{
+	struct cameraprotect_info protect_info;
+	if (time >= 59) { // 59 shake model min duration
+		protect_info.actuator_status = true;
+		protect_info.actuator_shake_time = time;
+	} else {
+		protect_info.actuator_status = false;
+	}
+	hw_actuator_protect_work(&protect_info);
+	return 0;
+}
+
+static struct notifier_block vib_notify_to_cam = {
+	.notifier_call = cam_vib_notifier_cb,
+	.priority = -1,
+};
 
 int camerafs_module_init(void)
 {
@@ -98,7 +181,7 @@ int camerafs_module_init(void)
 	g_camerafs.classptr = NULL;
 	g_camerafs.p_device = NULL;
 	spin_lock_init(&pix_lock);
-	ret = alloc_chrdev_region(&g_osi_devnum, 0, 1, CAMERAFS_OIS_NODE);
+	ret = alloc_chrdev_region(&g_ois_devnum, 0, 1, CAMERAFS_OIS_NODE);
 	if (ret) {
 		CAM_ERR(CAM_CUSTOM, "error %s fail to alloc a dev_t", __func__);
 		return -1;
@@ -115,7 +198,7 @@ int camerafs_module_init(void)
 	g_camerafs.p_device = device_create(g_camerafs.classptr, NULL, g_devnum,
 		NULL, "%s", CAMERAFS_NODE);
 	g_camerafs_ois.p_device = device_create(g_camerafs_ois.classptr, NULL,
-		g_osi_devnum, NULL, "%s", CAMERAFS_OIS_NODE);
+		g_ois_devnum, NULL, "%s", CAMERAFS_OIS_NODE);
 
 	if (IS_ERR(g_camerafs.p_device)) {
 		CAM_ERR(CAM_CUSTOM, "class_device_create failed %s", CAMERAFS_NODE);
@@ -123,7 +206,12 @@ int camerafs_module_init(void)
 		return -1;
 	}
 
-	register_camerafs_ois_attr(&g_hw_ois_pixel);
+	register_camerafs_attr(&g_hw_ois_pixel, &g_camerafs_ois);
+
+	// for actuator protect
+	register_camerafs_attr(&g_hw_actuator_protect, &g_camerafs);
+	vibrator_register_notifier(&vib_notify_to_cam);
+	g_actuator_protect_wl = wakeup_source_register(NULL, "actuator_protect_wakelock");
 
 	init_waitqueue_head(&g_ois_que);
 	CAM_INFO(CAM_CUSTOM, "%s end", __func__);
@@ -131,11 +219,11 @@ int camerafs_module_init(void)
 }
 EXPORT_SYMBOL(camerafs_module_init);
 
-int register_camerafs_attr(struct device_attribute *attr)
+int register_camerafs_attr(struct device_attribute *attr, struct camerafs_class *fs_class)
 {
 	int ret;
 
-	ret = device_create_file(g_camerafs.p_device, attr);
+	ret = device_create_file(fs_class->p_device, attr);
 	if (ret < 0) {
 		CAM_ERR(CAM_CUSTOM, "camera fs creat dev attr[%s] fail", attr->attr.name);
 		return -1;
@@ -145,26 +233,15 @@ int register_camerafs_attr(struct device_attribute *attr)
 }
 EXPORT_SYMBOL(register_camerafs_attr);
 
-int register_camerafs_ois_attr(struct device_attribute *attr)
-{
-	int ret;
-
-	ret = device_create_file(g_camerafs_ois.p_device, attr);
-	if (ret < 0) {
-		CAM_ERR(CAM_CUSTOM, "camera oiscreat dev attr[%s] fail", attr->attr.name);
-		return -1;
-	}
-	CAM_INFO(CAM_CUSTOM, "camera ois creat dev attr[%s] OK", attr->attr.name);
-	return 0;
-}
-
 void camerafs_module_deinit(void)
 {
 	device_destroy(g_camerafs.classptr, g_devnum);
-	device_destroy(g_camerafs_ois.classptr, g_osi_devnum);
+	device_destroy(g_camerafs_ois.classptr, g_ois_devnum);
 	class_destroy(g_camerafs.classptr);
 	unregister_chrdev_region(g_devnum, 1);
-	unregister_chrdev_region(g_osi_devnum, 1);
+	unregister_chrdev_region(g_ois_devnum, 1);
+
+	wakeup_source_unregister(g_actuator_protect_wl);
 }
 EXPORT_SYMBOL(camerafs_module_deinit);
 

@@ -82,8 +82,10 @@ typedef struct vi5300_data* VI5300_DEV;
 #define VI5300_ERROR_STOP_CMD ((VI5300_Error) -9)
 #define VI5300_ERROR_IRQ_STATE ((VI5300_Error) -10)
 #define VI5300_ERROR_FW_FAILURE ((VI5300_Error) -11)
-#define VI5300_ERROR_POWER_ON ((VI5300_Error) -14)
-#define VI5300_ERROR_POWER_OFF ((VI5300_Error) -15)
+#define VI5300_ERROR_POWER_ON ((VI5300_Error) -12)
+#define VI5300_ERROR_POWER_OFF ((VI5300_Error) -13)
+#define VI5300_ERROR_OTP_SIZE ((VI5300_Error) -14)
+#define VI5300_ERROR_REFTOF_CONFIG ((VI5300_Error) -15)
 
 /**
  * laser to proximity sensor use
@@ -108,6 +110,7 @@ struct VI5300_XTALK_Calib_Data {
 
 struct VI5300_OFFSET_Calib_Data {
 	int16_t offset_cal;
+	int16_t ref_tof;
 };
 
 struct vi5300_data {
@@ -130,6 +133,7 @@ struct vi5300_data {
 	uint8_t fwdl_status;
 	int8_t xtalk_config;
 	int16_t offset_config;
+	int16_t reftof_config;
 	const char *program_version;
 	uint32_t integral_counts;
 	uint32_t period;

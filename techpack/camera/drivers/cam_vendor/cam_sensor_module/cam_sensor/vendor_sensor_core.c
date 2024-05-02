@@ -416,6 +416,42 @@ static int vendor_sensor_read_ov_fuseid(struct cam_sensor_ctrl_t *s_ctrl,
 	return rc;
 }
 
+static int vendor_sensor_read_fuseid_retry(struct cam_sensor_ctrl_t *s_ctrl,
+	struct custom_sensor_fuseid_info *sensor_fuseid_info, int32_t num_bytes, uint8_t *value)
+{
+	int rc = 0;
+	int8_t i = 0;
+	uint8_t *value_compare = NULL;
+
+	value_compare = kzalloc(num_bytes + 1, GFP_KERNEL);
+	if (!value_compare) {
+		CAM_ERR(CAM_SENSOR, "HwReadFuseid, kzalloc fail!");
+		kfree(value_compare);
+		return -EFAULT;
+	}
+	rc = vendor_sensor_read_ov_fuseid(s_ctrl, sensor_fuseid_info, value_compare);
+	if (rc < 0) {
+		CAM_ERR(CAM_SENSOR, "Failed read ov fuseid:%d", rc);
+		kfree(value_compare);
+		return rc;
+	}
+	for (i = 0; (i < num_bytes) && (i < FUSEID_LEN_MAX); i++) {
+		if (value_compare[i] != value[i]) {
+			CAM_ERR(CAM_SENSOR, "Twice fuseids are different:id=%d,value_compare=0x%x,value=0x%x.try again",
+				i, value_compare[i], value[i]);
+			rc = vendor_sensor_read_ov_fuseid(s_ctrl, sensor_fuseid_info, value);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR, "Failed read ov fuseid:%d", rc);
+				kfree(value_compare);
+				return rc;
+			}
+			break;
+		}
+	}
+	kfree(value_compare);
+	return rc;
+}
+
 static int vendor_sensor_read_fuseid(struct cam_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
@@ -469,6 +505,8 @@ static int vendor_sensor_read_fuseid(struct cam_sensor_ctrl_t *s_ctrl)
 					CAM_ERR(CAM_SENSOR, "Failed read ov fuseid:%d", rc);
 					return rc;
 				}
+				if (sensor_fuseid_info->is_retry)
+					rc = vendor_sensor_read_fuseid_retry(s_ctrl, sensor_fuseid_info, num_bytes, value);
 				break;
 			default:
 				break;
@@ -826,6 +864,29 @@ void vendor_sensor_get_sub_module_index(struct device_node *of_node,
 		sensor_info->subdev_id[SUB_MODULE_VA] = val;
 		of_node_put(src_node);
 	}
+}
+
+int vendor_sensor_match_id_with_retry(struct cam_sensor_ctrl_t *s_ctrl)
+{
+	int rc = 0;
+	uint16_t retry_times = 0;
+	struct cam_camera_slave_info *slave_info = NULL;
+	uint16_t i = 0;
+
+	slave_info = &(s_ctrl->sensordata->slave_info);
+	if (!slave_info) {
+		CAM_ERR(CAM_SENSOR, "slave_info is null");
+		return -EINVAL;
+	}
+
+	retry_times = slave_info->sensor_probe_info.match_id_retry_times_without_powerdown;
+	CAM_INFO(CAM_SENSOR, " retry_times: %d", retry_times);
+	do {
+		rc = cam_sensor_match_id(s_ctrl);
+		i++;
+	} while (rc < 0 && i < retry_times);
+
+	return rc;
 }
 
 MODULE_DESCRIPTION("vendor sensor driver");

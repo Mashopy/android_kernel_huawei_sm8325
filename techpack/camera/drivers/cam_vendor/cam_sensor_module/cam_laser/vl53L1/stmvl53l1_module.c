@@ -373,7 +373,7 @@ static void empty_and_free_list(struct list_head *head)
 		kfree(waiter);
 	}
 }
-
+#ifndef HWLASER_ADAPTER
 static int add_reader(pid_t pid, struct list_head *head)
 {
 	struct stmvl53l1_waiters *new_waiter;
@@ -397,7 +397,7 @@ static bool is_pid_in_list(pid_t pid, struct list_head *head)
 
 	return false;
 }
-
+#endif
 static void wake_up_data_waiters(struct stmvl53l1_data *data)
 {
 	empty_and_free_list(&data->simple_data_reader_list);
@@ -525,7 +525,7 @@ static int setup_tunings(struct stmvl53l1_data *data)
 
 	return rc;
 }
-
+#ifndef HWLASER_ADAPTER
 /**
  *
  * @param data device data
@@ -536,7 +536,7 @@ static int is_mz_mode(struct stmvl53l1_data *data)
 	return data->preset_mode == VL53L1_PRESETMODE_RANGING ||
 		data->preset_mode  == VL53L1_PRESETMODE_MULTIZONES_SCANNING;
 }
-
+#endif
 static void kill_mz_data(VL53L1_MultiRangingData_t *pdata)
 {
 	int i;
@@ -2112,7 +2112,7 @@ static const struct attribute_group *tof_groups[] = {
 	&stmvl53l1_attr_group,
 	NULL,
 };
-
+#ifndef HWLASER_ADAPTER
 static int ctrl_reg_access(struct stmvl53l1_data *data, void *p)
 {
 	struct stmvl53l1_register reg;
@@ -2174,7 +2174,7 @@ static int ctrl_reg_access(struct stmvl53l1_data *data, void *p)
 	}
 	return rc;
 }
-
+#endif
 
 /*
  *
@@ -2262,7 +2262,7 @@ done:
 
 	return rc;
 }
-
+#ifndef HWLASER_ADAPTER
 static int ctrl_getdata(struct stmvl53l1_data *data, void __user *p)
 {
 	int rc;
@@ -2479,7 +2479,7 @@ static int ctrl_mz_data_blocking_additional(struct stmvl53l1_data *data,
 {
 	return ctrl_mz_data_blocking_common(data, p, true);
 }
-
+#endif
 static int ctrl_param_last_error(struct stmvl53l1_data *data,
 		struct stmvl53l1_parameter *param)
 {
@@ -2548,6 +2548,7 @@ static int ctrl_param_is_xtalk_value_changed(struct stmvl53l1_data *data,
 	return 0;
 }
 
+#ifndef HWLASER_ADAPTER
 /**
  * handle ioctl set param mode
  *
@@ -2870,7 +2871,7 @@ done:
 
 	return rc;
 }
-
+#endif
 static int ctrl_perform_calibration_ref_spad_lock(struct stmvl53l1_data *data,
 	struct stmvl53l1_ioctl_perform_calibration_t *calib)
 {
@@ -3460,6 +3461,7 @@ static int stmvl53l1_ioctl_handler(
 		vl53l1_dbgmsg("HWLASER_IOCTL_MATCHID");
 		rc = stmvl53l1_status(data, p);
 	break;
+#ifndef HWLASER_ADAPTER
 	case VL53L1_IOCTL_GETDATAS:
 		vl53l1_dbgmsg("VL53L1_IOCTL_GETDATAS");
 		rc = ctrl_getdata(data, p);
@@ -3517,6 +3519,7 @@ static int stmvl53l1_ioctl_handler(
 		vl53l1_dbgmsg("VL53L1_IOCTL_MZ_DATA_ADDITIONAL_BLOCKING");
 		rc = ctrl_mz_data_blocking_additional(data, p);
 		break;
+#endif
 	default:
 		rc = -EINVAL;
 		break;

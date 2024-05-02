@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2020, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -991,6 +992,14 @@ static int32_t cam_eeprom_init_pkt_parser(struct cam_eeprom_ctrl_t *e_ctrl,
 				if ((remain_len - processed_cmd_buf_in_bytes) <
 					sizeof(struct cam_cmd_i2c_info)) {
 					CAM_ERR(CAM_EEPROM, "Not enough buf");
+					rc = -EINVAL;
+					goto end;
+				}
+
+				if ((num_map + 1) >=
+					(MSM_EEPROM_MAX_MEM_MAP_CNT *
+					MSM_EEPROM_MEMORY_MAP_MAX_SIZE)) {
+					CAM_ERR(CAM_EEPROM, "OOB error");
 					rc = -EINVAL;
 					goto end;
 				}

@@ -28,9 +28,10 @@ VI5300_Error VI5300_Get_Measure_Data(VI5300_DEV dev);
 VI5300_Error VI5300_Get_Interrupt_State(VI5300_DEV dev);
 VI5300_Error VI5300_Chip_Init(VI5300_DEV dev);
 VI5300_Error VI5300_Start_XTalk_Calibration(VI5300_DEV dev);
-VI5300_Error VI5300_Start_Offset_Calibration(VI5300_DEV dev);
+VI5300_Error VI5300_Start_Offset_Calibration(VI5300_DEV dev, uint32_t param);
 VI5300_Error VI5300_Get_XTalk_Parameter(VI5300_DEV dev);
 VI5300_Error VI5300_Config_XTalk_Parameter(VI5300_DEV dev);
+VI5300_Error VI5300_Config_RefTof_Parameter(VI5300_DEV dev);
 
 #endif
 

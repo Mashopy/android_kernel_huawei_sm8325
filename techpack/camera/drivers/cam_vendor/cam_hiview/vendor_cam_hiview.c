@@ -73,6 +73,8 @@ void vendor_cam_i2c_hiview_handle(struct camera_io_master *io_master_info,
 	case CAM_ACTUATOR:
 		error_type = VCM_I2C_ERR;
 		a_ctrl = container_of(io_master_info, struct cam_actuator_ctrl_t, io_master_info);
+		if (a_ctrl->v_ctrl.dev_type == CAM_ACTUATOR_VA)
+			error_type = VA_I2C_ERR;
 		s_ctrl = vendor_get_sensor_ctrl(a_ctrl->soc_info.index, CAM_ACTUATOR);
 		break;
 	case CAM_EEPROM:

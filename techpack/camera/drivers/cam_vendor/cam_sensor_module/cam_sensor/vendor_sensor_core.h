@@ -35,5 +35,6 @@ void vendor_sensor_start_dev(struct cam_sensor_ctrl_t *s_ctrl);
 void vendor_sensor_stop_dev(struct cam_sensor_ctrl_t *s_ctrl);
 void vendor_sensor_get_sub_module_index(struct device_node *of_node,
 	struct cam_sensor_board_info *s_info);
+int vendor_sensor_match_id_with_retry(struct cam_sensor_ctrl_t *s_ctrl);
 #endif
 /* _VENDOR_SENSOR_CORE_H_ */

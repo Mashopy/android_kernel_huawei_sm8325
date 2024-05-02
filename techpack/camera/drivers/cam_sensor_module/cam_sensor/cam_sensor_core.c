@@ -789,7 +789,7 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		vendor_sensor_apply_reg_settings(s_ctrl);
 
 		/* Match sensor ID */
-		rc = cam_sensor_match_id(s_ctrl);
+		rc = vendor_sensor_match_id_with_retry(s_ctrl);
 		if (rc < 0) {
 			cam_sensor_power_down(s_ctrl);
 			msleep(20);

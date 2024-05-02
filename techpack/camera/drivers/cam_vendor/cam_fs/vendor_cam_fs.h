@@ -7,6 +7,14 @@
 #ifndef _VENDOR_CAM_FS_H_
 #define _VENDOR_CAM_FS_H_
 
+struct cameraprotect_info {
+	char actuator_status;
+	char reserve[3];
+	int actuator_shake_time;
+};
+
+void hw_actuator_protect_work(struct cameraprotect_info *protect_info);
+
 int camerafs_module_init(void);
 
 /**

@@ -224,6 +224,7 @@ struct cam_hw_soc_info {
 	void                           *soc_private;
 	uint32_t                        sensor_mixed_pin;
 	bool                            btb_check_enable;
+	bool                            btb_check_skip_reset;
 	bool                            boost5v_enable;
 
 };

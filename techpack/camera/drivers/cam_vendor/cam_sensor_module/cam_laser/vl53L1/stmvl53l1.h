@@ -25,6 +25,8 @@
 #include "vl53l1_api.h"
 #include "vendor_laser_dev.h"
 
+#define HWLASER_ADAPTER
+
 /**
  * IPP adapt
  */

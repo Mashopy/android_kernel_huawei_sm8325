@@ -397,5 +397,43 @@ void vendor_actuator_init_pwctrl_state(struct cam_actuator_ctrl_t *a_ctrl)
 		CAM_ERR(CAM_ACTUATOR, "%s memset_s fail, ret = %d", __func__, ret);
 }
 
+#define DW9781_ACTUATOR_LOGIC_SLAVE_ID   (0xE4 >> 1)
+#define DW9781_ACTUATOR_SLAVE_ID         (0x54 >> 1)
+#define DW9781_LOGIC_RESET_ADDRESS       0xD002
+#define DW9781_LOGIC_RESET_VAL           0x0001
+
+int32_t vendor_actuator_retry_dw9781(struct camera_io_master *master_info,
+		struct i2c_settings_list *i2c_list, int32_t ret_val)
+{
+	int32_t rc = 0;
+	struct cam_sensor_i2c_reg_setting i2c_reg_setting;
+	struct cam_sensor_i2c_reg_array i2c_reg_array;
+	if (master_info->cci_client->sid != DW9781_ACTUATOR_SLAVE_ID)
+		return ret_val;
+	master_info->cci_client->sid = DW9781_ACTUATOR_LOGIC_SLAVE_ID;
+	CAM_INFO(CAM_ACTUATOR, "update dw9781 slave id = 0x%x", DW9781_ACTUATOR_LOGIC_SLAVE_ID);
+	i2c_reg_array.reg_addr = DW9781_LOGIC_RESET_ADDRESS;
+	i2c_reg_array.reg_data = DW9781_LOGIC_RESET_VAL;
+	i2c_reg_array.delay = 0;
+	i2c_reg_array.data_mask = 0;
+	i2c_reg_setting.addr_type = CAMERA_SENSOR_I2C_TYPE_WORD;
+	i2c_reg_setting.data_type = CAMERA_SENSOR_I2C_TYPE_WORD;
+	i2c_reg_setting.size = 1;
+	i2c_reg_setting.delay = 0;
+	i2c_reg_setting.reg_setting = &i2c_reg_array;
+	CAM_INFO(CAM_ACTUATOR, "actuator write dw9781 reset reg:%x, value:%x",
+		DW9781_LOGIC_RESET_ADDRESS, DW9781_LOGIC_RESET_VAL);
+	rc = camera_io_dev_write(master_info, &i2c_reg_setting);
+	if (rc < 0)
+		CAM_ERR(CAM_ACTUATOR, "actuator dw9781 write failed reg:%x,value:%x,rc:%d",
+			DW9781_LOGIC_RESET_ADDRESS, DW9781_LOGIC_RESET_VAL, rc);
+	usleep_range(10 * 1000, 11 * 1000); /* delay 10ms after dw9781 ois reset */
+	master_info->cci_client->sid = DW9781_ACTUATOR_SLAVE_ID;
+	rc = cam_actuator_i2c_modes_util(master_info, i2c_list);
+	if (rc)
+		CAM_ERR(CAM_ACTUATOR, "retry dw9781 apply settings failed: %d", rc);
+	return rc;
+}
+
 MODULE_DESCRIPTION("vendor actuator driver");
 MODULE_LICENSE("GPL v2");

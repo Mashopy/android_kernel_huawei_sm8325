@@ -339,6 +339,7 @@ typedef struct _tag_hwlaser_calibration_xtalk {
 
 typedef struct _tag_hwlaser_calibration_offset {
 	int16_t offset_cal;
+	int16_t ref_tof;
 } hwlaser_calibration_offset;
 
 typedef struct _tag_hwlaser_calibration_data_L3 { /* vi5300 */
@@ -682,4 +683,5 @@ typedef struct _tag_hwlaser_ioctl_perform_calibration {
 #define HWLASER_IOCTL_STOP                     _IO('J', BASE_VIDIOC_PRIVATE + 11)
 #define HWLASER_IOCTL_MZ_DATA                  _IOWR('K', BASE_VIDIOC_PRIVATE + 12, hwlaser_RangingData_t)
 #define HWLASER_IOCTL_PERFORM_CALIBRATION      _IOWR('L', BASE_VIDIOC_PRIVATE + 13, hwlaser_ioctl_perform_calibration_t)
+#define HWLASER_IOCTL_REFTOF_CONFIG            _IOWR('M', BASE_VIDIOC_PRIVATE + 14, hwlaser_calibration_data_t)
 #endif

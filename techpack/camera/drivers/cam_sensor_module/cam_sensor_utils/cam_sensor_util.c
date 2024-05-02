@@ -16,6 +16,8 @@
 #define VALIDATE_VOLTAGE(min, max, config_val) ((config_val) && \
 	(config_val >= min) && (config_val <= max))
 
+static DEFINE_MUTEX(camera_sensor_power_mutex);
+
 static struct i2c_settings_list*
 	cam_sensor_get_i2c_ptr(struct i2c_settings_array *i2c_reg_settings,
 		uint32_t size)
@@ -2023,11 +2025,14 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 		return -EINVAL;
 	}
 
+	mutex_lock(&camera_sensor_power_mutex);
+
 	gpio_num_info = ctrl->gpio_num_info;
 	num_vreg = soc_info->num_rgltr;
 
 	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
+		mutex_unlock(&camera_sensor_power_mutex);
 		return -EINVAL;
 	}
 
@@ -2063,6 +2068,7 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 			CAM_ERR(CAM_SENSOR,
 				"Invalid power up settings for index %d",
 				index);
+			mutex_unlock(&camera_sensor_power_mutex);
 			return -EINVAL;
 		}
 
@@ -2254,6 +2260,7 @@ handle_ldo:
 				(power_setting->delay * 1000) + 1000);
 	}
 
+	mutex_unlock(&camera_sensor_power_mutex);
 	return 0;
 power_up_failed:
 	CAM_ERR(CAM_SENSOR, "failed");
@@ -2374,6 +2381,7 @@ handle_ldo_fail:
 	ctrl->cam_pinctrl_status = 0;
 	cam_sensor_util_request_gpio_table(soc_info, 0);
 
+	mutex_unlock(&camera_sensor_power_mutex);
 	return rc;
 }
 
@@ -2413,17 +2421,21 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 		return -EINVAL;
 	}
 
+	mutex_lock(&camera_sensor_power_mutex);
+
 	gpio_num_info = ctrl->gpio_num_info;
 	num_vreg = soc_info->num_rgltr;
 
 	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
+		mutex_unlock(&camera_sensor_power_mutex);
 		return -EINVAL;
 	}
 
 	if (ctrl->power_down_setting_size > MAX_POWER_CONFIG) {
 		CAM_ERR(CAM_SENSOR, "Invalid: power setting size %d",
 			ctrl->power_setting_size);
+			mutex_unlock(&camera_sensor_power_mutex);
 		return -EINVAL;
 	}
 
@@ -2434,6 +2446,7 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 			CAM_ERR(CAM_SENSOR,
 				"Invalid power down settings for index %d",
 				index);
+			mutex_unlock(&camera_sensor_power_mutex);
 			return -EINVAL;
 		}
 
@@ -2572,5 +2585,6 @@ pw_handle_ldo:
 	ctrl->cam_pinctrl_status = 0;
 	vendor_sensor_power_down(ctrl, soc_info);
 
+	mutex_unlock(&camera_sensor_power_mutex);
 	return 0;
 }

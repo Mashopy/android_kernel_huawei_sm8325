@@ -2513,18 +2513,14 @@ done:
 
 static int tof8801_laser_get_data(struct tof_sensor_chip *chip, void * p)
 {
-	int report_value = 0;
 	int ret = 0;
 	uint32_t distance = 0;
 	uint32_t confidence = 0;
 	uint32_t status = 0;
 	copy_from_user(&(chip->udata), p, sizeof(hwlaser_RangingData_t));
 
-	report_value = tof8801_app0_pack_result_v2_to_int(tof_chip, 0);
-	dev_info(&chip->client->dev, "report_value = 0x%x", report_value);
-
-	distance = (report_value & 0x0000FFFF) >> 0;
-	confidence = (report_value & 0x003F0000) >> 16;
+	distance = chip->distance;
+	confidence = chip->confidence;
 
 	if (distance < DISTANCE_THRESHOLD && confidence >= CONFIDENCE_THRESHOLD_LOW) {
 		status = TOF_CONFIDENT;
@@ -2599,6 +2595,7 @@ static long tof_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			dev_info(&tof_chip->client->dev, "HWLASER_IOCTL_START");
 			period_store(&tof_chip->client->dev, 0, period, 3);
 			capture_store(&tof_chip->client->dev, 0, capture_on, 2);
+			msleep(100);
 		break;
 		case HWLASER_IOCTL_MZ_DATA:
 			dev_info(&tof_chip->client->dev, "HWLASER_IOCTL_MZ_DATA");

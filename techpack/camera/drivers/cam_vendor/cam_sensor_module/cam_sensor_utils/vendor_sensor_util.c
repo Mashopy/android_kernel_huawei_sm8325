@@ -321,17 +321,6 @@ int vendor_sensor_core_power_reset(struct cam_sensor_power_ctrl_t *ctrl,
 	s_ctrl = container_of(soc_info, struct cam_sensor_ctrl_t, soc_info);
 
 	if (soc_info->btb_check_enable) {
-		state = gpio_get_value(gpio_num_info->gpio_num[SENSOR_RESET]) ? 1 : 0;
-		CAM_INFO(CAM_SENSOR, "%s camera gpio:SENSOR_RESET read val is %d",
-			soc_info->dev_name, state);
-		if (state) {
-			CAM_ERR(CAM_SENSOR, "%s camera btb check fail, position_id is %d",
-				soc_info->dev_name,
-				s_ctrl->sensordata->slave_info.sensor_probe_info.position_id);
-			vendor_cam_hiview_handle(BTB_CHECK_ERR, s_ctrl,
-				"(gpio:SENSOR_RESET is HIGH_STATE)");
-		}
-
 		if (gpio_num_info->valid[SENSOR_BTB_DET]) {
 			state = gpio_get_value(gpio_num_info->gpio_num[SENSOR_BTB_DET]) ? 1 : 0;
 			CAM_INFO(CAM_SENSOR, "%s camera gpio:SENSOR_BTB_DET read val is %d",
@@ -344,12 +333,23 @@ int vendor_sensor_core_power_reset(struct cam_sensor_power_ctrl_t *ctrl,
 					"(gpio:SENSOR_BTB_DET is HIGH_STATE)");
 			}
 		}
-
-		rc = gpio_direction_output(gpio_num_info->gpio_num[SENSOR_RESET], 0);
-		if (rc < 0) {
-			CAM_ERR(CAM_SENSOR, "%s camera gpio:SENSOR_RESET set direction output fail",
-				soc_info->dev_name);
-			return rc;
+		if (!soc_info->btb_check_skip_reset) {
+			state = gpio_get_value(gpio_num_info->gpio_num[SENSOR_RESET]) ? 1 : 0;
+			CAM_INFO(CAM_SENSOR, "%s camera gpio:SENSOR_RESET read val is %d",
+				soc_info->dev_name, state);
+			if (state) {
+				CAM_ERR(CAM_SENSOR, "%s camera btb check fail, position_id is %d",
+					soc_info->dev_name,
+					s_ctrl->sensordata->slave_info.sensor_probe_info.position_id);
+				vendor_cam_hiview_handle(BTB_CHECK_ERR, s_ctrl,
+					"(gpio:SENSOR_RESET is HIGH_STATE)");
+			}
+			rc = gpio_direction_output(gpio_num_info->gpio_num[SENSOR_RESET], 0);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR, "%s camera gpio:SENSOR_RESET set direction output fail",
+					soc_info->dev_name);
+				return rc;
+			}
 		}
 	}
 	rc = msm_cam_sensor_handle_reg_gpio(SENSOR_RESET, gpio_num_info, val);

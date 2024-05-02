@@ -15,6 +15,7 @@ struct camera_elem_t {
 	int ois_id;
 	int eeprom_id;
 	int phy_id;
+	int va_id;
 	struct cam_sensor_ctrl_t *s_ctrl;
 	struct cam_actuator_ctrl_t *a_ctrl;
 	struct cam_ois_ctrl_t *o_ctrl;

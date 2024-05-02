@@ -93,6 +93,12 @@ void vendor_soc_util_get_dt_properties(struct cam_hw_soc_info *soc_info)
 		CAM_INFO(CAM_UTIL, "device %s support btb check",
 			soc_info->dev_name);
 
+	soc_info->btb_check_skip_reset = of_property_read_bool(of_node,
+		"btb_check_skip_reset");
+	if (soc_info->btb_check_skip_reset)
+		CAM_INFO(CAM_UTIL, "device %s don't do btb check reset",
+			soc_info->dev_name);
+
 	soc_info->boost5v_enable = of_property_read_bool(of_node,
 		"5v_boost_support");
 	if (soc_info->boost5v_enable)

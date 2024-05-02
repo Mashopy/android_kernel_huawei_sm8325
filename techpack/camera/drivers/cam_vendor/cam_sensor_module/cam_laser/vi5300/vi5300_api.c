@@ -43,8 +43,7 @@ VI5300_Error VI5300_Chip_PowerON(VI5300_DEV dev)
 	mdelay(5);
 	Status = gpio_direction_output(dev->xshut_gpio, 1);
 	mdelay(5);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Chip Power ON Failed Status = %d\n", Status);
 		return VI5300_ERROR_POWER_ON;
 	}
@@ -57,8 +56,7 @@ VI5300_Error VI5300_Chip_PowerOFF(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = gpio_direction_output(dev->xshut_gpio, 0);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Chip Power OFF Failed Status = %d\n", Status);
 		return VI5300_ERROR_POWER_OFF;
 	}
@@ -106,10 +104,9 @@ VI5300_Error VI5300_Wait_For_CPU_Ready(VI5300_DEV dev)
 	do {
 		mdelay(1);
 		vi5300_read_byte(dev, VI5300_REG_DEV_STAT, &stat);
-	}while((retry++ < VI5300_MAX_WAIT_RETRY)
+	} while((retry++ < VI5300_MAX_WAIT_RETRY)
 		&&(stat & 0x01));
-	if(retry >= VI5300_MAX_WAIT_RETRY)
-	{
+	if (retry >= VI5300_MAX_WAIT_RETRY) {
 		vi5300_errmsg("CPU Busy stat = %d\n", stat);
 		return VI5300_ERROR_CPU_BUSY;
 	}
@@ -126,8 +123,7 @@ VI5300_Error VI5300_Init_FirmWare(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	fw_size = LoadFirmware(dev);
-	if(!fw_size)
-	{
+	if (!fw_size) {
 		vi5300_errmsg("Firmware Load Failed!\n");
 		return VI5300_ERROR_FW_FAILURE;
 	}
@@ -151,8 +147,7 @@ VI5300_Error VI5300_Init_FirmWare(VI5300_DEV dev)
 		fw_send += 1;
 		fw_size -= 23;
 	}
-	if(fw_size > 0)
-	{
+	if (fw_size > 0) {
 		vi5300_write_reg_offset(dev, VI5300_REG_CMD, 0, VI5300_WRITEFW_CMD);
 		vi5300_write_reg_offset(dev, VI5300_REG_SIZE, 0, (uint8_t)fw_size);
 		vi5300_write_multibytes(dev, VI5300_REG_SCRATCH_PAD_BASE, Firmware+fw_send*23, fw_size);
@@ -166,8 +161,7 @@ VI5300_Error VI5300_Init_FirmWare(VI5300_DEV dev)
 	vi5300_write_byte(dev, VI5300_REG_PW_CTRL, 0x00);
 	mdelay(5);
 	vi5300_read_byte(dev, VI5300_REG_SPCIAL_PURP, &val);
-	if(val != 0x66)
-	{
+	if (val != 0x66) {
 		vi5300_errmsg("Download Firmware Failed Status = %d\n", Status);
 		Status = VI5300_ERROR_FW_FAILURE;
 	}
@@ -191,6 +185,7 @@ void VI5300_Integral_Counts_Write(VI5300_DEV dev, uint32_t inte_counts)
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 4, intedata.buf[1]);
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 5, intedata.buf[2]);
 	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
 }
 
 void VI5300_Delay_Count_Write(VI5300_DEV dev, uint16_t delay_count)
@@ -208,6 +203,7 @@ void VI5300_Delay_Count_Write(VI5300_DEV dev, uint16_t delay_count)
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 3, delaydata.buf[1]);
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 4, delaydata.buf[0]);
 	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
 }
 
 void VI5300_Set_Period(VI5300_DEV dev, uint32_t period)
@@ -223,8 +219,7 @@ void VI5300_Set_Period(VI5300_DEV dev, uint32_t period)
 	} delaydata;
 
 	VI5300_Waiting_For_RCO_Stable(dev);
-	if(period == 0)
-	{
+	if (period == 0) {
 		vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0, 0x00);
 		vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 1, 0x02);
 		vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 2, 0x04);
@@ -251,6 +246,17 @@ void VI5300_Set_Period(VI5300_DEV dev, uint32_t period)
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 3, delaydata.buf[1]);
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 4, delaydata.buf[0]);
 	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
+}
+
+static void VI5300_Temperature_Enable(VI5300_DEV dev, uint8_t enable)
+{
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0, 0x01);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x01, 0x01);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x02, 0x0E);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x03, enable);
+	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	msleep(5);
 }
 
 VI5300_Error VI5300_Single_Measure(VI5300_DEV dev)
@@ -258,15 +264,13 @@ VI5300_Error VI5300_Single_Measure(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = VI5300_Wait_For_CPU_Ready(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("CPU Abnormal Single Measure!Status = %d\n", Status);
 		return VI5300_ERROR_SINGLE_CMD;
 	}
 	VI5300_Waiting_For_RCO_Stable(dev);
 	Status = vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_SINGLE_RANGE_CMD);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Single measure Failed Status = %d\n", Status);
 		return VI5300_ERROR_SINGLE_CMD;
 	}
@@ -278,15 +282,13 @@ VI5300_Error VI5300_Start_Continuous_Measure(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = VI5300_Wait_For_CPU_Ready(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("CPU Abnormal Continuous Measure!Status = %d\n", Status);
 		return VI5300_ERROR_CONTINUOUS_CMD;
 	}
 	VI5300_Waiting_For_RCO_Stable(dev);
 	Status = vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_CONTINOUS_RANGE_CMD);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Continuous Measure Failed Status = %d\n", Status);
 		Status = VI5300_ERROR_CONTINUOUS_CMD;
 	}
@@ -299,8 +301,7 @@ VI5300_Error VI5300_Stop_Continuous_Measure(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_STOP_RANGE_CMD);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Stop Measure Failed Status = %d\n", Status);
 		return VI5300_ERROR_STOP_CMD;
 	}
@@ -320,6 +321,7 @@ VI5300_Error VI5300_Get_Measure_Data(VI5300_DEV dev)
 	int16_t farlimit;
 	uint16_t noise_level;
 	uint32_t noise_r;
+	int16_t ref_tof;
 	uint32_t peak1;
 	uint32_t peak1_r;
 	uint32_t peak2;
@@ -342,8 +344,9 @@ VI5300_Error VI5300_Get_Measure_Data(VI5300_DEV dev)
 		return VI5300_ERROR_GET_DATA;
 	}
 	millimeter = *((int16_t *)(buf + 12));
-	nearlimit = *((int16_t *)(buf + 18));
-	farlimit = *((int16_t *)(buf + 15));
+	nearlimit = 25; // *((int16_t *)(buf + 16));
+	farlimit = 4000; // *((int16_t *)(buf + 14));
+	ref_tof = *((int16_t *)(buf + 20));
 	noise_level = *((uint16_t *)(buf + 26));
 	integral_times = *((uint32_t *)(buf + 22));
 	peak1 = *((uint32_t *)(buf + 28));
@@ -356,8 +359,8 @@ VI5300_Error VI5300_Get_Measure_Data(VI5300_DEV dev)
 		bias = 0;
 	millimeter = millimeter + (int16_t)bias;
 	millimeter = millimeter - dev->offset_config;
-	nearlimit = nearlimit + (int16_t)bias - dev->offset_config;
-	farlimit = farlimit + (int16_t)bias - dev->offset_config;
+	nearlimit = 25; // nearlimit + (int16_t)bias - dev->offset_config;
+	farlimit = 4000; // farlimit + (int16_t)bias - dev->offset_config;
 
 	if (peak1 > 8000000)
 		peak1_r = peak1 * 256 / integral_times * 4;
@@ -442,13 +445,13 @@ VI5300_Error VI5300_Get_Measure_Data(VI5300_DEV dev)
 	}
 
 	if (dev->enable_debug) {
-		vi5300_errmsg("timeUSec:%d, Obj_Range:%d, RangeStatus:%d, NumberOfObject:%d, AmbientRate:%d, nearlimit:%d, farlimit:%d, dmax:%d, confidence:%d, nosie:%d, peak1:%d, peak2:%d\n",
+		vi5300_errmsg("timeUSec:%d, Obj_Range:%d, RangeStatus:%d, NumberOfObject:%d, AmbientRate:%d, reftof:%d, nearlimit:%d, farlimit:%d, dmax:%d, confidence:%d, nosie:%d, peak1:%d, peak2:%d\n",
 			dev->Rangedata.timeUSec,
 			dev->Rangedata.Obj_Range >> 16,
 			dev->Rangedata.RangeStatus,
 			dev->Rangedata.NumberOfObject >> 6,
 			dev->Rangedata.AmbientRate,
-			nearlimit, farlimit, dmax, confidence, noise_level, peak1, peak2);
+			ref_tof, nearlimit, farlimit, dmax, confidence, noise_level, peak1, peak2);
 	}
 	return Status;
 }
@@ -459,8 +462,7 @@ VI5300_Error VI5300_Get_Interrupt_State(VI5300_DEV dev)
 	uint8_t stat;
 
 	Status = vi5300_read_byte(dev, VI5300_REG_INTR_STAT, &stat);
-	if(!(stat & 0x01))
-	{
+	if (!(stat & 0x01)) {
 		vi5300_errmsg("Get Interrupt State Failed Status = %d\n", Status);
 		return VI5300_ERROR_IRQ_STATE;
 	}
@@ -483,8 +485,7 @@ VI5300_Error VI5300_Interrupt_Enable(VI5300_DEV dev)
 		loop++;
 	} while((loop < VI5300_MAX_WAIT_RETRY)
 		&& (!(enable & 0x01)));
-	if(loop >= VI5300_MAX_WAIT_RETRY)
-	{
+	if (loop >= VI5300_MAX_WAIT_RETRY) {
 		vi5300_errmsg("Enable interrupt Failed Status = %d\n", Status);
 		return VI5300_ERROR_ENABLE_INTR;
 	}
@@ -497,20 +498,17 @@ VI5300_Error VI5300_Chip_Init(VI5300_DEV dev)
 
 	VI5300_Chip_Register_Init(dev);
 	Status = VI5300_Wait_For_CPU_Ready(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Internal CPU busy!\n");
 		return Status;
 	}
 	Status = VI5300_Interrupt_Enable(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Clear Interrupt Mask failed!\n");
 		return Status;
 	}
 	Status = VI5300_Init_FirmWare(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Download Firmware Failed!\n");
 		return Status;
 	}
@@ -523,15 +521,14 @@ VI5300_Error VI5300_Start_XTalk_Calibration(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = VI5300_Wait_For_CPU_Ready(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("CPU Abnormal XTALK Calibrating Status = %d\n", Status);
 		return VI5300_ERROR_XTALK_CALIB;
 	}
 	VI5300_Waiting_For_RCO_Stable(dev);
+	VI5300_Temperature_Enable(dev, 0);
 	Status = vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_XTALK_TRIM_CMD);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("XTALK Calibration Failed Status = %d\n", Status);
 		return VI5300_ERROR_XTALK_CALIB;
 	}
@@ -539,74 +536,76 @@ VI5300_Error VI5300_Start_XTalk_Calibration(VI5300_DEV dev)
 	return Status;
 }
 
-VI5300_Error VI5300_Start_Offset_Calibration(VI5300_DEV dev)
+VI5300_Error VI5300_Start_Offset_Calibration(VI5300_DEV dev, uint32_t param)
 {
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	uint8_t buf[32];
 	int16_t mm;
 	uint32_t peak;
 	uint32_t inte_t;
+	int16_t ref_tof;
 	int32_t bias;
 	uint32_t peak_t;
-	int16_t total = 0;
+	int16_t total_m = 0;
+	int16_t total_r = 0;
 	int16_t offset = 0;
 	int cnt = 0;
 	uint8_t stat;
 
+	VI5300_Temperature_Enable(dev, 0);
 	Status = VI5300_Start_Continuous_Measure(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Offset Calibtration Start Failed!\n");
-		return VI5300_ERROR_OFFSET_CALIB;
+		Status = VI5300_ERROR_OFFSET_CALIB;
+		goto err_exit;
 	}
 	while(1)
 	{
 		mdelay(35);
 		Status = vi5300_read_byte(dev, VI5300_REG_INTR_STAT, &stat);
-		if(Status == VI5300_ERROR_NONE)
-		{
-			if((stat & 0x01) == 0x01)
-			{
+		if (Status == VI5300_ERROR_NONE) {
+			if ((stat & 0x01) == 0x01) {
 				Status |= vi5300_read_multibytes(dev, VI5300_REG_SCRATCH_PAD_BASE, buf, 16);
 				Status |= vi5300_read_multibytes(dev, VI5300_REG_SCRATCH_PAD_BASE + 0x10, buf + 16, 16);
-				if(Status != VI5300_ERROR_NONE)
-				{
+				if (Status != VI5300_ERROR_NONE) {
 					vi5300_errmsg("Get Range Data Failed Status = %d\n", Status);
 					break;
 				}
 				mm = *((int16_t *)(buf + 12));
+				ref_tof = *((int16_t *)(buf + 20));
 				inte_t = *((uint32_t *)(buf + 22));
 				peak = *((uint32_t *)(buf + 8));
 				inte_t = inte_t &0x00ffffff;
-				if(peak > 65536)
-					peak_t = peak * 256 / inte_t * 256;
-				else
-					peak_t = peak *65536 / inte_t;
-				peak_t = peak_t >> 12;
+
+				peak_t = peak * 16 / inte_t;
 				bias = (int32_t)(PILEUP_A / (PILEUP_B - peak_t * PILEUP_D) - PILEUP_C) / PILEUP_D;
-				if(bias < 0)
+				if (bias < 0)
 					bias = 0;
 				mm = mm + (int16_t)bias;
-				total += mm;
+				total_m += mm;
+				total_r += ref_tof;
 				++cnt;
-			}else
+			} else
 				continue;
-		}else {
+		} else {
 			vi5300_errmsg("Can't Get irq State!Status = %d\n", Status);
 			break;
 		}
-		if(cnt >= 30)
+		if (cnt >= 30)
 			break;
 	}
 	Status = VI5300_Stop_Continuous_Measure(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("Offset Calibtration Stop Failed!\n");
-		return VI5300_ERROR_OFFSET_CALIB;
+		Status = VI5300_ERROR_OFFSET_CALIB;
+		goto err_exit;
 	}
-	offset = total / 30;
-	dev->OffsetData.offset_cal = offset - 50;
+	offset = total_m / 30;
+	dev->OffsetData.offset_cal = offset - param;
+	dev->OffsetData.ref_tof = total_r / cnt;
 
+err_exit:
+	VI5300_Temperature_Enable(dev, 1);
 	return Status;
 }
 
@@ -618,21 +617,23 @@ VI5300_Error VI5300_Get_XTalk_Parameter(VI5300_DEV dev)
 	uint8_t cg_buf[5];
 
 	Status = vi5300_read_byte(dev, VI5300_REG_SPCIAL_PURP, &val);
-	if(Status == VI5300_ERROR_NONE && val == 0xaa)
-	{
+	if (Status == VI5300_ERROR_NONE && val == 0xaa) {
 		Status = vi5300_read_multibytes(dev, VI5300_REG_SCRATCH_PAD_BASE, cg_buf, 5);
-		if(Status != VI5300_ERROR_NONE)
-		{
+		if (Status != VI5300_ERROR_NONE) {
 			vi5300_errmsg("Get XTALK parameter Failed Status = %d\n", Status);
-			return VI5300_ERROR_XTALK_CALIB;
+			Status = VI5300_ERROR_XTALK_CALIB;
+			goto err_exit;
 		}
 		dev->XtalkData.xtalk_cal = *((int8_t *)(cg_buf + 0));
 		dev->XtalkData.xtalk_peak = *((uint16_t *)(cg_buf + 1));
 	} else {
 		vi5300_errmsg("XTALK Calibration Failed Status = %d, val = 0x%02x\n", Status, val);
-		return VI5300_ERROR_XTALK_CALIB;
+		Status = VI5300_ERROR_XTALK_CALIB;
+		goto err_exit;
 	}
 
+err_exit:
+	VI5300_Temperature_Enable(dev, 1);
 	return Status;
 }
 
@@ -641,8 +642,7 @@ VI5300_Error VI5300_Config_XTalk_Parameter(VI5300_DEV dev)
 	VI5300_Error Status = VI5300_ERROR_NONE;
 
 	Status = VI5300_Wait_For_CPU_Ready(dev);
-	if(Status != VI5300_ERROR_NONE)
-	{
+	if (Status != VI5300_ERROR_NONE) {
 		vi5300_errmsg("CPU Abnormal Configing XTALK Failed Status = %d\n", Status);
 		return VI5300_ERROR_XTALK_CONFIG;
 	}
@@ -652,6 +652,54 @@ VI5300_Error VI5300_Config_XTalk_Parameter(VI5300_DEV dev)
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x02, VI5300_XTALK_ADDR);
 	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x03, *((uint8_t *)(&dev->xtalk_config)));
 	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
+
+	return Status;
+}
+VI5300_Error VI5300_Read_OTP(VI5300_DEV dev, uint8_t base, uint8_t size, uint8_t* out)
+{
+	if (size > 32)
+		return VI5300_ERROR_OTP_SIZE;
+
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0, 0x03);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x01, size);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0x02, base);
+	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
+	vi5300_read_multibytes(dev, 0x0F, out, size);
+
+	return 0;
+}
+
+VI5300_Error VI5300_Config_RefTof_Parameter(VI5300_DEV dev)
+{
+	VI5300_Error Status = VI5300_ERROR_NONE;
+	union reftof_data {
+		int16_t reftof;
+		uint8_t buf[2];
+	} reftofdata;
+
+	Status = VI5300_Wait_For_CPU_Ready(dev);
+	if (Status != VI5300_ERROR_NONE) {
+		vi5300_errmsg("CPU Abnormal Configing RefTof Failed Status = %d\n", Status);
+		return VI5300_ERROR_REFTOF_CONFIG;
+	}
+
+	reftofdata.reftof = dev->reftof_config;
+	if (reftofdata.reftof <= 0) {
+		VI5300_Read_OTP(dev, 0x07, 2, reftofdata.buf);
+		vi5300_errmsg("reftof: %d\n", reftofdata.reftof);
+		reftofdata.reftof -= 30;
+	}
+
+	VI5300_Waiting_For_RCO_Stable(dev);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 0, 0x01);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 1, 0x02);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 2, 0x17);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 3, reftofdata.buf[1]);
+	vi5300_write_reg_offset(dev, VI5300_REG_SCRATCH_PAD_BASE, 4, reftofdata.buf[0]);
+	vi5300_write_byte(dev, VI5300_REG_CMD, VI5300_USER_CFG_CMD);
+	mdelay(5);
 
 	return Status;
 }

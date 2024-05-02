@@ -59,6 +59,7 @@
 #define VI5300_IOCTL_XTALK_CONFIG _IOW('p', 0x03, int8_t)
 #define VI5300_IOCTL_OFFSET_CALIB _IOR('p', 0x04, struct VI5300_OFFSET_Calib_Data)
 #define VI5300_IOCTL_OFFSET_CONFIG _IOW('p', 0x05, int16_t)
+#define VI5300_IOCTL_REFTOF_CONFIG _IOW('p', 0x0c, int16_t)
 #define VI5300_IOCTL_POWER_ON _IO('p', 0x06)
 #define VI5300_IOCTL_CHIP_INIT _IO('p', 0x07)
 #define VI5300_IOCTL_START _IO('p', 0x08)
@@ -103,9 +104,10 @@ struct vi5300_api_fn_t {
 	int32_t (*Get_Interrupt_State)(VI5300_DEV dev);
 	int32_t (*Chip_Init)(VI5300_DEV dev);
 	int32_t (*Start_XTalk_Calibration)(VI5300_DEV dev);
-	int32_t (*Start_Offset_Calibration)(VI5300_DEV dev);
+	int32_t (*Start_Offset_Calibration)(VI5300_DEV dev, uint32_t param);
 	int32_t (*Get_XTalk_Parameter)(VI5300_DEV dev);
 	int32_t (*Config_XTalk_Parameter)(VI5300_DEV dev);
+	int32_t (*Config_RefTof_Parameter)(VI5300_DEV dev);
 };
 static struct vi5300_api_fn_t vi5300_api_func_tbl = {
 	.Power_ON = VI5300_Chip_PowerON,
@@ -122,6 +124,7 @@ static struct vi5300_api_fn_t vi5300_api_func_tbl = {
 	.Start_Offset_Calibration = VI5300_Start_Offset_Calibration,
 	.Get_XTalk_Parameter = VI5300_Get_XTalk_Parameter,
 	.Config_XTalk_Parameter = VI5300_Config_XTalk_Parameter,
+	.Config_RefTof_Parameter = VI5300_Config_RefTof_Parameter,
 };
 struct vi5300_api_fn_t *vi5300_func_tbl;
 
@@ -141,15 +144,15 @@ static void vi5300_setupAPIFunctions(void)
 	vi5300_func_tbl->Start_Offset_Calibration = VI5300_Start_Offset_Calibration;
 	vi5300_func_tbl->Get_XTalk_Parameter = VI5300_Get_XTalk_Parameter;
 	vi5300_func_tbl->Config_XTalk_Parameter = VI5300_Config_XTalk_Parameter;
+	vi5300_func_tbl->Config_RefTof_Parameter = VI5300_Config_RefTof_Parameter;
 }
 
 static void vi5300_enable_irq(struct  vi5300_data *data)
 {
-	if(!data)
+	if (!data)
 		return;
 
-	if(data->intr_state == VI5300_INTR_DISABLED)
-	{
+	if (data->intr_state == VI5300_INTR_DISABLED) {
 		data->intr_state = VI5300_INTR_ENABLED;
 		enable_irq(data->irq);
 	}
@@ -157,11 +160,10 @@ static void vi5300_enable_irq(struct  vi5300_data *data)
 
 static void vi5300_disable_irq(struct  vi5300_data *data)
 {
-	if(!data)
+	if (!data)
 		return;
 
-	if(data->intr_state == VI5300_INTR_ENABLED)
-	{
+	if (data->intr_state == VI5300_INTR_ENABLED) {
 		data->intr_state = VI5300_INTR_DISABLED;
 		disable_irq(data->irq);
 	}
@@ -173,7 +175,7 @@ static ssize_t vi5300_chip_enable_show(struct device *dev,
 	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 
-	if(NULL != data)
+	if (NULL != data)
 		return scnprintf(buf, PAGE_SIZE, "%u\n", data->chip_enable);
 
 	return -EINVAL;
@@ -187,24 +189,19 @@ static ssize_t vi5300_chip_enable_store(struct device *dev,
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	unsigned int val = 0;
 
-	if(NULL != data)
-	{
+	if (data != NULL) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &val) != 1)
-		{
+		if (sscanf(buf, "%u\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
-		if(val !=0 && val !=1)
-		{
+		if (val !=0 && val !=1) {
 			vi5300_errmsg("enable store unvalid value=%u\n", val);
 			mutex_unlock(&data->work_mutex);
 			return count;
 		}
-		if(val == 1)
-		{
-			if(data->chip_enable == 0)
-			{
+		if (val == 1) {
+			if (data->chip_enable == 0) {
 				data->chip_enable = 1;
 				vi5300_enable_irq(data);
 				Status = vi5300_func_tbl->Power_ON(data);
@@ -217,14 +214,12 @@ static ssize_t vi5300_chip_enable_store(struct device *dev,
 				vi5300_errmsg("already enabled!!\n");
 			}
 		} else {
-			if(data->chip_enable == 1)
-			{
+			if (data->chip_enable == 1) {
 				data->chip_enable = 0;
 				vi5300_disable_irq(data);
 				data->fwdl_status = 0;
 				Status = vi5300_func_tbl->Power_OFF(data);
-			}
-			else {
+			} else {
 				vi5300_errmsg("already disabled!!\n");
 			}
 		}
@@ -243,7 +238,7 @@ static ssize_t vi5300_enable_debug_show(struct device *dev,
 	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 
-	if(NULL != data)
+	if (NULL != data)
 		return snprintf(buf, PAGE_SIZE, "%u\n", data->enable_debug);
 
 	return -EINVAL;
@@ -257,11 +252,9 @@ static ssize_t vi5300_enable_debug_store(struct device *dev,
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 	unsigned int on = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &on) != 1)
-		{
+		if (sscanf(buf, "%u\n", &on) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
@@ -286,18 +279,15 @@ static ssize_t vi5300_chip_init_store(struct device *dev,
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	unsigned int val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &val) != 1)
-		{
+		if (sscanf(buf, "%u\n", &val) != 1) {
 			vi5300_errmsg("vi5300_chip_init_store sscanf failed");
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
 
-		if(val)
-		{
+		if (val) {
 			Status = vi5300_func_tbl->Chip_Init(data);
 			vi5300_errmsg("vi5300_chip_init_store Chip_Init ok");
 			data->fwdl_status = 1;
@@ -322,17 +312,14 @@ static ssize_t vi5300_capture_store(struct device *dev,
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	unsigned int val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &val) != 1)
-		{
+		if (sscanf(buf, "%u\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
 
-		if(val == 1)
-		{
+		if (val == 1) {
 			data->camera_vote = 1;
 			if (enable_sensor == 0) {
 				vi5300_infomsg("camera: start Start_Continuous_Measure", val);
@@ -398,7 +385,7 @@ static ssize_t vi5300_xtalk_calib_show(struct device *dev,
 	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 
-	if(data != NULL)
+	if (data != NULL)
 		return scnprintf(buf, PAGE_SIZE, "%d.%u\n", data->XtalkData.xtalk_cal, data->XtalkData.xtalk_peak);
 
 	return -EPERM;
@@ -412,16 +399,13 @@ static ssize_t vi5300_xtalk_calib_store(struct device *dev,
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	unsigned int val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &val) != 1)
-		{
+		if (sscanf(buf, "%u\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
-		if(val !=1)
-		{
+		if (val !=1) {
 			vi5300_errmsg("xtalk calibration store unvalid value=%u\n", val);
 			mutex_unlock(&data->work_mutex);
 			return count;
@@ -432,8 +416,7 @@ static ssize_t vi5300_xtalk_calib_store(struct device *dev,
 		xtalk_mark = 0;
 		data->xtalk_config = data->XtalkData.xtalk_cal;
 		Status = vi5300_func_tbl->Config_XTalk_Parameter(data);
-		if(Status != VI5300_ERROR_NONE)
-		{
+		if (Status != VI5300_ERROR_NONE) {
 			vi5300_errmsg("%d, AFTER CALIBRATION,CONFIG XTALK PARAMETER FAILED\n", __LINE__);
 			mutex_unlock(&data->work_mutex);
 			return -EINVAL;
@@ -453,7 +436,7 @@ static ssize_t vi5300_offset_calib_show(struct device *dev,
 	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 
-	if(data != NULL)
+	if (data != NULL)
 		return scnprintf(buf, PAGE_SIZE, "%d\n", data->OffsetData.offset_cal);
 
 	return -EPERM;
@@ -465,24 +448,17 @@ static ssize_t vi5300_offset_calib_store(struct device *dev,
 	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 	VI5300_Error Status = VI5300_ERROR_NONE;
-	unsigned int val = 0;
+	uint32_t val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%u\n", &val) != 1)
-		{
+		if (sscanf(buf, "%u\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
-		if(val !=1)
-		{
-			vi5300_errmsg("offset calibration store unvalid value=%u\n", val);
-			mutex_unlock(&data->work_mutex);
-			return count;
-		}
+
 		offset_mark = 1;
-		Status = vi5300_func_tbl->Start_Offset_Calibration(data);
+		Status = vi5300_func_tbl->Start_Offset_Calibration(data, val);
 		offset_mark = 0;
 		data->offset_config = data->OffsetData.offset_cal;
 		mutex_unlock(&data->work_mutex);
@@ -502,11 +478,9 @@ static ssize_t vi5300_xtalk_config_store(struct device *dev,
 	VI5300_Error Status = VI5300_ERROR_NONE;
 	int val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%x\n", &val) != 1)
-		{
+		if (sscanf(buf, "%x\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
@@ -528,11 +502,9 @@ static ssize_t vi5300_offset_config_store(struct device *dev,
 	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
 	int val = 0;
 
-	if(NULL != data)
-	{
+	if (NULL != data) {
 		mutex_lock(&data->work_mutex);
-		if(sscanf(buf, "%x\n", &val) != 1)
-		{
+		if (sscanf(buf, "%x\n", &val) != 1) {
 			mutex_unlock(&data->work_mutex);
 			return -1;
 		}
@@ -545,6 +517,31 @@ static ssize_t vi5300_offset_config_store(struct device *dev,
 }
 
 static DEVICE_ATTR(offset_config, 0220, NULL, vi5300_offset_config_store);
+
+static ssize_t vi5300_reftof_config_store(struct device *dev,
+				struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct cam_laser_ctrl_t *o_ctrl = dev_get_drvdata(dev);
+	struct vi5300_data *data = (struct vi5300_data *)o_ctrl->soc_info.soc_private;
+	VI5300_Error Status = VI5300_ERROR_NONE;
+	int16_t val = 0;
+
+	if (NULL != data) {
+		mutex_lock(&data->work_mutex);
+		if (kstrtos16(buf, 10, &val) == 1) {
+			mutex_unlock(&data->work_mutex);
+			return -1;
+		}
+		data->reftof_config = val;
+		Status = vi5300_func_tbl->Config_RefTof_Parameter(data);
+		mutex_unlock(&data->work_mutex);
+		return Status ? -1 : count;
+	}
+
+	return -EPERM;
+}
+
+static DEVICE_ATTR(reftof_config, 0220, NULL, vi5300_reftof_config_store);
 
 static struct attribute *vi5300_attributes[] = {
 	&dev_attr_chip_enable.attr,
@@ -559,6 +556,7 @@ static struct attribute *vi5300_calib_attrs[] = {
 	&dev_attr_offset_calib.attr,
 	&dev_attr_xtalk_config.attr,
 	&dev_attr_offset_config.attr,
+	&dev_attr_reftof_config.attr,
 	NULL,
 };
 
@@ -585,23 +583,19 @@ static irqreturn_t vi5300_irq_handler(int vec, void *info)
 	struct custom_sensor_data_t laser_data_to_proxi;
 	int rc = 0;
 
-	if(!data || !data->fwdl_status)
+	if (!data || !data->fwdl_status)
 		return IRQ_HANDLED;
 
-	if (data->irq == vec)
-	{
-		if(xtalk_mark)
-		{
+	if (data->irq == vec) {
+		if (xtalk_mark) {
 			Status = vi5300_func_tbl->Get_XTalk_Parameter(data);
-			if(Status != VI5300_ERROR_NONE)
+			if (Status != VI5300_ERROR_NONE)
 				vi5300_errmsg("%d : Status = %d\n" , __LINE__, Status);
 		}
 
-		if(!xtalk_mark && !offset_mark)
-		{
+		if (!xtalk_mark && !offset_mark) {
 			Status = vi5300_func_tbl->Get_Measure_Data(data);
-			if(Status != VI5300_ERROR_NONE)
-			{
+			if (Status != VI5300_ERROR_NONE) {
 				vi5300_errmsg("%d : Status = %d\n" , __LINE__, Status);
 				return IRQ_HANDLED;
 			}
@@ -650,8 +644,7 @@ static int ctrl_perform_calibration_crosstalk_lock(struct vi5300_data *data)
 	mutex_lock(&data->work_mutex);
 	xtalk_mark = 1;
 	rc = vi5300_func_tbl->Start_XTalk_Calibration(data);
-	if(rc != VI5300_ERROR_NONE)
-	{
+	if (rc != VI5300_ERROR_NONE) {
 		vi5300_errmsg("%d, PERFORM XTALK CALIB FAILED\n", __LINE__);
 		mutex_unlock(&data->work_mutex);
 		return -EINVAL;
@@ -661,8 +654,7 @@ static int ctrl_perform_calibration_crosstalk_lock(struct vi5300_data *data)
 	xtalk_mark = 0;
 	data->xtalk_config = data->XtalkData.xtalk_cal;
 	rc = vi5300_func_tbl->Config_XTalk_Parameter(data);
-	if(rc != VI5300_ERROR_NONE)
-	{
+	if (rc != VI5300_ERROR_NONE) {
 		vi5300_errmsg("%d, AFTER CALIBRATION,CONFIG XTALK PARAMETER FAILED\n", __LINE__);
 		mutex_unlock(&data->work_mutex);
 		return -EINVAL;
@@ -672,15 +664,14 @@ static int ctrl_perform_calibration_crosstalk_lock(struct vi5300_data *data)
 	return rc;
 }
 
-static int ctrl_perform_calibration_offset_lock(struct vi5300_data *data)
+static int ctrl_perform_calibration_offset_lock(struct vi5300_data *data, uint32_t param)
 {
 	int rc = 0;
 
 	mutex_lock(&data->work_mutex);
 	offset_mark = 1;
-	rc = vi5300_func_tbl->Start_Offset_Calibration(data);
-	if(rc != VI5300_ERROR_NONE)
-	{
+	rc = vi5300_func_tbl->Start_Offset_Calibration(data, param);
+	if (rc != VI5300_ERROR_NONE) {
 		vi5300_errmsg("%d, PERFORM OFFSET CALIB FAILED\n", __LINE__);
 		mutex_unlock(&data->work_mutex);
 		return -EINVAL;
@@ -710,8 +701,9 @@ static int ctrl_perform_calibration(struct vi5300_data *data, void __user *p)
 			vi5300_infomsg("HWLASER_CALIBRATION_CROSSTALK rc => %d", rc);
 			break;
 		case HWLASER_CALIBRATION_OFFSET_SIMPLE:
-			rc = ctrl_perform_calibration_offset_lock(data);
-			vi5300_infomsg("HWLASER_CALIBRATION_OFFSET_SIMPLE rc => %d", rc);
+			rc = ctrl_perform_calibration_offset_lock(data, calib.param1);
+			vi5300_infomsg("HWLASER_CALIBRATION_OFFSET_SIMPLE rc => %d, offset calib environment dis:%u",
+			rc, calib.param1);
 			break;
 		default:
 			vi5300_errmsg("unsupport calibration type");
@@ -759,8 +751,7 @@ static int VI5300_SetCalibrationData(struct vi5300_data *data, hwlaser_calibrati
 
 	vi5300_infomsg("driver get xtalk config: %d\n", data->xtalk_config);
 	rc = vi5300_func_tbl->Config_XTalk_Parameter(data);
-	if (rc)
-	{
+	if (rc) {
 		vi5300_errmsg("%d, CONFIG XTALK PARAMETER FAILED\n", __LINE__);
 		goto done;
 	}
@@ -772,6 +763,20 @@ static int VI5300_SetCalibrationData(struct vi5300_data *data, hwlaser_calibrati
 		goto done;
 	}
 	vi5300_infomsg("driver get offset config: %d\n", data->offset_config);
+
+	/* send reftof to driver */
+	rc = memcpy_s(&(data->reftof_config), sizeof(int16_t), &(cal_data->u.dataL3.VI5300_OFFSET_Calib_Data.ref_tof), sizeof(int16_t));
+	if (rc) {
+		vi5300_errmsg("driver get reftof memcpy fail");
+		goto done;
+	}
+
+	vi5300_infomsg("driver get reftof config: %d\n", data->reftof_config);
+	rc = vi5300_func_tbl->Config_RefTof_Parameter(data);
+	if (rc) {
+		vi5300_errmsg("%d, CONFIG REFTOF PARAMETER FAILED\n", __LINE__);
+		goto done;
+	}
 
 done:
 	return rc;
@@ -814,10 +819,11 @@ static int vi5300_laser_get_set_cal_data(struct vi5300_data* data,
 
 	}
 
-	vi5300_infomsg("vi5300 xtalk_peak is(%u), talk_cal is(%d), offset is(%d)", \
+	vi5300_infomsg("vi5300 xtalk_peak is(%u), talk_cal is(%d), offset is(%d), ref_tof is(%d)", \
 				cal_data.u.dataL3.VI5300_XTALK_Calib_Data.xtalk_peak, \
 				cal_data.u.dataL3.VI5300_XTALK_Calib_Data.xtalk_cal, \
-				cal_data.u.dataL3.VI5300_OFFSET_Calib_Data.offset_cal);
+				cal_data.u.dataL3.VI5300_OFFSET_Calib_Data.offset_cal, \
+				cal_data.u.dataL3.VI5300_OFFSET_Calib_Data.ref_tof);
 
 done:
 	mutex_unlock(&data->work_mutex);
@@ -830,7 +836,7 @@ static int vi5300_laser_get_data(struct vi5300_data *data, void * p)
 	uint32_t distance = 0;
 	uint32_t status = 0;
 
-	if(NULL == data || NULL == p)
+	if (NULL == data || NULL == p)
 		return -EINVAL;
 	mutex_lock(&data->work_mutex);
 
@@ -863,11 +869,10 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		struct vi5300_data, miscdev);
 	hwlaser_calibration_data_t *cal_data = NULL;
 
-	if(!data)
+	if (!data)
 		return -EFAULT;
 
 	switch (cmd) {
-
 		case HWLASER_IOCTL_GET_INFO:
 			vi5300_infomsg("HWLASER_IOCTL_GET_INFO");
 			if (strlen(VI5300_NAME) < HWLASER_NAME_SIZE) {
@@ -886,8 +891,7 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			mutex_lock(&data->work_mutex);
 			vi5300_enable_irq(data);
 			rc = vi5300_func_tbl->Power_ON(data);
-			if(rc != VI5300_ERROR_NONE)
-			{
+			if (rc != VI5300_ERROR_NONE) {
 				vi5300_errmsg("%d, CHIP POWER ON FAILED\n", __LINE__);
 				mutex_unlock(&data->work_mutex);
 				return -EIO;
@@ -899,8 +903,7 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			vi5300_infomsg("HWLASER_IOCTL_INIT");
 			mutex_lock(&data->work_mutex);
 			rc = vi5300_func_tbl->Chip_Init(data);
-			if(rc != VI5300_ERROR_NONE)
-			{
+			if (rc != VI5300_ERROR_NONE) {
 				vi5300_errmsg("%d, CHIP INIT FAILED\n", __LINE__);
 				mutex_unlock(&data->work_mutex);
 				return -EIO;
@@ -917,14 +920,32 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			cal_data = (hwlaser_calibration_data_t *)p;
 			rc = vi5300_laser_get_set_cal_data(data, cal_data);
 		break;
+		case HWLASER_IOCTL_REFTOF_CONFIG:
+			mutex_lock(&data->work_mutex);
+			if (copy_from_user(&(data->reftof_config), (int16_t *)p, sizeof(int16_t))) {
+				vi5300_errmsg("%d, GET REFTOF CALIB DATA FAIL\n", __LINE__);
+				mutex_unlock(&data->work_mutex);
+				return -EINVAL;
+			}
+
+			if (data->enable_debug)
+				vi5300_errmsg("reftof config: %d\n", data->reftof_config);
+
+			rc = vi5300_func_tbl->Config_RefTof_Parameter(data);
+			if (rc != VI5300_ERROR_NONE) {
+				vi5300_errmsg("%d, CONFIG REFTOF DATA FAILED\n", __LINE__);
+				mutex_unlock(&data->work_mutex);
+				return -EFAULT;
+			}
+			mutex_unlock(&data->work_mutex);
+			break;
 		case HWLASER_IOCTL_START:
 			vi5300_infomsg("HWLASER_IOCTL_START");
 			mutex_lock(&data->work_mutex);
 			if (enable_sensor == 0) {
 				vi5300_infomsg("enter HWLASER_IOCTL_START");
 				rc = vi5300_func_tbl->Start_Continuous_Measure(data);
-				if(rc != VI5300_ERROR_NONE)
-				{
+				if (rc != VI5300_ERROR_NONE) {
 					vi5300_errmsg("%d, CHIP START RANGE FAILED\n", __LINE__);
 					mutex_unlock(&data->work_mutex);
 					return -EIO;
@@ -943,8 +964,7 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			if (enable_sensor == 1) {
 				vi5300_infomsg("enter HWLASER_IOCTL_STOP");
 				rc = vi5300_func_tbl->Stop_Continuous_Measure(data);
-				if(rc != VI5300_ERROR_NONE)
-				{
+				if (rc != VI5300_ERROR_NONE) {
 					vi5300_errmsg("%d, CHIP STOP RANGE FAILED\n", __LINE__);
 					mutex_unlock(&data->work_mutex);
 					return -EIO;
@@ -959,8 +979,7 @@ static long vi5300_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			vi5300_disable_irq(data);
 			data->fwdl_status = 0;
 			rc = vi5300_func_tbl->Power_OFF(data);
-			if(rc != VI5300_ERROR_NONE)
-			{
+			if (rc != VI5300_ERROR_NONE) {
 				vi5300_errmsg("%d, CHIP POWER OFF FAILED\n", __LINE__);
 				mutex_unlock(&data->work_mutex);
 				return -EIO;
@@ -1059,8 +1078,7 @@ int vi5300_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	CAM_ERR(CAM_SENSOR, "enter vi5300_probe");
 	vi5300_data = kzalloc(sizeof(struct vi5300_data), GFP_KERNEL);
-	if(!vi5300_data)
-	{
+	if (!vi5300_data) {
 		vi5300_errmsg("devm_kzalloc error\n");
 		return -ENOMEM;
 	}
@@ -1106,8 +1124,7 @@ int vi5300_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	vi5300_func_tbl->Chip_Register_Init(vi5300_data);
 	vi5300_read_byte(vi5300_data, VI5300_REG_DEV_ADDR, &buf);
 	vi5300_func_tbl->Power_OFF(vi5300_data);
-	if(buf != VI5300_CHIP_ADDR)
-	{
+	if (buf != VI5300_CHIP_ADDR) {
 		vi5300_errmsg("VI5300 I2C Transfer Failed\n");
 		ret = -EFAULT;
 		goto exit_free_irq;
@@ -1117,8 +1134,7 @@ int vi5300_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	vi5300_data->miscdev.minor = MISC_DYNAMIC_MINOR;
 	vi5300_data->miscdev.name = VI5300_MISC_DEV_NAME;
 	vi5300_data->miscdev.fops = &vi5300_fops;
-	if (misc_register(&vi5300_data->miscdev) != 0)
-	{
+	if (misc_register(&vi5300_data->miscdev) != 0) {
 		vi5300_errmsg("Could not register misc. dev for VI5300 Sensor\n");
 		ret = -ENOMEM;
 		goto exit_free_irq;
@@ -1159,13 +1175,11 @@ int vi5300_remove(struct i2c_client *client)
 		vi5300_dbgmsg("to unregister misc dev\n");
 		misc_deregister(&data->miscdev);
 	}
-	if(data->xshut_gpio)
-	{
+	if (data->xshut_gpio) {
 		gpio_direction_output(data->xshut_gpio, 0);
 		gpio_free(data->xshut_gpio);
 	}
-	if(data->irq_gpio)
-	{
+	if (data->irq_gpio) {
 		free_irq(data->irq, data);
 		gpio_free(data->irq_gpio);
 	}

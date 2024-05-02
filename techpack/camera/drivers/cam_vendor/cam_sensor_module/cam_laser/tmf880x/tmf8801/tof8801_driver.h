@@ -127,6 +127,10 @@ struct tof_sensor_chip {
 	struct class *cls;
 	struct device *clsdev;
 
+	/* raw data from device */
+	int distance;
+	int confidence;
+
 	/* calibration data */
 	hwlaser_info_t pinfo;
 	hwlaser_RangingData_t udata;

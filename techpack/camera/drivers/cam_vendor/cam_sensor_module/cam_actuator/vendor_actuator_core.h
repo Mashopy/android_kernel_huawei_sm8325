@@ -28,5 +28,8 @@ void vendor_actuator_update_req_mgr(struct cam_actuator_ctrl_t *a_ctrl,
 
 void vendor_actuator_init_pwctrl_state(struct cam_actuator_ctrl_t *a_ctrl);
 
+int32_t vendor_actuator_retry_dw9781(struct camera_io_master *master_info,
+	struct i2c_settings_list *i2c_list, int32_t ret_val);
+
 #endif
 /* _VENDOR_ACTUATOR_CORE_H_ */

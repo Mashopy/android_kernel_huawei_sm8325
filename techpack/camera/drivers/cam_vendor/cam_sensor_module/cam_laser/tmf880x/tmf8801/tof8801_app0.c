@@ -924,11 +924,15 @@ int tof8801_app0_clock_skew_correct_results(struct tof_sensor_chip *chip)
 	if (chip->driver_debug) {
 		dev_info(&chip->client->dev,
 				"clk_skew: host_ts: %u (us) dev_ts: %u (5MHz cnt) "
-				"old_dist: %u new_dist: %u\n", (u32)usec_epoch, tof_clk_cnt,
-				result->data.distPeak, cr_dist);
+				"old_dist: %u new_dist: %u confidence: %d\n", (u32)usec_epoch, tof_clk_cnt,
+				result->data.distPeak, cr_dist, result->data.resultInfo.reliabilityE);
 	}
 	/* Special Situation: when driver receive this special num, it means dis is less than 10cm */
 	distance_within_10cm = (result->data.distPeak == NEAREST_DISTANCE_STATUS) ? 1 : 0;
+
+	chip->distance = cr_dist;
+	chip->confidence = result->data.resultInfo.reliabilityE;
+
 	result->data.distPeak = cr_dist;
 	if (chip->driver_debug)
 		dev_info(&chip->client->dev,
@@ -978,7 +982,7 @@ int tof8801_app0_clock_skew_correct_results(struct tof_sensor_chip *chip)
 				result->data.distPeak);
 		}
 	}
-	// Save latest timestamp for periodic capture mode
+	/* Save latest timestamp for periodic capture mode */
 	memcpy(&chip->app0_app.save_ts, &end_ts, sizeof(chip->app0_app.save_ts));
 	return error;
 }
