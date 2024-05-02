@@ -1017,6 +1017,17 @@ gen_headers_out_arm64 = [
     "display/hdcp/msm_hdmi_hdcp_mgr.h",
     "vidc/media/msm_media_info.h",
     "vidc/media/msm_vidc_utils.h",
+
+    "linux/esoc_ctrl.h",
+    "linux/android/binder.h",
+    "camera/media/custom/cam_laser.h",
+    "camera/media/custom/hwcam_define.h",
+    "linux/mhi.h",
+    "linux/eavb_shared.h",
+    "linux/netfilter_ipv4/ipt_TRIGGER.h",
+    "camera/media/cam_isp_sfe.h",
+    "linux/netfilter_ipv4/ipt_NATTYPE.h",
+    "audio/linux/msm_audio_ar.h",
 ]
 
 genrule {
