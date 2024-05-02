@@ -1319,8 +1319,6 @@ int do_send_sig_info(int sig, struct kernel_siginfo *info, struct task_struct *p
 	unsigned long flags;
 	int ret = -ESRCH;
 #ifdef CONFIG_DFX_DIE_CATCH
-	#define DBUG_SIG 35
-	#define SI_CODE_MAGIC 78569
 	#define EXIT_CATCH_FORAPP_FLAG (0x8)
 	#define KILL_CATCH_OLD_FLAG (KILL_CATCH_FLAG | EXIT_CATCH_FLAG | EXIT_CATCH_ABORT_FLAG)
 	int screen_bl_level = 0;
@@ -1328,13 +1326,6 @@ int do_send_sig_info(int sig, struct kernel_siginfo *info, struct task_struct *p
 	pid_t to_pid = 0;
 	char dst_comm[TASK_COMM_LEN] = {0};
 	unsigned short cur_flags = 0;
-#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
-	kernel_siginfo_t new_sigino;
-	clear_siginfo(&new_sigino);
-#else
-	struct siginfo new_sigino;
-	memset(&new_sigino, 0, sizeof(new_sigino));
-#endif
 #endif
 #ifdef CONFIG_HUAWEI_KSTATE
 	if (sig == SIGKILL || sig == SIGTERM || sig == SIGABRT || sig == SIGQUIT)
@@ -1368,18 +1359,9 @@ int do_send_sig_info(int sig, struct kernel_siginfo *info, struct task_struct *p
 	cur_flags = current->signal->unexpected_die_catch_flags;
 	trace_hung_wp_screen_getbl(&screen_bl_level);
 	if ((catch_flags & EXIT_CATCH_FORAPP_FLAG) && !(cur_flags & KILL_CATCH_OLD_FLAG) && screen_bl_level) {
-		if (current->pid != 1 && (sig == SIGKILL || sig == SIGTERM) && to_pid != current->pid) {
-			new_sigino.si_signo = DBUG_SIG;
-			new_sigino.si_errno = 0;
-			new_sigino.si_code = SI_CODE_MAGIC;
+		if (current->pid != 1 && (sig == SIGKILL || sig == SIGTERM) && to_pid != current->pid)
 			pr_warn("ExitCatch:%s:%d send signal %d to dst_process %s:%d\n",
 				current->comm, current->pid, sig, dst_comm, to_pid);
-#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
-			force_sig_info(&new_sigino);
-#else
-			force_sig_info(DBUG_SIG, &new_sigino, current);
-#endif
-		}
 	}
 #endif
 	return ret;

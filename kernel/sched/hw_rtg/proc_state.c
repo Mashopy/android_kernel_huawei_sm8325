@@ -858,7 +858,7 @@ int parse_aux_thread(const struct rtg_str_data *rs_data)
 	return sched_rtg_aux(tid, enable, &info);
 }
 
-#define AUX_KEY_COMM_MAX 12
+#define AUX_KEY_COMM_MAX 16
 struct st_aux_comms {
 	int count;
 	char comms[AUX_KEY_COMM_MAX][TASK_COMM_LEN];
@@ -1276,14 +1276,14 @@ int update_frame_state(const struct rtg_data_head *rtg_head,
 
 int update_act_state(const struct rtg_data_head *rtg_head, bool in_activity)
 {
-#if ((!defined(CONFIG_HW_QOS_THREAD)) && (!defined(CONFIG_HW_VIP_THREAD)))
-	return -ACT_ERR_QOS;
-#endif
 	int margin;
 	int id;
 	int rate;
 	struct frame_info *frame_info = NULL;
 
+#if ((!defined(CONFIG_HW_QOS_THREAD)) && (!defined(CONFIG_HW_VIP_THREAD)))
+	return -ACT_ERR_QOS;
+#endif
 	if (!rtg_head)
 		return -INVALID_ARG;
 

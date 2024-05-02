@@ -233,4 +233,8 @@ config HW_AI_SCHED
 	help
 	  This option enable AI scheduling for game scene
 
-
+config SCHED_DEADLINE_ENABLE
+	bool "Support deadline scheduler switch"
+	default n
+	help
+	  To avoid task_struct expanded when deadline scheduler is rarely used.

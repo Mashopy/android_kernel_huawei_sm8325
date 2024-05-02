@@ -72,12 +72,75 @@ void rwsem_list_add(struct task_struct *tsk,
 		list_add_tail(entry, head);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)) && defined(CONFIG_ARM64)
+#define RWSEM_OWNER_BOOST       (1UL << 6)
+static bool is_rwsem_owner_boost(struct rw_semaphore *sem)
+{
+	return atomic_long_read(&sem->count) & RWSEM_OWNER_BOOST;
+}
+
+static void rwsem_owner_set_boost(struct rw_semaphore *sem)
+{
+	unsigned long count;
+
+	count = atomic_long_read(&sem->count);
+	do {
+		if (count & RWSEM_OWNER_BOOST)
+			break;
+	} while (!atomic_long_try_cmpxchg(&sem->count, &count,
+		count | RWSEM_OWNER_BOOST));
+}
+
+static void rwsem_owner_clear_boost(struct rw_semaphore *sem)
+{
+	unsigned long count;
+
+	count = atomic_long_read(&sem->count);
+	do {
+		if (!(count & RWSEM_OWNER_BOOST))
+			break;
+	} while (!atomic_long_try_cmpxchg(&sem->count, &count,
+		count & ~RWSEM_OWNER_BOOST));
+}
+#elif defined(CONFIG_ARM64)
+#define RWSEM_OWNER_BOOST       (1UL << 17)
+static bool is_rwsem_owner_boost(struct rw_semaphore *sem)
+{
+#ifdef CONFIG_RWSEM_PRIO_AWARE
+	return sem->m_count & RWSEM_OWNER_BOOST;
+#else
+	return false;
+#endif
+}
+
+static void rwsem_owner_set_boost(struct rw_semaphore *sem)
+{
+#ifdef CONFIG_RWSEM_PRIO_AWARE
+	sem->m_count |= RWSEM_OWNER_BOOST;
+#endif
+}
+
+static void rwsem_owner_clear_boost(struct rw_semaphore *sem)
+{
+#ifdef CONFIG_RWSEM_PRIO_AWARE
+	sem->m_count &= ~RWSEM_OWNER_BOOST;
+#endif
+}
+#endif
+
 void rwsem_dynamic_vip_enqueue(
 	struct task_struct *tsk, struct task_struct *waiter_task,
 	struct task_struct *owner, struct rw_semaphore *sem)
 {
-	if (!waiter_task || !tsk || !sem || sem->vip_dep_task || !rwsem_owner_is_writer(owner))
+	if (!waiter_task || !tsk || !sem || !rwsem_owner_is_writer(owner))
 		return;
+#ifdef CONFIG_ARM64
+	if (is_rwsem_owner_boost(sem))
+#else
+	if (sem->vip_dep_task != NULL)
+#endif
+		return;
+
 	if (test_task_vip(owner))
 		return;
 	if (!test_set_dynamic_vip(tsk)) {
@@ -94,16 +157,28 @@ void rwsem_dynamic_vip_enqueue(
 #endif
 	}
 	dynamic_vip_enqueue(owner, DYNAMIC_VIP_RWSEM, tsk->vip_depth);
+
+#ifdef CONFIG_ARM64
+	rwsem_owner_set_boost(sem);
+#else
 	sem->vip_dep_task = owner;
+#endif
 }
 
 void rwsem_dynamic_vip_dequeue(struct rw_semaphore *sem,
 	struct task_struct *tsk)
 {
+#ifdef CONFIG_ARM64
+	if (tsk && sem && is_rwsem_owner_boost(sem)) {
+		dynamic_vip_dequeue(tsk, DYNAMIC_VIP_RWSEM);
+		rwsem_owner_clear_boost(sem);
+	}
+#else
 	if (tsk && sem && sem->vip_dep_task == tsk) {
 		dynamic_vip_dequeue(tsk, DYNAMIC_VIP_RWSEM);
 		sem->vip_dep_task = NULL;
 	}
+#endif
 }
 
 /*lint -restore*/

@@ -406,7 +406,7 @@ long __sys_setregid(gid_t rgid, gid_t egid)
 	new->fsgid = new->egid;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!new->gid.val && (checkroot_setresgid(old->gid.val)))
+	if (!from_kgid_munged(&init_user_ns, new->gid) && (checkroot_setresgid(old->gid.val)))
 		goto error;
 #endif
 
@@ -453,7 +453,7 @@ long __sys_setgid(gid_t gid)
 		goto error;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!gid && (checkroot_setgid(old->gid.val)))
+	if (!from_kgid_munged(&init_user_ns, new->gid) && (checkroot_setgid(old->gid.val)))
 		goto error;
 #endif
 
@@ -567,7 +567,7 @@ long __sys_setreuid(uid_t ruid, uid_t euid)
 		goto error;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!new->uid.val && (checkroot_setresuid(old->uid.val)))
+	if (!from_kuid_munged(&init_user_ns, new->uid) && (checkroot_setresuid(old->uid.val)))
 		goto error;
 #endif
 
@@ -630,7 +630,7 @@ long __sys_setuid(uid_t uid)
 		goto error;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!uid && (checkroot_setuid(old->uid.val)))
+	if (!from_kuid_munged(&init_user_ns, new->uid) && (checkroot_setuid(old->uid.val)))
 		goto error;
 #endif
 
@@ -710,7 +710,7 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 		goto error;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!new->uid.val && (checkroot_setresuid(old->uid.val)))
+	if (!from_kuid_munged(&init_user_ns, new->uid) && (checkroot_setresuid(old->uid.val)))
 		goto error;
 #endif
 
@@ -794,7 +794,7 @@ long __sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
 	new->fsgid = new->egid;
 
 #ifdef CONFIG_HUAWEI_PROC_CHECK_ROOT
-	if (!new->gid.val && (checkroot_setresgid(old->gid.val)))
+	if (!from_kgid_munged(&init_user_ns, new->gid) && (checkroot_setresgid(old->gid.val)))
 		goto error;
 #endif
 
@@ -1577,6 +1577,8 @@ int do_prlimit(struct task_struct *tsk, unsigned int resource,
 
 	if (resource >= RLIM_NLIMITS)
 		return -EINVAL;
+	resource = array_index_nospec(resource, RLIM_NLIMITS);
+
 	if (new_rlim) {
 		if (new_rlim->rlim_cur > new_rlim->rlim_max)
 			return -EINVAL;

@@ -2409,6 +2409,9 @@ static void show_rcu_nocb_gp_state(struct rcu_data *rdp)
 		rnp->grplo, rnp->grphi, READ_ONCE(rdp->nocb_gp_loops));
 }
 
+/* Show the content of segcblist, including addr and callback function. */
+static void show_segcblist_content(struct rcu_data *rdp);
+
 /* Dump out nocb kthread state for the specified rcu_data structure. */
 static void show_rcu_nocb_state(struct rcu_data *rdp)
 {
@@ -2437,6 +2440,10 @@ static void show_rcu_nocb_state(struct rcu_data *rdp)
 		".N"[!rcu_segcblist_restempty(rsclp, RCU_NEXT_READY_TAIL)],
 		".B"[!!rcu_cblist_n_cbs(&rdp->nocb_bypass)],
 		rcu_segcblist_n_cbs(&rdp->cblist));
+
+	/* Only show detail in the progress of panic */
+	if (oops_in_progress)
+		show_segcblist_content(rdp);
 
 	/* It is OK for GP kthreads to have GP state. */
 	if (rdp->nocb_gp_rdp == rdp)

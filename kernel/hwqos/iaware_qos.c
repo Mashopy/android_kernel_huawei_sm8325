@@ -22,6 +22,9 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
+#ifdef CONFIG_ARM
+#include <linux/fs.h>
+#endif
 #include <uapi/linux/sched/types.h>
 
 #ifdef CONFIG_COMPAT

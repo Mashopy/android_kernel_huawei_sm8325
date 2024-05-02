@@ -225,9 +225,15 @@ int set_frame_margin(struct frame_info *frame_info, int margin)
 		return -EINVAL;
 
 	frame_info->vload_margin = margin;
+#ifdef CONFIG_ARM
+	frame_info->max_vload_time =
+		div64_u64(frame_info->qos_frame_time, NSEC_PER_MSEC) +
+		frame_info->vload_margin;
+#else
 	frame_info->max_vload_time =
 		frame_info->qos_frame_time / NSEC_PER_MSEC +
 		frame_info->vload_margin;
+#endif
 	id = frame_info->rtg->id;
 	trace_rtg_frame_sched(id, "FRAME_MARGIN", margin);
 	trace_rtg_frame_sched(id, "FRAME_MAX_TIME", frame_info->max_vload_time);
@@ -471,7 +477,11 @@ EXPORT_SYMBOL_GPL(set_frame_timestamp);
 static u64 calc_frame_vload(const struct frame_info *frame_info, u64 timeline)
 {
 	u64 vload;
+#ifdef CONFIG_ARM
+	int vtime = div64_u64(timeline, NSEC_PER_MSEC);
+#else
 	int vtime = timeline / NSEC_PER_MSEC;
+#endif
 	int max_time = frame_info->max_vload_time;
 	int factor;
 
@@ -499,8 +509,13 @@ static inline void frame_boost(struct frame_info *frame_info)
 static inline u64 calc_frame_exec(const struct frame_info *frame_info)
 {
 	if (frame_info->qos_frame_time > 0)
+#ifdef CONFIG_ARM
+		return div64_u64(frame_info_rtg_load(frame_info)->curr_window_exec <<
+			SCHED_CAPACITY_SHIFT, frame_info->qos_frame_time);
+#else
 		return (frame_info_rtg_load(frame_info)->curr_window_exec <<
 			SCHED_CAPACITY_SHIFT) / frame_info->qos_frame_time;
+#endif
 	else
 		return 0;
 }
@@ -544,8 +559,13 @@ static u64 calc_prev_frame_load_util(const struct frame_info *frame_info)
 	if (prev_frame_load >= qos_frame_time)
 		frame_util = FRAME_MAX_LOAD;
 	else
+#ifdef CONFIG_ARM
+		frame_util = div64_u64(prev_frame_load << SCHED_CAPACITY_SHIFT,
+				frame_info->qos_frame_time);
+#else
 		frame_util = (prev_frame_load << SCHED_CAPACITY_SHIFT) /
 			frame_info->qos_frame_time;
+#endif
 
 	frame_util = clamp_t(unsigned long, frame_util,
 		frame_info->prev_min_util,
@@ -562,8 +582,13 @@ static u64 calc_prev_fake_load_util(const struct frame_info *frame_info)
 	u64 frame_util = 0;
 
 	if (prev_frame_time > 0)
+#ifdef CONFIG_ARM
+		frame_util = div64_u64(prev_frame_load << SCHED_CAPACITY_SHIFT,
+			prev_frame_time);
+#else
 		frame_util = (prev_frame_load << SCHED_CAPACITY_SHIFT) /
 			prev_frame_time;
+#endif
 
 	frame_util = clamp_t(unsigned long, frame_util,
 		frame_info->prev_min_util,
@@ -856,7 +881,11 @@ void update_frame_info_tick_common(struct related_thread_group *grp)
 	timeline = wallclock - window_start;
 
 	trace_rtg_frame_sched(id, "update_curr_pid", current->pid);
+#ifdef CONFIG_ARM
+	trace_rtg_frame_sched(id, "frame_timeline", div64_u64(timeline, NSEC_PER_MSEC));
+#else
 	trace_rtg_frame_sched(id, "frame_timeline", timeline / NSEC_PER_MSEC);
+#endif
 
 	if (update_frame_info_tick_inner(grp->id, frame_info, timeline) == -EINVAL)
 		return;

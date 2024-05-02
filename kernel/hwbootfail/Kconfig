@@ -2,6 +2,12 @@
 # huawei device state monitor configuration
 #
 
+config SHUT_DETECTOR
+	bool "Shut Detector"
+	default n
+	help
+	  If you say yes here you get support for huawei Shut Detector solution.
+
 config BOOT_DETECTOR
 	bool "Boot Detector"
 	default n
@@ -50,3 +56,8 @@ config BOOT_DETECTOR_DBG
         help
           If you say yes here you get support for huawei Boot Detector debug.
 
+config LARGE_TA_MEMORY
+        bool "LARGE_TA_MEMORY for sm6225"
+        default n
+        help
+          If you say yes here you get support for 81M TA apps memory.

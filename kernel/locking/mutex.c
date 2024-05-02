@@ -55,10 +55,6 @@ __mutex_init(struct mutex *lock, const char *name, struct lock_class_key *key)
 	osq_lock_init(&lock->osq);
 #endif
 
-#ifdef CONFIG_HW_VIP_THREAD
-	lock->vip_dep_task = NULL;
-#endif
-
 	debug_mutex_init(lock, name, key);
 }
 EXPORT_SYMBOL(__mutex_init);
@@ -71,12 +67,18 @@ EXPORT_SYMBOL(__mutex_init);
  * Bit0 indicates a non-empty waiter list; unlock must issue a wakeup.
  * Bit1 indicates unlock needs to hand the lock to the top-waiter
  * Bit2 indicates handoff has been done and we're waiting for pickup.
+ * Bit3 indicates mutex owner has been boosted.
  */
 #define MUTEX_FLAG_WAITERS	0x01
 #define MUTEX_FLAG_HANDOFF	0x02
 #define MUTEX_FLAG_PICKUP	0x04
 
+#ifdef CONFIG_HW_VIP_THREAD
+#define MUTEX_FLAG_OWNER_BOOST  0x08
+#define MUTEX_FLAGS		0x0f
+#else
 #define MUTEX_FLAGS		0x07
+#endif
 
 /*
  * Internal helper function; C doesn't allow us to hide it :/
@@ -98,6 +100,13 @@ bool mutex_is_locked(struct mutex *lock)
 	return __mutex_owner(lock) != NULL;
 }
 EXPORT_SYMBOL(mutex_is_locked);
+
+#ifdef CONFIG_QCOM_DFX_LOCK_TRACE
+struct task_struct *mutex_owner(struct mutex *lock)
+{
+	return __mutex_owner(lock);
+}
+#endif
 
 __must_check enum mutex_trylock_recursive_enum
 mutex_trylock_recursive(struct mutex *lock)

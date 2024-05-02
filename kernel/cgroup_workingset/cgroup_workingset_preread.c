@@ -172,7 +172,7 @@ static bool workingset_adjust_page_lru(struct page *page)
 			struct lruvec *lruvec = NULL;
 			struct zone *zone = page_zone(page);
 #if KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE
-            spin_lock_irq(&zone->zone_pgdat->lru_lock);
+			spin_lock_irq(&zone->zone_pgdat->lru_lock);
 			lruvec = mem_cgroup_page_lruvec(page,
 			    zone->zone_pgdat);
 #elif KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE

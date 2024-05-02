@@ -295,7 +295,8 @@ int is_boot_detector_enabled(void)
 {
 	int boot_detector_enable_flag;
 
-	down_interruptible(&detector_ctl_sem);
+	if (down_interruptible(&detector_ctl_sem))
+		print_info(BOOT_DETECTOR_TAG "Failed to down_interruptible");
 	boot_detector_enable_flag = boot_detector_enabled;
 	up(&detector_ctl_sem);
 
@@ -315,7 +316,8 @@ int is_bopd_supported(void)
 {
 	int bopd_supported_flag;
 
-	down_interruptible(&detector_ctl_sem);
+	if (down_interruptible(&detector_ctl_sem))
+		print_info(BOOT_DETECTOR_TAG "Failed to down_interruptible");
 	bopd_supported_flag = bopd_supported;
 	up(&detector_ctl_sem);
 
@@ -407,7 +409,8 @@ void dump_init_log(void)
 
 static void boot_detector_ctl(int enable_flag)
 {
-	down_interruptible(&detector_ctl_sem);
+	if (down_interruptible(&detector_ctl_sem))
+		print_info(BOOT_DETECTOR_TAG "Failed to down_interruptible");
 	boot_detector_enabled = (enable_flag != 0) ? true : false;
 	up(&detector_ctl_sem);
 }
@@ -630,6 +633,40 @@ static long ioctl_stage(struct file *file,
 	}
 
 	return ret;
+}
+
+static bool is_cmd_of_shut_stage(unsigned int cmd)
+{
+	return (cmd == SET_SHUT_STAGE);
+}
+
+static long ioctl_shut_stage(struct file *file,
+	unsigned int cmd,
+	unsigned long arg)
+{
+#ifndef CONFIG_SHUT_DETECTOR
+	print_info("ShutDetector is disabled!\n");
+	return -EFAULT;
+#else
+	long ret = 0;
+	enum bootfail_errorcode error_code;
+
+	switch (cmd) {
+	case SET_SHUT_STAGE:
+		error_code = set_shut_stage();
+		if (error_code != BF_OK) {
+			print_err("set_shut_stage ret: %d!\n", error_code);
+			ret = -EFAULT;
+		}
+		break;
+	default:
+		print_err("Invalid CMD: 0x%x\n", cmd);
+		ret = -EFAULT;
+		break;
+	}
+
+	return ret;
+#endif
 }
 
 static bool is_cmd_of_boot_timer(unsigned int cmd)
@@ -1086,6 +1123,8 @@ static long boot_detector_ioctl(struct file *file,
 		ret = ioctl_storage_rofa(file, cmd, arg);
 	else if (is_cmd_of_stage(cmd))
 		ret = ioctl_stage(file, cmd, arg);
+	else if (is_cmd_of_shut_stage(cmd))
+		ret = ioctl_shut_stage(file, cmd, arg);
 	else if (is_cmd_of_boot_timer(cmd))
 		ret = ioctl_boot_timer(file, cmd, arg);
 	else if (is_cmd_of_action_timer(cmd))

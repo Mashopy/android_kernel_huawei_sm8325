@@ -126,7 +126,8 @@
  * Bit  0    - writer locked bit
  * Bit  1    - waiters present bit
  * Bit  2    - lock handoff bit
- * Bits 3-6  - reserved
+ * Bits 3-5  - reserved
+ * Bit  6    - owner boost bit
  * Bit  7    - vip bit
  * Bits 8-62 - 55-bit reader count
  * Bit  63   - read fail bit
@@ -160,6 +161,9 @@
 #define RWSEM_WRITER_LOCKED	(1UL << 0)
 #define RWSEM_FLAG_WAITERS	(1UL << 1)
 #define RWSEM_FLAG_HANDOFF	(1UL << 2)
+#ifdef CONFIG_HW_VIP_THREAD
+#define RWSEM_OWNER_BOOST       (1UL << 6)
+#endif
 #ifdef CONFIG_HW_VIP_SEMAPHORE
 #define RWSEM_FLAG_VIP		(1UL << 7)
 #endif
@@ -376,9 +380,6 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	osq_lock_init(&sem->osq);
 #endif
 	trace_android_vh_rwsem_init(sem);
-#ifdef CONFIG_HW_VIP_THREAD
-	sem->vip_dep_task = NULL;
-#endif
 }
 EXPORT_SYMBOL(__init_rwsem);
 

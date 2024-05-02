@@ -33,6 +33,9 @@
 #include "include/rtg_pseudo.h"
 #include "../hw_walt/walt_hw.h"
 #include "../hw_walt/walt_common.h"
+#ifdef CONFIG_ARM
+#include "include/frame.h"
+#endif
 
 #if defined(CONFIG_HW_RTG_NORMALIZED_UTIL) && defined(CONFIG_HW_SCHED_CLUSTER)
 #include "../hw_cluster/sched_cluster.h"
@@ -457,7 +460,7 @@ void sched_update_group_load(struct rq *rq)
 
 	read_unlock_irqrestore(&related_thread_group_lock, flags);
 }
-elif !defined(CONFIG_HW_CGROUP_RTG)
+#elif !defined(CONFIG_HW_CGROUP_RTG)
 static inline void group_sync_window_start(struct rq *rq,
 			struct group_cpu_time *cpu_time)
 {

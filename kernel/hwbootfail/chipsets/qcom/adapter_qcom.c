@@ -28,6 +28,9 @@
 #include <hwbootfail/chipsets/common/bootfail_chipsets.h>
 #include <platform/trace/events/rainbow.h>
 #include <platform/linux/rainbow.h>
+#ifdef CONFIG_SHUT_DETECTOR
+#include <trace/hooks/qcom_wdg.h>
+#endif
 
 /* bootfail reserve ddr region */
 static void *g_bf_rmem_addr;
@@ -436,6 +439,25 @@ static void get_boot_stage_ops(struct adapter *padp)
 	padp->stage_ops.get_stage = qcom_get_boot_stage;
 }
 
+#ifdef CONFIG_SHUT_DETECTOR
+static int qcom_set_shut_stage(void)
+{
+	print_err("start the shut detector, stop pet watchdog\n");
+	trace_android_vh_qwdt_pet_stop(NULL);
+	return 0;
+}
+
+static void get_shut_stage_ops(struct adapter *padp)
+{
+	if (padp == NULL) {
+		print_invalid_params("padp: %p\n", padp);
+		return;
+	}
+
+	padp->shut_stage_ops.set_stage = qcom_set_shut_stage;
+}
+#endif
+
 /* Qcom platform adapter init */
 static void platform_adapter_init(struct adapter *padp)
 {
@@ -449,6 +471,9 @@ static void platform_adapter_init(struct adapter *padp)
 	get_log_ops_info(padp);
 	get_sysctl_ops(padp);
 	get_boot_stage_ops(padp);
+#ifdef CONFIG_SHUT_DETECTOR
+	get_shut_stage_ops(padp);
+#endif
 	padp->prevent.degrade = bf_qcom_degrade;
 	padp->prevent.bypass = bf_qcom_bp;
 	padp->prevent.load_backup = bf_qcom_load_backup;

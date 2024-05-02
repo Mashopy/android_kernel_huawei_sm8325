@@ -21,6 +21,9 @@
 
 #ifdef CONFIG_HW_CGROUP_RTG
 #include "rtg.h"
+#ifdef CONFIG_ARM
+#include <linux/version.h>
+#endif
 
 void _do_update_preferred_cluster(struct related_thread_group *grp);
 void do_update_preferred_cluster(struct related_thread_group *grp);

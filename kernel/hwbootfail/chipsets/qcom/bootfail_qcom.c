@@ -41,7 +41,11 @@ struct timer_list g_qcom_pwk_timer;
 unsigned int get_bootup_time(void)
 {
 	unsigned long long ts = sched_clock();
+#ifdef CONFIG_ARM64
 	return (unsigned int)(ts / (NS_PER_SEC));
+#else
+	return (unsigned int)(div_u64(ts, NS_PER_SEC));
+#endif
 }
 
 void set_valid_long_press_flag(void)

@@ -28,7 +28,7 @@
 #include "include/rtg_sched.h"
 
 #define RTG_FRAME_PRIO 1
-#define MAX_RT_AUX_THREADS 5
+#define MAX_RT_AUX_THREADS 8
 
 atomic_t g_aux_thread_num = ATOMIC_INIT(0);
 atomic_t g_rt_aux_thread_num = ATOMIC_INIT(0);

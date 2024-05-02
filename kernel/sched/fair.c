@@ -43,6 +43,10 @@ static inline bool task_fits_max(struct task_struct *p, int cpu);
 #include <chipset_common/hwcfs/hwcfs_common.h>
 #endif
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+#include <chipset_common/reclaim_acct/reclaim_acct.h>
+#endif
+
 /*
  * Targeted preemption latency for CPU-bound tasks:
  *
@@ -1022,6 +1026,10 @@ update_stats_enqueue_sleeper(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 			trace_sched_stat_blocked(tsk, delta);
 			trace_sched_blocked_reason(tsk);
+
+#if defined(CONFIG_SCHEDSTATS) && defined(CONFIG_HW_RECLAIM_ACCT)
+			get_ra_sched_blocked_info(tsk, delta);
+#endif
 
 			/*
 			 * Blocking time is in units of nanosecs, so shift by

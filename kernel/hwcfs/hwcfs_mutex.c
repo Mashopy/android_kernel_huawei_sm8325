@@ -24,6 +24,33 @@
 #include <linux/list.h>
 #include <chipset_common/hwcfs/hwcfs_common.h>
 
+#ifdef CONFIG_ARM64
+#define MUTEX_FLAG_OWNER_BOOST  0x08
+
+static bool is_mutex_owner_boost(struct mutex *lock)
+{
+	return atomic_long_read(&lock->owner) & MUTEX_FLAG_OWNER_BOOST;
+}
+
+static void mutex_owner_set_boost(struct mutex *lock)
+{
+	unsigned long owner;
+
+	owner = atomic_long_read(&lock->owner);
+	if (!(owner & MUTEX_FLAG_OWNER_BOOST))
+		atomic_long_or(MUTEX_FLAG_OWNER_BOOST, &lock->owner);
+}
+
+static void mutex_owner_clear_boost(struct mutex *lock)
+{
+	unsigned long owner;
+
+	owner = atomic_long_read(&lock->owner);
+	if (owner & MUTEX_FLAG_OWNER_BOOST)
+		atomic_long_andnot(MUTEX_FLAG_OWNER_BOOST, &lock->owner);
+}
+#endif
+
 static void mutex_list_add_vip(struct list_head *entry, struct list_head *head)
 {
 	struct list_head *pos = NULL;
@@ -49,17 +76,21 @@ void mutex_list_add(struct task_struct *task,
 	if (!entry || !head || !lock)
 		return;
 
+#ifdef CONFIG_ARM64
+	if (is_vip && !is_mutex_owner_boost(lock))
+#else
 	if (is_vip && !lock->vip_dep_task)
+#endif
 		mutex_list_add_vip(entry, head);
 	else
 		list_add_tail(entry, head);
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0))
-#define MUTEX_FLAGS    0x07
+#define MUTEX_FLAGS    0x0f
 static inline struct task_struct *__mutex_owner(struct mutex *lock)
 {
-    return (struct task_struct *)(atomic_long_read(&lock->owner) & ~MUTEX_FLAGS);
+	return (struct task_struct *)(atomic_long_read(&lock->owner) & ~MUTEX_FLAGS);
 }
 #endif
 
@@ -77,18 +108,33 @@ void mutex_dynamic_vip_enqueue(struct mutex *lock, struct task_struct *task)
 #else
 	owner = lock->owner;
 #endif
+
+#ifdef CONFIG_ARM64
+	if (is_vip && !is_mutex_owner_boost(lock) && owner && !test_task_vip(owner)) {
+		dynamic_vip_enqueue(owner, DYNAMIC_VIP_MUTEX, task->vip_depth);
+		mutex_owner_set_boost(lock);
+	}
+#else
 	if (is_vip && !lock->vip_dep_task && owner && !test_task_vip(owner)) {
 		dynamic_vip_enqueue(owner, DYNAMIC_VIP_MUTEX, task->vip_depth);
 		lock->vip_dep_task = owner;
 	}
+#endif
 }
 
 void mutex_dynamic_vip_dequeue(struct mutex *lock, struct task_struct *task)
 {
+#ifdef CONFIG_ARM64
+	if (lock && is_mutex_owner_boost(lock)) {
+		dynamic_vip_dequeue(task, DYNAMIC_VIP_MUTEX);
+		mutex_owner_clear_boost(lock);
+	}
+#else
 	if (lock && lock->vip_dep_task == task) {
 		dynamic_vip_dequeue(task, DYNAMIC_VIP_MUTEX);
 		lock->vip_dep_task = NULL;
 	}
+#endif
 }
 
 /*lint -restore*/

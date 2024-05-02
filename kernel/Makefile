@@ -14,6 +14,7 @@ obj-y     = fork.o exec_domain.o panic.o \
 
 obj-$(CONFIG_MODULES) += kmod.o
 obj-$(CONFIG_MULTIUSER) += groups.o
+obj-$(CONFIG_QCOM_DFX_LOCK_TRACE) += dfx_lock_trace.o
 
 ifdef CONFIG_FUNCTION_TRACER
 # Do not trace internal ftrace files

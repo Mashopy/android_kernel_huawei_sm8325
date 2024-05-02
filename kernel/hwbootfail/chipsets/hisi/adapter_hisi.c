@@ -18,10 +18,16 @@
 #include <hwbootfail/chipsets/common/bootfail_common.h>
 #include <hwbootfail/chipsets/common/adapter_common.h>
 #include <hwbootfail/chipsets/common/bootfail_chipsets.h>
+#ifdef CONFIG_SHUT_DETECTOR
+#include <platform_include/basicplatform/linux/hck/mntn/hck_dfx_wdt.h>
+#endif
 
 /* ----local macroes ---- */
 #define BL_LOG_NAME "fastboot_log"
 #define KERNEL_LOG_NAME "last_kmsg"
+#ifdef CONFIG_SHUT_DETECTOR
+#define HISI_SHUT_TIMEOUT 60
+#endif
 
 /* ---- local prototypes ---- */
 enum boot_detector_modid {
@@ -219,6 +225,25 @@ static void get_raw_part_info(struct adapter *padp)
 	padp->bfi_part.part_size = (unsigned int)get_bfi_part_size();
 }
 
+#ifdef CONFIG_SHUT_DETECTOR
+static int hisi_set_shut_stage(void)
+{
+	print_err("start the shut detector, stop pet watchdog\n");
+	CALL_HCK_VH(hck_dfx_wdt_shutdown_oneshot, HISI_SHUT_TIMEOUT);
+	return 0;
+}
+
+static void get_shut_stage_ops(struct adapter *padp)
+{
+	if (padp == NULL) {
+		print_invalid_params("padp: %p\n", padp);
+		return;
+	}
+
+	padp->shut_stage_ops.set_stage = hisi_set_shut_stage;
+}
+#endif
+
 static void get_boot_stage_ops(struct adapter *padp)
 {
 	if (padp == NULL) {
@@ -301,6 +326,9 @@ static void platform_adapter_init(struct adapter *padp)
 	get_log_ops_info(padp);
 	get_sysctl_ops(padp);
 	get_boot_stage_ops(padp);
+#ifdef CONFIG_SHUT_DETECTOR
+	get_shut_stage_ops(padp);
+#endif
 	padp->prevent.degrade = degrade;
 	padp->prevent.bypass = bypass;
 	padp->prevent.load_backup = load_backup;

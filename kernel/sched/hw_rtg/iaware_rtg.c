@@ -27,6 +27,8 @@
 #include "include/frame_rme.h"
 #include "include/rtg_pseudo.h"
 
+#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+
 atomic_t g_rtg_enable = ATOMIC_INIT(0);
 atomic_t g_enable_type = ATOMIC_INIT(ALL_ENABLE); // default: all enable
 
@@ -174,8 +176,12 @@ static long ctrl_set_config(int abi, unsigned long arg)
 
 	switch (abi) {
 	case IOCTL_ABI_ARM32:
+#ifdef CONFIG_ARM
+		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
+#else
 		ret = copy_from_user(&temp,
 			(void __user *)compat_ptr((compat_uptr_t)rs.data), rs.len);
+#endif
 		break;
 	case IOCTL_ABI_AARCH64:
 		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
@@ -217,8 +223,12 @@ static long ctrl_set_rtg_thread(int abi, unsigned long arg)
 
 	switch (abi) {
 	case IOCTL_ABI_ARM32:
+#ifdef CONFIG_ARM
+		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
+#else
 		ret = copy_from_user(&temp,
 			(void __user *)compat_ptr((compat_uptr_t)rs.data), rs.len);
+#endif
 		break;
 	case IOCTL_ABI_AARCH64:
 		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
@@ -248,6 +258,7 @@ static long ctrl_set_rtg_cfs_thread(int abi, unsigned long arg)
 	void __user *uarg = (void __user *)arg;
 	struct rtg_str_data rs;
 	char temp[MAX_DATA_LEN];
+	long ret = SUCC;
 
 	if (uarg == NULL)
 		return -INVALID_ARG;
@@ -263,11 +274,15 @@ static long ctrl_set_rtg_cfs_thread(int abi, unsigned long arg)
 
 	switch (abi) {
 	case IOCTL_ABI_ARM32:
-		copy_from_user(&temp,
+#ifdef CONFIG_ARM
+		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
+#else
+		ret = copy_from_user(&temp,
 			(void __user *)compat_ptr((compat_uptr_t)rs.data), rs.len);
+#endif
 		break;
 	case IOCTL_ABI_AARCH64:
-		copy_from_user(&temp, (void __user *)rs.data, rs.len);
+		ret = copy_from_user(&temp, (void __user *)rs.data, rs.len);
 		break;
 	default:
 		pr_err("[AWARE_RTG] CMD_ID_SET_RTG_CFS_THREAD abi format error");

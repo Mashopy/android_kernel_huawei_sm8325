@@ -543,6 +543,24 @@ static enum bootfail_errorcode proc_upper_layer_bootfail(
 	return errcode;
 }
 
+#ifdef CONFIG_SHUT_DETECTOR
+enum bootfail_errorcode set_shut_stage(void)
+{
+	enum bootfail_errorcode errorcode;
+	if (run_param.is_init_succ == 0) {
+		if (run_param.adp.print != NULL)
+			run_param.adp.print(
+				"func: set_shut_stage,"
+				"error: %d(BF_NOT_INIT_SUCC)\n",
+				BF_NOT_INIT_SUCC);
+		return BF_NOT_INIT_SUCC;
+	}
+	errorcode = run_param.adp.shut_stage_ops.set_stage();
+	run_param.adp.print("func: set_shut_stage, error: %d,\n", errorcode);
+	return errorcode;
+}
+#endif
+
 enum bootfail_errorcode get_boot_stage(enum boot_stage *pstage)
 {
 	enum bootfail_errorcode errorcode;
@@ -827,6 +845,17 @@ static enum bootfail_errorcode check_sys_ctl_ptrs(
 	return BF_OK;
 }
 
+#ifdef CONFIG_SHUT_DETECTOR
+static enum bootfail_errorcode check_shut_stage_ops_ptrs(
+	const struct adapter *padp)
+{
+	if (padp->shut_stage_ops.set_stage == NULL)
+		return BF_INVALID_FUNC_PTR;
+
+	return BF_OK;
+}
+#endif
+
 static enum bootfail_errorcode check_stage_ops_ptrs(
 	const struct adapter *padp)
 {
@@ -876,6 +905,9 @@ static enum bootfail_errorcode check_func_ptrs(
 		check_mem_ops_ptrs(padp) != BF_OK ||
 		check_sys_ctl_ptrs(padp) != BF_OK ||
 		check_stage_ops_ptrs(padp) != BF_OK ||
+#ifdef CONFIG_SHUT_DETECTOR
+		check_shut_stage_ops_ptrs(padp) != BF_OK ||
+#endif
 		check_verify_ops_ptrs(padp) != BF_OK ||
 		check_feature_config_ops_ptrs(padp) != BF_OK ||
 		check_mutex_ops_ptrs(padp) != BF_OK ||

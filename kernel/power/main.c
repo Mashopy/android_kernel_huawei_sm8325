@@ -64,6 +64,19 @@ void ksys_sync_helper(void)
 }
 EXPORT_SYMBOL_GPL(ksys_sync_helper);
 
+/* only can be used for enter_state func */
+void ksys_sync_helper_for_suspend(void)
+{
+	ktime_t start;
+	long elapsed_msecs;
+
+	start = ktime_get();
+	ksys_sync_for_suspend();
+	elapsed_msecs = ktime_to_ms(ktime_sub(ktime_get(), start));
+	pr_info("ksys_sync_helper_for_suspend Filesystems sync: %ld.%03ld seconds\n",
+		elapsed_msecs / MSEC_PER_SEC, elapsed_msecs % MSEC_PER_SEC);
+}
+
 /* Routines for PM-transition notifications */
 
 static BLOCKING_NOTIFIER_HEAD(pm_chain_head);
@@ -603,14 +616,17 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	int error;
 
 	error = pm_autosleep_lock();
-	if (error)
+	if (error) {
+		pr_err("%s: pm_autosleep_lock error, errno:%d\n", __func__, error);
 		return error;
-
+	}
 	if (pm_autosleep_state() > PM_SUSPEND_ON) {
+		pr_err("%s: pm_autosleep_state() > PM_SUSPEND_ON.\n", __func__);
 		error = -EBUSY;
 		goto out;
 	}
 
+	pr_info("%s: call decode_state function.\n", __func__);
 	state = decode_state(buf, n);
 	if (state < PM_SUSPEND_MAX) {
 		if (state == PM_SUSPEND_MEM)

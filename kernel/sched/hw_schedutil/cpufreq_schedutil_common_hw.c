@@ -3,7 +3,7 @@
 #endif
 #include <linux/version.h>
 
-#ifdef CONFIG_HW_CPU_FREQ_UNIFIED_UPDATE_FREQ
+#ifndef CONFIG_HW_CPU_FREQ_UNIFIED_UPDATE_FREQ
 #ifndef SCHED_CPUFREQ_RT
 #define SCHED_CPUFREQ_RT 0
 #endif

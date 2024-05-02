@@ -19,7 +19,12 @@ endif
 LINUXINCLUDE    += -I$(srctree)/../../vendor/huawei/kernel/kernel/sched/hw_rtg/include
 
 obj-y += core.o loadavg.o clock.o cputime.o
-obj-y += idle.o fair.o rt.o deadline.o
+obj-y += idle.o fair.o rt.o
+ifeq ($(CONFIG_SCHED_DEADLINE_ENABLE),y)
+obj-y += deadline.o
+else
+obj-y += deadline_stub.o
+endif
 obj-y += wait.o wait_bit.o swait.o completion.o
 
 obj-$(CONFIG_SCHED_WALT) += walt/
