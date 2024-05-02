@@ -49,6 +49,7 @@ obj-$(CONFIG_BLK_INLINE_ENCRYPTION)	+= keyslot-manager.o bio-crypt-ctx.o \
 					   blk-crypto.o
 obj-$(CONFIG_BLK_INLINE_ENCRYPTION_FALLBACK)	+= blk-crypto-fallback.o
 #obj-$(CONFIG_HUAWEI_DSM)	+= dsm_block.o
+obj-$(CONFIG_DISK_MAGO)		+= disk_mago/
 ifeq ($(TARGET_VERSION_MODE),factory)
 	EXTRA_CFLAGS += -DBYPASS_AUTHORITY_VERIFY
 endif

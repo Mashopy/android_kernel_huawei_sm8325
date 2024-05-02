@@ -560,6 +560,11 @@ struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 	mas_blk_allocated_queue_init(q);
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+	atomic_set(&q->inflt_sum, 0);
+	atomic_set(&q->inflt_disk, 0);
+#endif
+
 	return q;
 
 fail_ref:
@@ -1403,7 +1408,9 @@ void blk_account_io_done(struct request *req, u64 now)
 		part_stat_add(part, nsecs[sgrp], now - req->start_time_ns);
 		part_stat_add(part, time_in_queue, nsecs_to_jiffies64(now - req->start_time_ns));
 		part_dec_in_flight(req->q, part, rq_data_dir(req));
-
+#ifdef CONFIG_DISK_MAGO
+		atomic_dec(&req->q->inflt_sum);
+#endif
 		hd_struct_put(part);
 		part_stat_unlock();
 	}
@@ -1436,6 +1443,9 @@ void blk_account_io_start(struct request *rq, bool new_io)
 			part = &rq->rq_disk->part0;
 			hd_struct_get(part);
 		}
+#ifdef CONFIG_DISK_MAGO
+		atomic_inc(&rq->q->inflt_sum);
+#endif
 		part_inc_in_flight(rq->q, part, rw);
 		rq->part = part;
 	}

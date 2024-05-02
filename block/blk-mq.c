@@ -1953,7 +1953,15 @@ void blk_mq_bio_to_request(struct request *rq, struct bio *bio,
         mas_blk_request_init_from_bio(rq, bio);
 #endif
 	blk_rq_bio_prep(rq, bio, nr_segs);
-
+#if defined(CONFIG_DISK_MAGO) && defined(CONFIG_MAS_BLK)
+	/*
+	 * For Disk Mago, this is used to save the process name when
+	 * IO is dispatched.
+	 */
+	if (rq->rq_disk && rq->rq_disk->major == MMC_BLOCK_MAJOR)
+		memcpy(rq->mas_req.task_comm, current->comm,
+			sizeof(rq->mas_req.task_comm));
+#endif
 	blk_account_io_start(rq, true);
 }
 

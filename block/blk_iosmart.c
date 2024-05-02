@@ -715,7 +715,7 @@ static inline void iosmart_update_quota(struct iosmart_grp *sg,
 		sg->io_disp++;
 }
 
-static struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
+static inline struct blkcg_gq *task_blkcg_gq(struct task_struct *tsk,
 				      struct block_device *bdev)
 {
 	struct request_queue *q = NULL;

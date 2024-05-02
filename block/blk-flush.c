@@ -345,7 +345,15 @@ static void blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 #ifdef CONFIG_MAS_BLK
 	flush_rq->cmd_flags |= REQ_SYNC;
 #endif
-
+#if defined(CONFIG_DISK_MAGO) && defined(CONFIG_MAS_BLK)
+	/*
+	 * For Disk Mago, this is used to save the process name when
+	 * IO is dispatched.
+	 */
+	if (flush_rq->rq_disk && flush_rq->rq_disk->major == MMC_BLOCK_MAJOR)
+		memcpy(flush_rq->mas_req.task_comm, current->comm,
+			sizeof(flush_rq->mas_req.task_comm));
+#endif
 	blk_flush_queue_rq(flush_rq, false);
 }
 

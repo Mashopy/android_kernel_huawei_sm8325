@@ -13,18 +13,18 @@ mas_blk_latency_bio_submit_func:        // @mas_blk_latency_bio_submit_func
 	mov	x29, sp
 	cbz	x8, .LBB0_17
 // %bb.1:
-	ldr	x22, [x8, #1272]
+	ldr	x22, [x8, #1264]
 	cbz	x22, .LBB0_17
 // %bb.2:
-	ldr	w8, [x22, #1276]
+	ldr	w8, [x22, #1260]
 	cbz	w8, .LBB0_17
 // %bb.3:
-	ldrb	w8, [x0, #145]
+	ldrb	w8, [x0, #137]
 	mov	x19, x0
 	cmp	w8, #76                 // =76
 	b.eq	.LBB0_16
 // %bb.4:
-	add	x20, x19, #184          // =184
+	add	x20, x19, #176          // =176
 	adrp	x1, __mas_blk_latency_check_timer_expire
 	mov	w8, #1
 	add	x1, x1, :lo12:__mas_blk_latency_check_timer_expire
@@ -32,11 +32,11 @@ mas_blk_latency_bio_submit_func:        // @mas_blk_latency_bio_submit_func
 	mov	w2, wzr
 	mov	x3, xzr
 	mov	x4, xzr
-	str	w8, [x19, #240]
+	str	w8, [x19, #232]
 	bl	init_timer_key
 	adrp	x8, jiffies
 	ldr	x21, [x8, :lo12:jiffies]
-	ldr	x8, [x19, #88]
+	ldr	x8, [x19, #80]
 	tst	x8, #0x18
 	b.eq	.LBB0_7
 // %bb.5:
@@ -58,8 +58,8 @@ mas_blk_latency_bio_submit_func:        // @mas_blk_latency_bio_submit_func
 .LBB0_9:
 	ldrh	w8, [x19, #20]
 	add	x9, x0, x21
-	str	x9, [x19, #200]
-	add	x10, x19, #472          // =472
+	str	x9, [x19, #192]
+	add	x10, x19, #464          // =464
 	orr	w8, w8, #0x100
 	strh	w8, [x19, #20]
 	//APP
@@ -189,21 +189,21 @@ mas_blk_latency_bio_submit_func:        // @mas_blk_latency_bio_submit_func
 	//APP
 	mrs x8, sp_el0
 	//NO_APP
-	str	x8, [x19, #112]
-	ldr	w9, [x8, #2048]
-	add	x0, x19, #128           // =128
-	add	x1, x8, #2512           // =2512
+	str	x8, [x19, #104]
+	ldr	w9, [x8, #1536]
+	add	x0, x19, #120           // =120
+	add	x1, x8, #2000           // =2000
 	mov	w2, #16
-	str	w9, [x19, #120]
-	ldr	w9, [x8, #2052]
-	str	w9, [x19, #124]
+	str	w9, [x19, #112]
+	ldr	w9, [x8, #1540]
+	str	w9, [x19, #116]
 	bl	memcpy
 .LBB0_16:
 	mov	w8, #76
-	str	xzr, [x19, #104]
-	stp	xzr, xzr, [x19, #152]
-	strb	w8, [x19, #145]
-	stp	xzr, xzr, [x19, #168]
+	str	xzr, [x19, #96]
+	stp	xzr, xzr, [x19, #144]
+	strb	w8, [x19, #137]
+	stp	xzr, xzr, [x19, #160]
 .LBB0_17:
 	ldp	x20, x19, [sp, #64]     // 16-byte Folded Reload
 	ldp	x22, x21, [sp, #48]     // 16-byte Folded Reload
@@ -212,7 +212,7 @@ mas_blk_latency_bio_submit_func:        // @mas_blk_latency_bio_submit_func
 	ldp	x29, x30, [sp], #80     // 16-byte Folded Reload
 	ret
 .LBB0_18:
-	ldr	w0, [x22, #1280]
+	ldr	w0, [x22, #1264]
 	b	.LBB0_6
 .Lfunc_end0:
 	.size	mas_blk_latency_bio_submit_func, .Lfunc_end0-mas_blk_latency_bio_submit_func
@@ -228,8 +228,8 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	//APP
 	mrs x8, sp_el0
 	//NO_APP
-	ldr	w8, [x8, #16]
-	ldr	x20, [x0, #96]
+	ldr	w8, [x8, #24]
+	ldr	x20, [x0, #88]
 	mov	w9, #1000
 	mov	x19, x0
 	tst	w8, #0x1fff00
@@ -240,8 +240,8 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	cbz	x20, .LBB1_8
 // %bb.1:
 	bl	ktime_get
-	ldr	x9, [x19, #88]
-	ldr	x8, [x19, #152]
+	ldr	x9, [x19, #80]
+	ldr	x8, [x19, #144]
 	tst	x9, #0x18
 	b.eq	.LBB1_3
 // %bb.2:
@@ -260,7 +260,7 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	mov	w9, #1000
 	b	.LBB1_6
 .LBB1_5:
-	ldr	w9, [x20, #1280]
+	ldr	w9, [x20, #1264]
 .LBB1_6:
 	mov	w10, #16960
 	movk	w10, #15, lsl #16
@@ -275,23 +275,23 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	bl	___ratelimit
 	cbnz	w0, .LBB1_18
 .LBB1_8:
-	add	x0, x19, #184           // =184
-	strb	wzr, [x19, #145]
+	add	x0, x19, #176           // =176
+	strb	wzr, [x19, #137]
 	bl	del_timer
 	cbz	w0, .LBB1_11
 // %bb.9:
 	mov	x0, x19
 	bl	bio_put
 .LBB1_10:
-	str	wzr, [x19, #240]
-	str	xzr, [x19, #104]
+	str	wzr, [x19, #232]
+	str	xzr, [x19, #96]
 	ldp	x20, x19, [sp, #48]     // 16-byte Folded Reload
 	ldp	x22, x21, [sp, #32]     // 16-byte Folded Reload
 	ldr	x23, [sp, #16]          // 8-byte Folded Reload
 	ldp	x29, x30, [sp], #64     // 16-byte Folded Reload
 	ret
 .LBB1_11:
-	ldr	w8, [x19, #240]
+	ldr	w8, [x19, #232]
 	cbz	w8, .LBB1_10
 // %bb.12:
 	mov	w8, wzr
@@ -302,7 +302,7 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	mov	w0, #42950
 	mov	x20, x9
 	bl	__const_udelay
-	ldr	w10, [x19, #240]
+	ldr	w10, [x19, #232]
 	cmp	x20, #0                 // =0
 	cset	w8, eq
 	sub	x9, x20, #1             // =1
@@ -322,7 +322,7 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 .LBB1_18:
 	mov	x0, x20
 	bl	mas_blk_get_lld
-	ldr	x23, [x20, #1400]
+	ldr	x23, [x20, #1384]
 	mov	x21, x0
 	mov	x0, x19
 	mov	w1, wzr
@@ -330,7 +330,7 @@ mas_blk_latency_bio_endio_func:         // @mas_blk_latency_bio_endio_func
 	mov	x0, x20
 	mov	w1, wzr
 	bl	mas_blk_dump_queue_status
-	ldr	x8, [x19, #352]
+	ldr	x8, [x19, #344]
 	cbz	x8, .LBB1_20
 // %bb.19:
 	blr	x8
@@ -363,7 +363,7 @@ mas_blk_latency_req_init_func:          // @mas_blk_latency_req_init_func
 	mov	x29, sp
 	cbz	x8, .LBB2_3
 // %bb.1:
-	ldr	w8, [x8, #1276]
+	ldr	w8, [x8, #1260]
 	cbz	w8, .LBB2_3
 // %bb.2:
 	mov	w8, #76
@@ -403,11 +403,11 @@ mas_blk_latency_req_init_func:          // @mas_blk_latency_req_init_func
 	//NO_APP
 	strb	w8, [x0, #248]
 	str	x9, [x0, #208]
-	ldr	w8, [x9, #2048]
-	add	x1, x9, #2512           // =2512
+	ldr	w8, [x9, #1536]
+	add	x1, x9, #2000           // =2000
 	mov	w2, #16
 	str	w8, [x0, #216]
-	ldr	w8, [x9, #2052]
+	ldr	w8, [x9, #1540]
 	str	w8, [x0, #220]
 	add	x0, x0, #224            // =224
 	bl	memcpy
@@ -429,7 +429,7 @@ mas_blk_latency_req_free_func:          // @mas_blk_latency_req_free_func
 	str	xzr, [x0, #208]
 	cbz	x8, .LBB3_2
 .LBB3_1:                                // =>This Inner Loop Header: Depth=1
-	str	xzr, [x8, #104]
+	str	xzr, [x8, #96]
 	ldr	x8, [x8]
 	str	x8, [x0, #64]
 	cbnz	x8, .LBB3_1
@@ -453,7 +453,7 @@ mas_blk_latency_check_timer_expire:     // @mas_blk_latency_check_timer_expire
 	stp	x22, x21, [sp, #32]     // 16-byte Folded Spill
 	mov	x29, sp
 	bl	_raw_spin_lock_irqsave
-	ldrb	w3, [x19, #145]
+	ldrb	w3, [x19, #137]
 	mov	x20, x0
 	cmp	w3, #76                 // =76
 	b.ne	.LBB4_13
@@ -461,7 +461,7 @@ mas_blk_latency_check_timer_expire:     // @mas_blk_latency_check_timer_expire
 	ldr	x8, [x19, #8]
 	cbz	x8, .LBB4_11
 // %bb.2:
-	ldr	x21, [x8, #1272]
+	ldr	x21, [x8, #1264]
 	cbz	x21, .LBB4_11
 // %bb.3:
 	mov	x0, x21
@@ -475,7 +475,7 @@ mas_blk_latency_check_timer_expire:     // @mas_blk_latency_check_timer_expire
 // %bb.4:
 	mov	x0, x21
 	bl	mas_blk_get_lld
-	ldr	x23, [x21, #1400]
+	ldr	x23, [x21, #1384]
 	mov	x22, x0
 	mov	x0, x19
 	mov	w1, wzr
@@ -483,7 +483,7 @@ mas_blk_latency_check_timer_expire:     // @mas_blk_latency_check_timer_expire
 	mov	x0, x21
 	mov	w1, wzr
 	bl	mas_blk_dump_queue_status
-	ldr	x8, [x19, #352]
+	ldr	x8, [x19, #344]
 	cbz	x8, .LBB4_6
 // %bb.5:
 	blr	x8
@@ -517,7 +517,7 @@ mas_blk_latency_check_timer_expire:     // @mas_blk_latency_check_timer_expire
 	mov	x1, x20
 	bl	_raw_spin_unlock_irqrestore
 	mov	x0, x19
-	str	wzr, [x19, #240]
+	str	wzr, [x19, #232]
 	bl	bio_put
 	ldp	x20, x19, [sp, #48]     // 16-byte Folded Reload
 	ldp	x22, x21, [sp, #32]     // 16-byte Folded Reload
@@ -547,7 +547,7 @@ mas_blk_latency_bio_check:              // @mas_blk_latency_bio_check
 	mov	x29, sp
 	cbz	w1, .LBB5_3
 // %bb.1:
-	ldrb	w8, [x19, #145]
+	ldrb	w8, [x19, #137]
 	cmp	w8, #76                 // =76
 	b.ne	.LBB5_6
 // %bb.2:
@@ -567,7 +567,7 @@ mas_blk_latency_bio_check:              // @mas_blk_latency_bio_check
 .LBB5_5:
 	bl	ktime_get
 	add	x8, x19, x20, lsl #3
-	str	x0, [x8, #152]
+	str	x0, [x8, #144]
 .LBB5_6:
 	ldp	x20, x19, [sp, #16]     // 16-byte Folded Reload
 	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
@@ -628,7 +628,7 @@ mas_blk_latency_for_merge:              // @mas_blk_latency_for_merge
 	ldr	x8, [x1, #64]
 	cbz	x8, .LBB7_2
 .LBB7_1:                                // =>This Inner Loop Header: Depth=1
-	str	x0, [x8, #104]
+	str	x0, [x8, #96]
 	ldr	x8, [x8]
 	cbnz	x8, .LBB7_1
 .LBB7_2:
@@ -653,10 +653,10 @@ mas_blk_queue_latency_init:             // @mas_blk_queue_latency_init
 	mov	w8, #2000
 	str	w8, [x0, #48]
 .LBB8_2:
-	str	w8, [x19, #1280]
+	str	w8, [x19, #1264]
 	ldr	w8, [x0, #24]
 	ubfx	w8, w8, #1, #1
-	str	w8, [x19, #1276]
+	str	w8, [x19, #1260]
 	ldr	x19, [sp, #16]          // 8-byte Folded Reload
 	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
 	ret
@@ -714,8 +714,8 @@ blk_queue_latency_warning_set:          // @blk_queue_latency_warning_set
 	orr	x8, x8, #0x2
 	str	w9, [x0, #48]
 	str	x8, [x0, #24]
-	str	w9, [x20, #1280]
-	str	w10, [x20, #1276]
+	str	w9, [x20, #1264]
+	str	w10, [x20, #1260]
 	ldp	x20, x19, [sp, #16]     // 16-byte Folded Reload
 	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
 	ret
@@ -767,11 +767,11 @@ mas_queue_io_latency_warning_threshold_store: // @mas_queue_io_latency_warning_t
 	cmp	x21, #0                 // =0
 	cset	w22, ne
 	bl	mas_blk_get_lld
-	ldr	w8, [x20, #1276]
+	ldr	w8, [x20, #1260]
 	cmp	w8, w22
 	b.eq	.LBB12_5
 // %bb.4:
-	str	w22, [x20, #1276]
+	str	w22, [x20, #1260]
 	ldr	x8, [x0, #24]
 	cmp	x21, #0                 // =0
 	and	x9, x8, #0xfffffffffffffffd
@@ -786,7 +786,7 @@ mas_queue_io_latency_warning_threshold_store: // @mas_queue_io_latency_warning_t
 	mov	w8, #2000
 	csel	w8, w8, w21, eq
 	str	w8, [x0, #48]
-	str	w8, [x20, #1280]
+	str	w8, [x20, #1264]
 	b	.LBB12_1
 .LBB12_6:
 	bl	__stack_chk_fail

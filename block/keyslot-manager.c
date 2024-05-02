@@ -436,6 +436,13 @@ bool keyslot_manager_crypto_mode_supported(struct keyslot_manager *ksm,
 	return ksm->max_dun_bytes_supported >= dun_bytes;
 }
 
+#ifdef CONFIG_DISK_MAGO
+unsigned int keyslot_manager_get_max_dun_bytes(struct keyslot_manager *ksm)
+{
+	return ksm->max_dun_bytes_supported;
+}
+#endif
+
 /**
  * keyslot_manager_evict_key() - Evict a key from the lower layer device.
  * @ksm: The keyslot manager to evict from

@@ -724,7 +724,9 @@ static void blk_account_io_merge(struct request *req)
 		part = req->part;
 
 		part_dec_in_flight(req->q, part, rq_data_dir(req));
-
+#ifdef CONFIG_DISK_MAGO
+		atomic_dec(&req->q->inflt_sum);
+#endif
 		hd_struct_put(part);
 		part_stat_unlock();
 	}

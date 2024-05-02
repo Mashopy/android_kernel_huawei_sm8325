@@ -14,7 +14,7 @@ mas_blk_flush_work_fn:                  // @mas_blk_flush_work_fn
 .Lmas_blk_flush_work_fn$local:
 // %bb.0:
 	stp	x29, x30, [sp, #-32]!   // 16-byte Folded Spill
-	ldur	x0, [x0, #-40]
+	ldur	x0, [x0, #-24]
 	mov	w1, wzr
 	str	x19, [sp, #16]          // 8-byte Folded Spill
 	mov	x29, sp
@@ -71,13 +71,13 @@ mas_blk_flush_async_dispatch:           // @mas_blk_flush_async_dispatch
 	bl	blk_queue_query_unistore_enable
 	tbz	w0, #0, .LBB1_3
 // %bb.1:
-	ldrb	w8, [x20, #88]
+	ldrb	w8, [x20, #80]
 	tbnz	w8, #1, .LBB1_3
 // %bb.2:
 	ldr	w8, [x20, #40]
 	cbz	w8, .LBB1_8
 .LBB1_3:
-	ldr	w8, [x19, #1272]
+	ldr	w8, [x19, #1256]
 	cbz	w8, .LBB1_8
 // %bb.4:
 	ldr	w8, [x20, #16]
@@ -90,7 +90,7 @@ mas_blk_flush_async_dispatch:           // @mas_blk_flush_async_dispatch
 	cmp	w8, #1                  // =1
 	b.ne	.LBB1_8
 // %bb.7:
-	add	x8, x19, #1244          // =1244
+	add	x8, x19, #1228          // =1228
 	//APP
 	// atomic_add
 	prfm	pstl1strm, [x8]
@@ -107,10 +107,10 @@ mas_blk_flush_async_dispatch:           // @mas_blk_flush_async_dispatch
 	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
 	ret
 .LBB1_10:
-	ldrb	w9, [x20, #146]
+	ldrb	w9, [x20, #138]
 	cbz	w9, .LBB1_12
 // %bb.11:
-	add	x19, x19, #1104         // =1104
+	add	x19, x19, #1088         // =1088
 	mov	x0, x19
 	bl	cancel_delayed_work
 	adrp	x8, blk_async_flush_workqueue
@@ -122,7 +122,7 @@ mas_blk_flush_async_dispatch:           // @mas_blk_flush_async_dispatch
 	mov	w0, #1
 	b	.LBB1_9
 .LBB1_12:
-	ldr	w9, [x19, #1244]
+	ldr	w9, [x19, #1228]
 	cbnz	w9, .LBB1_6
 // %bb.13:
 	mov	w0, #1
@@ -139,7 +139,7 @@ mas_blk_flush_update:                   // @mas_blk_flush_update
 	cbnz	w1, .LBB2_2
 // %bb.1:
 	ldr	x8, [x0]
-	str	wzr, [x8, #1244]
+	str	wzr, [x8, #1228]
 .LBB2_2:
 	ret
 .Lfunc_end2:
@@ -186,24 +186,24 @@ blk_power_off_flush:                    // @blk_power_off_flush
 	add	x23, x23, :lo12:.L.str.5
 	add	x24, x24, :lo12:.L.str
 .LBB3_2:                                // =>This Inner Loop Header: Depth=1
-	ldurb	w8, [x27, #-184]
+	ldurb	w8, [x27, #-168]
 	cbz	w8, .LBB3_17
 // %bb.3:                               //   in Loop: Header=BB3_2 Depth=1
-	sub	x0, x27, #1256          // =1256
+	sub	x0, x27, #1240          // =1240
 	bl	mas_blk_get_lld
 	cbz	x0, .LBB3_17
 // %bb.4:                               //   in Loop: Header=BB3_2 Depth=1
 	ldr	x8, [x0, #56]
 	cbz	x8, .LBB3_17
 // %bb.5:                               //   in Loop: Header=BB3_2 Depth=1
-	ldur	x28, [x27, #-192]
+	ldur	x28, [x27, #-176]
 	cbz	x28, .LBB3_7
 // %bb.6:                               //   in Loop: Header=BB3_2 Depth=1
 	add	x2, x28, #12            // =12
 	mov	x0, x19
 	mov	x1, x20
 	bl	printk
-	ldur	x0, [x27, #-192]
+	ldur	x0, [x27, #-176]
 	b	.LBB3_8
 .LBB3_7:                                //   in Loop: Header=BB3_2 Depth=1
 	mov	x0, xzr
@@ -301,10 +301,10 @@ mas_blk_send_sync_cache:                // @mas_blk_send_sync_cache
 	add	x21, x21, :lo12:.L__func__.mas_blk_send_sync_cache
 	add	x22, x22, :lo12:.L.str.5
 .LBB4_2:                                // =>This Inner Loop Header: Depth=1
-	ldurb	w8, [x27, #-184]
+	ldurb	w8, [x27, #-168]
 	cbz	w8, .LBB4_8
 // %bb.3:                               //   in Loop: Header=BB4_2 Depth=1
-	sub	x23, x27, #1256         // =1256
+	sub	x23, x27, #1240         // =1240
 	mov	x0, x23
 	bl	mas_blk_get_lld
 	cbz	x0, .LBB4_8
@@ -313,7 +313,7 @@ mas_blk_send_sync_cache:                // @mas_blk_send_sync_cache
 	mov	x24, x0
 	cbz	x8, .LBB4_8
 // %bb.5:                               //   in Loop: Header=BB4_2 Depth=1
-	ldur	x9, [x27, #-192]
+	ldur	x9, [x27, #-176]
 	cbnz	x9, .LBB4_7
 // %bb.6:                               //   in Loop: Header=BB4_2 Depth=1
 	mov	x0, x23
@@ -362,26 +362,36 @@ mas_blk_send_sync_cache:                // @mas_blk_send_sync_cache
 mas_blk_flush_list_register:            // @mas_blk_flush_list_register
 .Lmas_blk_flush_list_register$local:
 // %bb.0:
-	stp	x29, x30, [sp, #-32]!   // 16-byte Folded Spill
-	stp	x20, x19, [sp, #16]     // 16-byte Folded Spill
-	adrp	x20, all_object_lock
-	add	x20, x20, :lo12:all_object_lock
+	stp	x29, x30, [sp, #-48]!   // 16-byte Folded Spill
+	stp	x20, x19, [sp, #32]     // 16-byte Folded Spill
 	mov	x19, x0
-	mov	x0, x20
+	adrp	x0, all_object_lock
+	add	x0, x0, :lo12:all_object_lock
+	stp	x22, x21, [sp, #16]     // 16-byte Folded Spill
 	mov	x29, sp
 	bl	_raw_spin_lock_irqsave
+	adrp	x21, all_object_list
+	add	x21, x21, :lo12:all_object_list
+	ldr	x22, [x21]
+	mov	x20, x0
+	mov	x0, x19
+	mov	x1, x21
+	mov	x2, x22
+	bl	__list_add_valid
+	tbz	w0, #0, .LBB5_2
+// %bb.1:
 	adrp	x8, all_object_list
-	add	x8, x8, :lo12:all_object_list
-	ldr	x9, [x8]
-	mov	x1, x0
-	adrp	x10, all_object_list
-	mov	x0, x20
-	str	x19, [x9, #8]
-	stp	x9, x8, [x19]
-	str	x19, [x10, :lo12:all_object_list]
+	str	x19, [x22, #8]
+	stp	x22, x21, [x19]
+	str	x19, [x8, :lo12:all_object_list]
+.LBB5_2:
+	adrp	x0, all_object_lock
+	add	x0, x0, :lo12:all_object_lock
+	mov	x1, x20
 	bl	_raw_spin_unlock_irqrestore
-	ldp	x20, x19, [sp, #16]     // 16-byte Folded Reload
-	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
+	ldp	x20, x19, [sp, #32]     // 16-byte Folded Reload
+	ldp	x22, x21, [sp, #16]     // 16-byte Folded Reload
+	ldp	x29, x30, [sp], #48     // 16-byte Folded Reload
 	ret
 .Lfunc_end5:
 	.size	mas_blk_flush_list_register, .Lfunc_end5-mas_blk_flush_list_register
@@ -394,17 +404,23 @@ mas_blk_flush_list_unregister:          // @mas_blk_flush_list_unregister
 // %bb.0:
 	stp	x29, x30, [sp, #-32]!   // 16-byte Folded Spill
 	stp	x20, x19, [sp, #16]     // 16-byte Folded Spill
-	adrp	x20, all_object_lock
-	add	x20, x20, :lo12:all_object_lock
 	mov	x19, x0
-	mov	x0, x20
+	adrp	x0, all_object_lock
+	add	x0, x0, :lo12:all_object_lock
 	mov	x29, sp
 	bl	_raw_spin_lock_irqsave
+	mov	x20, x0
+	mov	x0, x19
+	bl	__list_del_entry_valid
+	tbz	w0, #0, .LBB6_2
+// %bb.1:
 	ldp	x9, x8, [x19]
-	mov	x1, x0
-	mov	x0, x20
 	str	x8, [x9, #8]
 	str	x9, [x8]
+.LBB6_2:
+	adrp	x0, all_object_lock
+	add	x0, x0, :lo12:all_object_lock
+	mov	x1, x20
 	str	x19, [x19]
 	str	x19, [x19, #8]
 	bl	_raw_spin_unlock_irqrestore
@@ -464,12 +480,12 @@ mas_blk_order_panic_wait_flush:         // @mas_blk_order_panic_wait_flush
 	mov	w23, wzr
 .LBB7_4:                                //   Parent Loop BB7_1 Depth=1
                                         // =>  This Inner Loop Header: Depth=2
-	sub	x8, x28, #1924          // =1924
+	sub	x8, x28, #1412          // =1412
 	ldr	w2, [x8]
 	cmp	w2, #2                  // =2
 	b.ne	.LBB7_7
 // %bb.5:                               //   in Loop: Header=BB7_4 Depth=2
-	sub	x8, x28, #1904          // =1904
+	sub	x8, x28, #1392          // =1392
 	ldr	x8, [x8]
 	tst	x8, #0x100
 	cset	w9, eq
@@ -485,7 +501,7 @@ mas_blk_order_panic_wait_flush:         // @mas_blk_order_panic_wait_flush
 	bl	printk
 	b	.LBB7_9
 .LBB7_8:                                //   in Loop: Header=BB7_4 Depth=2
-	sub	x0, x28, #1928          // =1928
+	sub	x0, x28, #1416          // =1416
 	bl	ufs_order_panic_wait_datasync_handle
 	mov	w23, w0
 .LBB7_9:                                //   in Loop: Header=BB7_4 Depth=2
@@ -548,12 +564,12 @@ mas_blk_panic_flush:                    // @mas_blk_panic_flush
 	add	x20, x20, :lo12:.L.str.8
 	add	x21, x21, :lo12:.L__func__.mas_blk_panic_flush
 .LBB8_2:                                // =>This Inner Loop Header: Depth=1
-	sub	x8, x23, #1924          // =1924
+	sub	x8, x23, #1412          // =1412
 	ldr	w2, [x8]
 	cmp	w2, #2                  // =2
 	b.ne	.LBB8_5
 // %bb.3:                               //   in Loop: Header=BB8_2 Depth=1
-	sub	x8, x23, #1903          // =1903
+	sub	x8, x23, #1391          // =1391
 	ldrb	w8, [x8]
 	tbnz	w8, #0, .LBB8_6
 .LBB8_4:                                //   in Loop: Header=BB8_2 Depth=1
@@ -567,7 +583,7 @@ mas_blk_panic_flush:                    // @mas_blk_panic_flush
 	bl	printk
 	b	.LBB8_4
 .LBB8_6:                                //   in Loop: Header=BB8_2 Depth=1
-	sub	x0, x23, #1928          // =1928
+	sub	x0, x23, #1416          // =1416
 	bl	ufs_order_panic_datasync_handle
 	ldr	x23, [x23]
 	mov	w24, #1
@@ -742,26 +758,26 @@ mas_blk_order_power_off_work_fn:        // @mas_blk_order_power_off_work_fn
 	cmp	x23, x22
 	b.eq	.LBB12_10
 .LBB12_4:                               // =>This Inner Loop Header: Depth=1
-	sub	x8, x23, #1924          // =1924
+	sub	x8, x23, #1412          // =1412
 	ldr	w2, [x8]
 	cmp	w2, #2                  // =2
 	b.ne	.LBB12_2
 // %bb.5:                               //   in Loop: Header=BB12_4 Depth=1
-	sub	x8, x23, #1903          // =1903
+	sub	x8, x23, #1391          // =1391
 	ldrb	w8, [x8]
 	tbz	w8, #0, .LBB12_3
 // %bb.6:                               //   in Loop: Header=BB12_4 Depth=1
-	sub	x8, x23, #1920          // =1920
+	sub	x8, x23, #1408          // =1408
 	ldr	x8, [x8]
 	cbz	x8, .LBB12_3
 // %bb.7:                               //   in Loop: Header=BB12_4 Depth=1
-	ldr	x8, [x8, #2032]
+	ldr	x8, [x8, #1520]
 	cbz	x8, .LBB12_3
 // %bb.8:                               //   in Loop: Header=BB12_4 Depth=1
 	ldr	x8, [x8, #32]
 	cbz	x8, .LBB12_3
 // %bb.9:                               //   in Loop: Header=BB12_4 Depth=1
-	sub	x0, x23, #1928          // =1928
+	sub	x0, x23, #1416          // =1416
 	blr	x8
 	b	.LBB12_3
 .LBB12_10:
@@ -785,58 +801,45 @@ mas_blk_flush_reduced_queue_unregister: // @mas_blk_flush_reduced_queue_unregist
 // %bb.0:
 	stp	x29, x30, [sp, #-32]!   // 16-byte Folded Spill
 	stp	x20, x19, [sp, #16]     // 16-byte Folded Spill
-	ldr	w8, [x0, #1272]
+	ldr	w8, [x0, #1256]
 	mov	x29, sp
-	cbz	w8, .LBB13_4
+	cbz	w8, .LBB13_6
 // %bb.1:
-	ldr	x8, [x0, #1256]
+	add	x20, x0, #1240          // =1240
+	ldr	x8, [x20]
 	mov	x19, x0
-	cbz	x8, .LBB13_5
+	cbz	x8, .LBB13_6
 // %bb.2:
-	ldr	x8, [x19, #1264]
-	cbz	x8, .LBB13_5
+	ldr	x8, [x19, #1248]
+	cbz	x8, .LBB13_6
 // %bb.3:
-	adrp	x20, all_flush_q_lock
-	add	x20, x20, :lo12:all_flush_q_lock
-	mov	x0, x20
+	adrp	x0, all_flush_q_lock
+	add	x0, x0, :lo12:all_flush_q_lock
 	bl	mutex_lock
-	ldr	x8, [x19, #1264]
-	ldr	x9, [x19, #1256]
-	mov	x10, #256
-	movk	x10, #57005, lsl #48
-	mov	w11, #34
-	orr	x11, x10, x11
 	mov	x0, x20
+	bl	__list_del_entry_valid
+	tbz	w0, #0, .LBB13_5
+// %bb.4:
+	ldr	x8, [x19, #1248]
+	ldr	x9, [x19, #1240]
 	str	x8, [x9, #8]
 	str	x9, [x8]
-	str	x10, [x19, #1256]
-	str	x11, [x19, #1264]
+.LBB13_5:
+	mov	x8, #256
+	movk	x8, #57005, lsl #48
+	mov	w9, #34
+	adrp	x0, all_flush_q_lock
+	str	x8, [x19, #1240]
+	orr	x8, x8, x9
+	add	x0, x0, :lo12:all_flush_q_lock
+	str	x8, [x19, #1248]
 	bl	mutex_unlock
-.LBB13_4:
+.LBB13_6:
 	ldp	x20, x19, [sp, #16]     // 16-byte Folded Reload
 	ldp	x29, x30, [sp], #32     // 16-byte Folded Reload
 	ret
-.LBB13_5:
-	bl	mas_blk_rdr_panic
 .Lfunc_end13:
 	.size	mas_blk_flush_reduced_queue_unregister, .Lfunc_end13-mas_blk_flush_reduced_queue_unregister
-                                        // -- End function
-	.p2align	2               // -- Begin function mas_blk_rdr_panic
-	.type	mas_blk_rdr_panic,@function
-mas_blk_rdr_panic:                      // @mas_blk_rdr_panic
-// %bb.0:
-	stp	x29, x30, [sp, #-16]!   // 16-byte Folded Spill
-	adrp	x0, .L.str.16
-	adrp	x1, .L.str.11
-	add	x0, x0, :lo12:.L.str.16
-	add	x1, x1, :lo12:.L.str.11
-	mov	x29, sp
-	bl	printk
-	//APP
-	.pushsection __bug_table,"aw"; .align 2; 14470: .long 14471f - 14470b; .pushsection .rodata.str,"aMS",@progbits,1; 14472: .string "block/mas_blk.h"; .popsection; .long 14472b - 14470b; .short 452; .short 0; .popsection; 14471: brk 0x800
-	//NO_APP
-.Lfunc_end14:
-	.size	mas_blk_rdr_panic, .Lfunc_end14-mas_blk_rdr_panic
                                         // -- End function
 	.globl	blk_mq_tagset_direct_flush_register // -- Begin function blk_mq_tagset_direct_flush_register
 	.p2align	2
@@ -846,12 +849,12 @@ blk_mq_tagset_direct_flush_register:    // @blk_mq_tagset_direct_flush_register
 // %bb.0:
 	stp	x29, x30, [sp, #-16]!   // 16-byte Folded Spill
 	mov	x29, sp
-	cbz	x0, .LBB15_2
+	cbz	x0, .LBB14_2
 // %bb.1:
 	str	x1, [x0, #120]
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.LBB15_2:
+.LBB14_2:
 	adrp	x0, .L.str.12
 	adrp	x1, .L__func__.blk_mq_tagset_direct_flush_register
 	add	x0, x0, :lo12:.L.str.12
@@ -859,8 +862,8 @@ blk_mq_tagset_direct_flush_register:    // @blk_mq_tagset_direct_flush_register
 	bl	printk
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.Lfunc_end15:
-	.size	blk_mq_tagset_direct_flush_register, .Lfunc_end15-blk_mq_tagset_direct_flush_register
+.Lfunc_end14:
+	.size	blk_mq_tagset_direct_flush_register, .Lfunc_end14-blk_mq_tagset_direct_flush_register
                                         // -- End function
 	.globl	mas_blk_queue_async_flush_init // -- Begin function mas_blk_queue_async_flush_init
 	.p2align	2
@@ -869,91 +872,98 @@ mas_blk_queue_async_flush_init:         // @mas_blk_queue_async_flush_init
 .Lmas_blk_queue_async_flush_init$local:
 // %bb.0:
 	stp	x29, x30, [sp, #-48]!   // 16-byte Folded Spill
-	str	x21, [sp, #16]          // 8-byte Folded Spill
+	stp	x22, x21, [sp, #16]     // 16-byte Folded Spill
 	stp	x20, x19, [sp, #32]     // 16-byte Folded Spill
 	mov	x29, sp
 	mov	x19, x0
 	bl	mas_blk_get_lld
 	ldrb	w8, [x0, #24]
-	tbz	w8, #2, .LBB16_10
+	tbz	w8, #2, .LBB15_12
 // %bb.1:
-	adrp	x21, blk_async_flush_workqueue
-	ldr	x8, [x21, :lo12:blk_async_flush_workqueue]
-	mov	x20, x0
-	cbnz	x8, .LBB16_3
+	adrp	x20, blk_async_flush_workqueue
+	ldr	x8, [x20, :lo12:blk_async_flush_workqueue]
+	mov	x21, x0
+	cbnz	x8, .LBB15_3
 // %bb.2:
 	adrp	x0, .L.str.13
 	add	x0, x0, :lo12:.L.str.13
 	mov	w1, #2
 	mov	w2, wzr
 	bl	alloc_workqueue
-	str	x0, [x21, :lo12:blk_async_flush_workqueue]
-	cbz	x0, .LBB16_11
-.LBB16_3:
-	str	wzr, [x19, #1244]
-	ldr	x8, [x19, #1256]
-	add	x21, x19, #1256         // =1256
-	cbnz	x8, .LBB16_6
+	str	x0, [x20, :lo12:blk_async_flush_workqueue]
+	cbz	x0, .LBB15_13
+.LBB15_3:
+	str	wzr, [x19, #1228]
+	ldr	x8, [x19, #1240]
+	add	x20, x19, #1240         // =1240
+	cbnz	x8, .LBB15_6
 // %bb.4:
-	ldr	x8, [x19, #1264]
-	cbnz	x8, .LBB16_6
+	ldr	x8, [x19, #1248]
+	cbnz	x8, .LBB15_6
 // %bb.5:
-	str	x21, [x19, #1256]
-	str	x21, [x19, #1264]
-.LBB16_6:
+	str	x20, [x19, #1240]
+	str	x20, [x19, #1248]
+.LBB15_6:
 	adrp	x10, __cfi_mas_blk_flush_work_fn
 	adrp	x1, delayed_work_timer_fn
 	mov	x8, #68719476704
-	add	x9, x19, #1112          // =1112
+	add	x9, x19, #1096          // =1096
 	add	x10, x10, :lo12:__cfi_mas_blk_flush_work_fn
-	add	x0, x19, #1152          // =1152
+	add	x0, x19, #1136          // =1136
 	add	x1, x1, :lo12:delayed_work_timer_fn
 	mov	w2, #2097152
 	mov	x3, xzr
 	mov	x4, xzr
-	str	x8, [x19, #1104]
-	str	x9, [x19, #1112]
-	str	x9, [x19, #1120]
-	str	x10, [x19, #1128]
+	str	x8, [x19, #1088]
+	str	x9, [x19, #1096]
+	str	x9, [x19, #1104]
+	str	x10, [x19, #1112]
 	bl	init_timer_key
-	ldr	x8, [x20, #56]
-	cbz	x8, .LBB16_9
+	ldr	x8, [x21, #56]
+	cbz	x8, .LBB15_11
 // %bb.7:
-	ldr	x8, [x21]
-	cmp	x21, x8
-	b.ne	.LBB16_9
+	ldr	x8, [x20]
+	cmp	x20, x8
+	b.ne	.LBB15_11
 // %bb.8:
-	adrp	x20, all_flush_q_lock
-	add	x20, x20, :lo12:all_flush_q_lock
-	mov	x0, x20
+	adrp	x0, all_flush_q_lock
+	add	x0, x0, :lo12:all_flush_q_lock
 	bl	mutex_lock
-	adrp	x8, all_flush_q_list
-	add	x8, x8, :lo12:all_flush_q_list
-	ldr	x9, [x8]
-	adrp	x10, all_flush_q_list
+	adrp	x21, all_flush_q_list
+	add	x21, x21, :lo12:all_flush_q_list
+	ldr	x22, [x21]
 	mov	x0, x20
-	str	x21, [x9, #8]
-	str	x9, [x19, #1256]
-	str	x8, [x19, #1264]
-	str	x21, [x10, :lo12:all_flush_q_list]
+	mov	x1, x21
+	mov	x2, x22
+	bl	__list_add_valid
+	tbz	w0, #0, .LBB15_10
+// %bb.9:
+	adrp	x8, all_flush_q_list
+	str	x20, [x22, #8]
+	str	x22, [x19, #1240]
+	str	x21, [x19, #1248]
+	str	x20, [x8, :lo12:all_flush_q_list]
+.LBB15_10:
+	adrp	x0, all_flush_q_lock
+	add	x0, x0, :lo12:all_flush_q_lock
 	bl	mutex_unlock
-.LBB16_9:
+.LBB15_11:
 	mov	w8, #1
-	str	w8, [x19, #1272]
-.LBB16_10:
+	str	w8, [x19, #1256]
+.LBB15_12:
 	ldp	x20, x19, [sp, #32]     // 16-byte Folded Reload
-	ldr	x21, [sp, #16]          // 8-byte Folded Reload
+	ldp	x22, x21, [sp, #16]     // 16-byte Folded Reload
 	ldp	x29, x30, [sp], #48     // 16-byte Folded Reload
 	ret
-.LBB16_11:
+.LBB15_13:
 	adrp	x0, .L.str.14
 	adrp	x1, .L__func__.mas_blk_queue_async_flush_init
 	add	x0, x0, :lo12:.L.str.14
 	add	x1, x1, :lo12:.L__func__.mas_blk_queue_async_flush_init
 	bl	printk
-	b	.LBB16_10
-.Lfunc_end16:
-	.size	mas_blk_queue_async_flush_init, .Lfunc_end16-mas_blk_queue_async_flush_init
+	b	.LBB15_12
+.Lfunc_end15:
+	.size	mas_blk_queue_async_flush_init, .Lfunc_end15-mas_blk_queue_async_flush_init
                                         // -- End function
 	.globl	blk_flush_set_async     // -- Begin function blk_flush_set_async
 	.p2align	2
@@ -961,14 +971,14 @@ mas_blk_queue_async_flush_init:         // @mas_blk_queue_async_flush_init
 blk_flush_set_async:                    // @blk_flush_set_async
 .Lblk_flush_set_async$local:
 // %bb.0:
-	cbz	x0, .LBB17_2
+	cbz	x0, .LBB16_2
 // %bb.1:
 	mov	w8, #1
-	strb	w8, [x0, #146]
-.LBB17_2:
+	strb	w8, [x0, #138]
+.LBB16_2:
 	ret
-.Lfunc_end17:
-	.size	blk_flush_set_async, .Lfunc_end17-blk_flush_set_async
+.Lfunc_end16:
+	.size	blk_flush_set_async, .Lfunc_end16-blk_flush_set_async
                                         // -- End function
 	.globl	blk_mq_tagset_flush_reduce_config // -- Begin function blk_mq_tagset_flush_reduce_config
 	.p2align	2
@@ -978,20 +988,20 @@ blk_mq_tagset_flush_reduce_config:      // @blk_mq_tagset_flush_reduce_config
 // %bb.0:
 	stp	x29, x30, [sp, #-16]!   // 16-byte Folded Spill
 	mov	x29, sp
-	cbz	x0, .LBB18_5
+	cbz	x0, .LBB17_5
 // %bb.1:
 	ldr	x8, [x0, #88]
-	tbz	w1, #0, .LBB18_3
+	tbz	w1, #0, .LBB17_3
 // %bb.2:
 	orr	x8, x8, #0x4
-	b	.LBB18_4
-.LBB18_3:
+	b	.LBB17_4
+.LBB17_3:
 	and	x8, x8, #0xfffffffffffffffb
-.LBB18_4:
+.LBB17_4:
 	str	x8, [x0, #88]
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.LBB18_5:
+.LBB17_5:
 	adrp	x0, .L.str.12
 	adrp	x1, .L__func__.blk_mq_tagset_flush_reduce_config
 	add	x0, x0, :lo12:.L.str.12
@@ -999,8 +1009,8 @@ blk_mq_tagset_flush_reduce_config:      // @blk_mq_tagset_flush_reduce_config
 	bl	printk
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.Lfunc_end18:
-	.size	blk_mq_tagset_flush_reduce_config, .Lfunc_end18-blk_mq_tagset_flush_reduce_config
+.Lfunc_end17:
+	.size	blk_mq_tagset_flush_reduce_config, .Lfunc_end17-blk_mq_tagset_flush_reduce_config
                                         // -- End function
 	.globl	blk_flush_async_support // -- Begin function blk_flush_async_support
 	.p2align	2
@@ -1010,27 +1020,27 @@ blk_flush_async_support:                // @blk_flush_async_support
 // %bb.0:
 	stp	x29, x30, [sp, #-16]!   // 16-byte Folded Spill
 	mov	x29, sp
-	cbz	x0, .LBB19_3
+	cbz	x0, .LBB18_3
 // %bb.1:
-	ldr	x8, [x0, #136]
-	ldr	x8, [x8, #1272]
-	cbz	x8, .LBB19_4
+	ldr	x8, [x0, #128]
+	ldr	x8, [x8, #1264]
+	cbz	x8, .LBB18_4
 // %bb.2:
-	ldr	w0, [x8, #1272]
+	ldr	w0, [x8, #1256]
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.LBB19_3:
+.LBB18_3:
 	adrp	x0, .L.str.15
 	adrp	x1, .L__func__.blk_flush_async_support
 	add	x0, x0, :lo12:.L.str.15
 	add	x1, x1, :lo12:.L__func__.blk_flush_async_support
 	bl	printk
-.LBB19_4:
+.LBB18_4:
 	mov	w0, wzr
 	ldp	x29, x30, [sp], #16     // 16-byte Folded Reload
 	ret
-.Lfunc_end19:
-	.size	blk_flush_async_support, .Lfunc_end19-blk_flush_async_support
+.Lfunc_end18:
+	.size	blk_flush_async_support, .Lfunc_end18-blk_flush_async_support
                                         // -- End function
 	.type	.L.str,@object          // @.str
 	.section	.rodata.str1.1,"aMS",@progbits,1
@@ -1070,8 +1080,7 @@ all_flush_q_lock:
 	.zero	4
 	.xword	all_flush_q_lock+16
 	.xword	all_flush_q_lock+16
-	.xword	0
-	.size	all_flush_q_lock, 40
+	.size	all_flush_q_lock, 32
 
 	.type	all_flush_q_list,@object // @all_flush_q_list
 	.p2align	3
@@ -1174,13 +1183,8 @@ __addressable___cfi_mas_blk_flush_init360:
 	.xword	__cfi_mas_blk_flush_init
 	.size	__addressable___cfi_mas_blk_flush_init360, 8
 
-	.type	.L.str.11,@object       // @.str.11
-	.section	.rodata.str1.1,"aMS",@progbits,1
-.L.str.11:
-	.asciz	"Invalid flush_queue_node!"
-	.size	.L.str.11, 26
-
 	.type	.L.str.12,@object       // @.str.12
+	.section	.rodata.str1.1,"aMS",@progbits,1
 .L.str.12:
 	.asciz	"\0013[BLK-IO]%s: tag_set is NULL!\n"
 	.size	.L.str.12, 32
@@ -1224,11 +1228,6 @@ __addressable___cfi_mas_blk_flush_init360:
 .L__func__.mas_blk_order_poweroff_proc:
 	.asciz	"mas_blk_order_poweroff_proc"
 	.size	.L__func__.mas_blk_order_poweroff_proc, 28
-
-	.type	.L.str.16,@object       // @.str.16
-.L.str.16:
-	.asciz	"\0013[BLK-IO]%s\n"
-	.size	.L.str.16, 14
 
 	.ident	"Android (6443078 based on r383902) clang version 11.0.1 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)"
 	.section	".note.GNU-stack","",@progbits
