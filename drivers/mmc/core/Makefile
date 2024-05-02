@@ -21,3 +21,4 @@ obj-$(CONFIG_SDIO_UART)		+= sdio_uart.o
 mmc_core-$(CONFIG_MMC_CRYPTO)	+= crypto.o
 obj-$(CONFIG_HW_SD_HEALTH_DETECT)	+= mmc_health_diag.o
 obj-$(CONFIG_HUAWEI_SDCARD_DSM)	+= dsm_sdcard.o
+obj-$(CONFIG_HUAWEI_EMMC_DSM) 	+= dsm_emmc.o

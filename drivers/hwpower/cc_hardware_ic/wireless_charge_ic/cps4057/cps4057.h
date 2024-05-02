@@ -76,10 +76,10 @@
 #define CPS4057_PINCTRL_LEN                   2
 
 /* for coil test */
-#define CPS4057_COIL_TEST_PING_INTERVAL       0
+#define CPS4057_COIL_TEST_PING_INTERVAL       1
 #define CPS4057_COIL_TEST_PING_FREQ           115
 /* for battery heating */
-#define CPS4057_BAT_HEATING_PING_INTERVAL     0
+#define CPS4057_BAT_HEATING_PING_INTERVAL     1
 #define CPS4057_BAT_HEATING_PING_FREQ         100
 
 struct cps4057_chip_info {

@@ -133,11 +133,6 @@ static void mt5785_tx_chip_reset(void *dev_data)
 	hwlog_info("[chip_reset] succ\n");
 }
 
-static int mt5785_tx_get_full_bridge_ith(u16 *ith, void *dev_data)
-{
-	return 0;
-}
-
 static int mt5785_tx_set_bridge(unsigned int v_ask, unsigned int type, void *dev_data)
 {
 	return 0;
@@ -256,27 +251,28 @@ static int mt5785_tx_get_cep(s8 *cep, void *dev_data)
 
 static int mt5785_tx_get_duty(u8 *duty, void *dev_data)
 {
+	u16 value = 0;
+
+	if (!duty || mt5785_read_word(dev_data, MT5785_TX_DUTY_READ_ADDR, &value))
+		return -EINVAL;
+
+	*duty = (u8)value;
 	return 0;
 }
 
 static int mt5785_tx_get_ptx(u32 *ptx, void *dev_data)
 {
-	return 0;
+	return mt5785_read_word(dev_data, MT5785_TX_PTX_ADDR, (u16 *)ptx);
 }
 
 static int mt5785_tx_get_prx(u32 *prx, void *dev_data)
 {
-	return 0;
+	return mt5785_read_word(dev_data, MT5785_TX_PRX_ADDR, (u16 *)prx);
 }
 
 static int mt5785_tx_get_ploss(s32 *ploss, void *dev_data)
 {
-	return 0;
-}
-
-static int mt5785_tx_get_ploss_id(u8 *id, void *dev_data)
-{
-	return 0;
+	return mt5785_read_dword(dev_data, MT5785_TX_PLOSS_ADDR, (u32 *)ploss);
 }
 
 static int mt5785_tx_get_temp(s16 *chip_temp, void *dev_data)
@@ -358,6 +354,8 @@ static int mt5785_sw2tx(struct mt5785_dev_info *di)
 static void mt5785_tx_select_init_para(struct mt5785_dev_info *di,
 	unsigned int client)
 {
+	di->tx_init_para.ocp_th = MT5785_TX_OCP1_TH;
+
 	switch (client) {
 	case WLTX_CLIENT_UI:
 		di->tx_init_para.ping_freq = di->tx_ping_freq;
@@ -370,6 +368,7 @@ static void mt5785_tx_select_init_para(struct mt5785_dev_info *di,
 	case WLTX_CLIENT_BAT_HEATING:
 		di->tx_init_para.ping_freq = MT5785_TX_PING_FREQ_BAT_HEATING;
 		di->tx_init_para.ping_interval = MT5785_TX_PING_INTERVAL_BAT_HEATING;
+		di->tx_init_para.ocp_th = MT5785_TX_BAT_HEATING_OCP1_TH;
 		break;
 	default:
 		di->tx_init_para.ping_freq = di->tx_ping_freq;
@@ -388,7 +387,7 @@ static int mt5785_tx_set_init_para(struct mt5785_dev_info *di)
 		return ret;
 	}
 
-	ret = mt5785_write_word(di, MT5785_TX_OCP1_ADDR, MT5785_TX_OCP1_TH);
+	ret = mt5785_write_word(di, MT5785_TX_OCP1_ADDR, di->tx_init_para.ocp_th);
 	ret += mt5785_write_word(di, MT5785_TX_OVP_ADDR, MT5785_TX_OVP_TH);
 	ret += mt5785_write_dword(di, MT5785_TX_INT_EN_ADDR, MT5785_TX_INT_EN_ALL);
 	ret += mt5785_write_word(di, MT5785_TX_LVP_ADDR, MT5785_TX_LVP_TH);
@@ -415,6 +414,7 @@ static int mt5785_tx_chip_init(unsigned int client, void *dev_data)
 	di->irq_cnt = 0;
 	di->g_val.irq_abnormal = false;
 	di->g_val.tx_stop_chrg = false;
+	mt5785_enable_irq_wake(di);
 	mt5785_enable_irq(di);
 
 	mt5785_tx_select_init_para(di, client);
@@ -636,12 +636,12 @@ static struct wltx_ic_ops g_mt5785_tx_ic_ops = {
 	.get_ptx                = mt5785_tx_get_ptx,
 	.get_prx                = mt5785_tx_get_prx,
 	.get_ploss              = mt5785_tx_get_ploss,
-	.get_ploss_id           = mt5785_tx_get_ploss_id,
+	.get_ploss_id           = NULL,
 	.get_ping_freq          = mt5785_tx_get_ping_freq,
 	.get_ping_interval      = mt5785_tx_get_ping_interval,
 	.get_min_fop            = mt5785_tx_get_min_fop,
 	.get_max_fop            = mt5785_tx_get_max_fop,
-	.get_full_bridge_ith    = mt5785_tx_get_full_bridge_ith,
+	.get_full_bridge_ith    = NULL,
 	.set_ping_freq          = mt5785_tx_set_ping_freq,
 	.set_ping_interval      = mt5785_tx_set_ping_interval,
 	.set_min_fop            = mt5785_tx_set_min_fop,

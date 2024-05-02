@@ -185,6 +185,11 @@
 #define MT5785_RX_FULL_BRIDGE                1
 #define MT5785_RX_HALF_BRIDGE                0
 
+/* rx_fod_coef register */
+#define MT5785_RX_FOD_ADDR                   0x00c0
+#define MT5785_RX_FOD_LEN                    20
+#define MT5785_RX_FOD_TMP_STR_LEN            4
+
 /* EPT type */
 #define MT5785_RX_EPT_MSG_ADDR               0x0110
 #define MT5785_RX_EPT_MSG_LEN                1
@@ -247,6 +252,8 @@
 #define MT5785_TX_CMD_STOP_WORK_SHIFT        9
 #define MT5785_TX_CMD_SEND_PPP_MASK          BIT(10)
 #define MT5785_TX_CMD_SEND_PPP_SHIFT         10
+#define MT5785_TX_CMD_FOD_EN_MASK            BIT(17)
+#define MT5785_TX_CMD_FOD_EN_SHIFT           17
 #define MT5785_TX_CMD_24BIT_RPP_EN_MASK      BIT(20)
 #define MT5785_TX_CMD_24BIT_RPP_EN_SHIFT     20
 
@@ -301,6 +308,7 @@
 #define MT5785_TX_OCP1_ADDR                  0x005a
 #define MT5785_TX_OCP1_LEN                   2
 #define MT5785_TX_OCP1_TH                    2000
+#define MT5785_TX_BAT_HEATING_OCP1_TH        1000
 
 /* max input voltage threshold */
 #define MT5785_TX_OVP_ADDR                   0x005e
@@ -318,8 +326,8 @@
 #define MT5785_TX_PING_INTERVAL_MIN          0
 #define MT5785_TX_PING_INTERVAL_MAX          1000
 #define MT5785_TX_PING_INTERVAL              500
-#define MT5785_TX_PING_INTERVAL_COIL_TEST    0
-#define MT5785_TX_PING_INTERVAL_BAT_HEATING  0
+#define MT5785_TX_PING_INTERVAL_COIL_TEST    1
+#define MT5785_TX_PING_INTERVAL_BAT_HEATING  1
 
 /* Max Transmit Power */
 #define MT5785_TX_MAX_POWER_ADDR             0x0068
@@ -367,6 +375,34 @@
 #define MT5785_TX_CEP_VAL_ADDR               0x0112
 #define MT5785_TX_CEP_VAL_LEN                1
 #define MT5785_TX_CEP_VAL_STEP               10
+
+/* duty cycle */
+#define MT5785_TX_DUTY_READ_ADDR             0x0040
+#define MT5785_TX_DUTY_READ_LEN              2
+#define MT5785_TX_BRG_SWITCH_DUTY_ADDR       0x004e
+#define MT5785_TX_BRG_SWITCH_DUTY_LEN        2
+#define MT5785_TX_PING_DUTY_ADDR             0x006c
+#define MT5785_TX_PING_DUTY_LEN              2
+#define MT5785_TX_PT_DUTY_MIN_ADDR           0x0080
+#define MT5785_TX_PT_DUTY_MIN_LEN            1
+#define MT5785_TX_PT_DUTY_MAX_ADDR           0x0081
+#define MT5785_TX_PT_DUTY_MAX_LEN            1
+
+/* Power loss,difference of Ptx and Prx */
+#define MT5785_TX_PLOSS_ADDR                 0x0084
+#define MT5785_TX_PLOSS_LEN                  4
+
+/* FOD index,indicate witch fod param is used between FODTHLD0~FODTHLDO7 */
+#define MT5785_TX_FOD_IDX_ADDR               0x0088
+#define MT5785_TX_FOD_IDX_LEN                1
+
+/* input power */
+#define MT5785_TX_PTX_ADDR                   0x0104
+#define MT5785_TX_PTX_LEN                    1
+
+/* rx receive power */
+#define MT5785_TX_PRX_ADDR                   0x0108
+#define MT5785_TX_PRX_LEN                    1
 
 /*
  * firmware register

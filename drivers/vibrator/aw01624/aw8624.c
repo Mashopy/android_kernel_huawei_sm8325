@@ -38,6 +38,7 @@
 #include "aw8624_reg.h"
 #include <linux/vmalloc.h>
 #include <chipset_common/hwpower/hardware_ic/boost_5v.h>
+#include "../vibrator_event.h"
 
 /******************************************************
  *
@@ -1658,6 +1659,7 @@ static ssize_t aw8624_file_write(struct file *filp,
 		aw8624->amplitude = type % LONG_TIME_AMP_DIV_COFF;
 		aw8624->state = 1;
 		aw8624_adapt_amp_again(aw8624, LONG_VIB_RAM_MODE);
+		__pm_wakeup_event(aw8624->ws, aw8624->duration + HAPTIC_WAKE_LOCK_GAP);
 		pr_info("%s long index = %d, amp = %d\n", __func__, aw8624->index, aw8624->amplitude);
 		schedule_work(&aw8624->vibrator_work);
 	} else if ((type > 0) && (type <= SHORT_HAPTIC_RAM_MAX_ID)) { // short ram haptic
@@ -1931,7 +1933,7 @@ static ssize_t aw8624_duration_store(struct device *dev,
 		val = aw8624->f0_value;
 	aw8624->duration = val;
 	aw8624->effect_mode = LONG_VIB_RAM_MODE;
-
+	__pm_wakeup_event(aw8624->ws, aw8624->duration + HAPTIC_WAKE_LOCK_GAP);
 	return count;
 }
 
@@ -3528,6 +3530,14 @@ static int aw8624_power_excep_check(struct aw8624 *aw8624)
 	return 0;
 }
 
+static void aw8624_vib_duration_notify(struct aw8624 *aw8624)
+{
+	if (aw8624->state && aw8624->effect_mode == LONG_VIB_RAM_MODE)
+		vibrator_duration_distinguish(aw8624->duration);
+	else
+		vibrator_duration_distinguish(0);
+}
+
 static void aw8624_vibrator_work_routine(struct work_struct *work)
 {
 	struct aw8624 *aw8624 = container_of(work, struct aw8624, vibrator_work);
@@ -3544,6 +3554,7 @@ static void aw8624_vibrator_work_routine(struct work_struct *work)
 
 	aw8624_haptic_stop(aw8624);
 	aw8624_haptic_upload_lra(aw8624, AW8624_HAPTIC_F0_CALI_LRA);
+	aw8624_vib_duration_notify(aw8624);
 	// add lra load
 	if (aw8624->state) {
 		if (aw8624->activate_mode == AW8624_HAPTIC_ACTIVATE_RAM_MODE) {
@@ -3568,17 +3579,9 @@ static void aw8624_vibrator_work_routine(struct work_struct *work)
 		}
 		/* run ms timer */
 		if (aw8624->effect_mode == LONG_VIB_RAM_MODE ||
-			(aw8624->activate_mode == AW8624_HAPTIC_ACTIVATE_CONT_MODE)) {
+			(aw8624->activate_mode == AW8624_HAPTIC_ACTIVATE_CONT_MODE))
 			hrtimer_start(&aw8624->timer, ktime_set(aw8624->duration / 1000,
 				(aw8624->duration % 1000) * 1000000), HRTIMER_MODE_REL);
-			__pm_stay_awake(aw8624->ws);
-			aw8624->wk_lock_flag = 1;
-		}
-	} else {
-		if (aw8624->wk_lock_flag == 1) {
-			__pm_relax(aw8624->ws);
-			aw8624->wk_lock_flag = 0;
-		}
 	}
 
 	mutex_unlock(&aw8624->lock);
@@ -4107,6 +4110,7 @@ static int aw8624_i2c_probe(struct i2c_client *i2c,
 	if (!aw8624->ws)
 		return -ENOMEM;
 
+	vibrator_nb_init();
 	aw8624_vibrator_init(aw8624);
 	aw8624_haptic_init(aw8624);
 	aw8624_ram_init(aw8624);

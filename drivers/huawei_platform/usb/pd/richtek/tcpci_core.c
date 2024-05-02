@@ -55,7 +55,7 @@ EXPORT_SYMBOL_GPL(tcpc_class);
 static struct device_type tcpc_dev_type;
 
 static struct device_attribute tcpc_device_attributes[] = {
-	TCPC_DEVICE_ATTR(role_def, S_IRUGO),
+	TCPC_DEVICE_ATTR(role_def, S_IRUGO | S_IWUSR | S_IWGRP),
 	TCPC_DEVICE_ATTR(rp_lvl, S_IRUGO),
 	TCPC_DEVICE_ATTR(pd_test, S_IRUGO | S_IWUSR | S_IWGRP),
 	TCPC_DEVICE_ATTR(info, S_IRUGO),

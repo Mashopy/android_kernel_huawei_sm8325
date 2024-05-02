@@ -621,7 +621,7 @@ static int hl7019_get_register_head(char *reg_head, int size, void *dev_data)
 	memset(reg_head, 0, size);
 
 	for (i = 0; i < HL7019_REG_NUM; i++) {
-		snprintf(buff, BUF_LEN, "Reg[0x%x]  ", i);
+		snprintf(buff, BUF_LEN, "Reg[0x%-2.2x] ", i);
 		len += strlen(buff);
 		if (len < size)
 			strncat(reg_head, buff, strlen(buff));

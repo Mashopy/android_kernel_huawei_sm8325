@@ -10,6 +10,12 @@ config HW_EXTERNAL_SENSOR
 	help
 	  Support external sensor driver instead of HW_THERMAL_TSENSOR in IPA
 
+config HW_IPA_THERMAL_QCOM
+	bool "indicate IPA for Qcom"
+	default n
+	help
+	  indicate IPA for Qcom
+
 config HW_IPA_THERMAL
 	#tristate "Temperature sensor on ARM SoC based on HW_THERMAL_TSENSOR interface"
 	tristate "Temperature sensor on ARM SoC"

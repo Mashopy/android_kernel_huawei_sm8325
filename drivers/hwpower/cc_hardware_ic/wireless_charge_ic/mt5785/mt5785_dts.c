@@ -104,6 +104,11 @@ int mt5785_parse_dts(struct device_node *np, struct mt5785_dev_info *di)
 		MT5785_TX_PING_FREQ);
 
 	mt5785_parse_tx_fod(np, di);
+	ret = wlrx_parse_fod_cfg(di->ic_type, np, MT5785_RX_FOD_LEN);
+	if (ret) {
+		hwlog_err("parse_dts: parse rx_fod para failed\n");
+		return ret;
+	}
 	ret = mt5785_parse_ldo_cfg(np, di);
 	if (ret) {
 		hwlog_err("parse_dts: parse ldo cfg failed\n");

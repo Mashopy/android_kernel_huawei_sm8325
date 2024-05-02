@@ -20,15 +20,19 @@
 #define HWGTM_TASK_TYPE_NUM		2
 #define HWGTM_TASK_DELAY_MS		1000
 
-#define HWGTM_IOCTL_MAGIC		0xBE
-#define HWGTM_SYS_EVENT			_IOW(HWGTM_IOCTL_MAGIC, 1, int32_t)
-#define HWGTM_REQUEST_TASK		_IOR(HWGTM_IOCTL_MAGIC, 2, int32_t)
-#define HWGTM_START_TASK		_IOR(HWGTM_IOCTL_MAGIC, 3, struct user_task_info)
-#define HWGTM_FINISH_TASK		_IOR(HWGTM_IOCTL_MAGIC, 4, struct user_task_info)
+#define HWGTM_SYS_EVENT			100
+#define HWGTM_REQUEST_TASK		101
+#define HWGTM_START_TASK		102
+#define HWGTM_FINISH_TASK		103
 
 #define HWGTM_SYS_EVENT_APP_START_BEGIN	1
 #define HWGTM_SYS_EVENT_APP_START_END	2
 #define HWGTM_SYS_EVENT_NUM		10
+
+#define HWGTM_PARAMS_LEN		3
+#define HWGTM_CMD_PARAM_IDX		0
+#define HWGTM_IN_PARARM_IDX		1
+#define HWGTM_OUT_PARARM_IDX		2
 
 #undef HWLOG_TAG
 #define HWLOG_TAG hwgtm
@@ -92,16 +96,19 @@ static int hwgtm_clean_tasks_locked(ktime_t curr_time, int32_t index)
 	return available_task_count;
 }
 
-static long hwgtm_system_event(unsigned long arg)
+static long hwgtm_system_event(uint64_t *params)
 {
 	int32_t event;
-	int32_t __user *uarg = (int32_t __user *)arg;
 	ktime_t event_time;
+	void __user *in_param_addr;
 
 	if (g_hwgtm_info == NULL)
 		return -ENODEV;
-	if (copy_from_user(&event, uarg, sizeof(event)))
+
+	in_param_addr = (void *)params[HWGTM_IN_PARARM_IDX];
+	if (copy_from_user(&event, in_param_addr, sizeof(event)))
 		return -EFAULT;
+
 	if (event >= HWGTM_SYS_EVENT_NUM)
 		return -EINVAL;
 
@@ -118,7 +125,7 @@ static long hwgtm_system_event(unsigned long arg)
 	return 0;
 }
 
-static long hwgtm_request_task(unsigned long arg)
+static long hwgtm_request_task(uint64_t *params)
 {
 	ktime_t curr_time;
 	ktime_t elapsed_time;
@@ -126,12 +133,13 @@ static long hwgtm_request_task(unsigned long arg)
 	int available_task_count;
 	bool has_recent_event = false;
 	bool heavy_load = false;
-	int32_t __user *uarg = (int32_t __user *)arg;
+	void __user *out_param_addr;
 	int i;
 
 	if (g_hwgtm_info == NULL)
 		return -ENODEV;
 
+	out_param_addr = (void *)params[HWGTM_OUT_PARARM_IDX];
 	ret_delay = 0;
 	curr_time = ktime_get();
 	spin_lock(&g_hwgtm_info->gtm_lock);
@@ -152,7 +160,8 @@ static long hwgtm_request_task(unsigned long arg)
 	spin_unlock(&g_hwgtm_info->gtm_lock);
 	if (has_recent_event || heavy_load)
 		ret_delay = HWGTM_TASK_DELAY_MS;
-	if (put_user(ret_delay, uarg))
+
+	if (copy_to_user(out_param_addr, &ret_delay, sizeof(ret_delay)))
 		return -EFAULT;
 
 	return 0;
@@ -182,15 +191,18 @@ static void hwgtm_insert_task_locked(struct hwgtm_task_info *task_info)
 	return;
 }
 
-static long hwgtm_start_task(unsigned long arg)
+static long hwgtm_start_task(uint64_t *params)
 {
 	struct hwgtm_task_info uinfo;
-	void __user *uarg = (void __user *)arg;
+	void __user *in_param_addr;
 
 	if (g_hwgtm_info == NULL)
 		return -ENODEV;
-	if (copy_from_user(&uinfo.user_data, uarg, sizeof(struct user_task_info)))
+
+	in_param_addr = (void *)params[HWGTM_IN_PARARM_IDX];
+	if (copy_from_user(&uinfo.user_data, in_param_addr, sizeof(struct user_task_info)))
 		return -EFAULT;
+
 	if (uinfo.user_data.type < 0 || uinfo.user_data.type >= HWGTM_TASK_TYPE_NUM)
 		return -EINVAL;
 
@@ -201,19 +213,22 @@ static long hwgtm_start_task(unsigned long arg)
 	return 0;
 }
 
-static long hwgtm_finish_task(unsigned long arg)
+static long hwgtm_finish_task(uint64_t *params)
 {
 	int i;
 	struct hwgtm_task_info uinfo;
 	int32_t utask_type;
 	int32_t utask_id;
 	struct hwgtm_task_info *tmp_info = NULL;
-	void __user *uarg = (void __user *)arg;
+	void __user *in_param_addr;
 
 	if (g_hwgtm_info == NULL)
 		return -ENODEV;
-	if (copy_from_user(&uinfo.user_data, uarg, sizeof(struct user_task_info)))
+
+	in_param_addr = (void *)params[HWGTM_IN_PARARM_IDX];
+	if (copy_from_user(&uinfo.user_data, in_param_addr, sizeof(struct user_task_info)))
 		return -EFAULT;
+
 	if (uinfo.user_data.type < 0 || uinfo.user_data.type >= HWGTM_TASK_TYPE_NUM)
 		return -EINVAL;
 
@@ -242,16 +257,36 @@ static int hwgtm_close(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static long hwgtm_manager_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+/*
+* Although params are passed in and out between kernel and user space,
+* the read syscall, instead of ioctl, is used as the interface because of two
+* reasons:
+* 1) A third-party app has its own sandbox implementation which intercepts
+* ioctl and causes a crash. Since hacking the app in the user space is more
+* troublesome, ioctl needs to be replaced with another syscall that the app
+* does not intercept, to ensure compatibility with the app.
+* 2) The write syscall could have been a substitute for ioctl, but the selinux
+* policy disallows untrusted app to write to this file.
+* So, the read syscall is chosen, with some tricks to pass in/out data pointers
+* through the read buffer.
+*/
+static ssize_t hwgtm_manager_read(struct file *file, char __user *buf,
+				size_t count, loff_t *ppos)
 {
+	uint64_t params[HWGTM_PARAMS_LEN];
+	uint64_t cmd;
 	long ret;
 
+	if (copy_from_user(params, buf, sizeof(params)))
+		return -EFAULT;
+
+	cmd = params[HWGTM_CMD_PARAM_IDX];
 	switch (cmd) {
 	case HWGTM_SYS_EVENT:
-		ret = hwgtm_system_event(arg);
+		ret = hwgtm_system_event(params);
 		break;
 	default:
-		hwgtm_logd("unknown ioctl command: %d", cmd);
+		hwgtm_logd("unknown read command: %llu", cmd);
 		ret = -EINVAL;
 		break;
 	}
@@ -259,23 +294,29 @@ static long hwgtm_manager_ioctl(struct file *file, unsigned int cmd, unsigned lo
 	return ret;
 }
 
-
-static long hwgtm_client_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static ssize_t hwgtm_client_read(struct file *file, char __user *buf,
+				size_t count, loff_t *ppos)
 {
+	uint64_t params[HWGTM_PARAMS_LEN];
+	uint64_t cmd;
 	long ret;
 
+	if (copy_from_user(params, buf, sizeof(params)))
+		return -EFAULT;
+
+	cmd = params[HWGTM_CMD_PARAM_IDX];
 	switch (cmd) {
 	case HWGTM_REQUEST_TASK:
-		ret = hwgtm_request_task(arg);
+		ret = hwgtm_request_task(params);
 		break;
 	case HWGTM_START_TASK:
-		ret = hwgtm_start_task(arg);
+		ret = hwgtm_start_task(params);
 		break;
 	case HWGTM_FINISH_TASK:
-		ret = hwgtm_finish_task(arg);
+		ret = hwgtm_finish_task(params);
 		break;
 	default:
-		hwgtm_logd("unknown ioctl command: %d", cmd);
+		hwgtm_logd("unknown read command: %llu", cmd);
 		ret = -EINVAL;
 		break;
 	}
@@ -285,21 +326,15 @@ static long hwgtm_client_ioctl(struct file *file, unsigned int cmd, unsigned lon
 
 static const struct file_operations g_hwgtm_manager_fops = {
 	.owner		= THIS_MODULE,
-	.unlocked_ioctl	= hwgtm_manager_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl	= hwgtm_manager_ioctl,
-#endif
 	.open		= hwgtm_open,
+	.read		= hwgtm_manager_read,
 	.release	= hwgtm_close,
 };
 
 static const struct file_operations g_hwgtm_client_fops = {
 	.owner		= THIS_MODULE,
-	.unlocked_ioctl	= hwgtm_client_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl	= hwgtm_client_ioctl,
-#endif
 	.open		= hwgtm_open,
+	.read		= hwgtm_client_read,
 	.release	= hwgtm_close,
 };
 

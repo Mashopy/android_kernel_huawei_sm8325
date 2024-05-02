@@ -17,4 +17,7 @@ struct work_struct;
 
 void mmc_blk_mq_complete_work(struct work_struct *work);
 
+#ifdef CONFIG_DISK_MAGO
+int mmc_blk_get_health_info(struct block_device *bdev, unsigned char *data);
+#endif
 #endif

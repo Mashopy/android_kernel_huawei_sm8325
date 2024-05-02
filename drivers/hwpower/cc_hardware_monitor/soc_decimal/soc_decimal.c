@@ -167,12 +167,12 @@ static void soc_decimal_timer_start(struct soc_decimal_dev *l_dev)
 		HRTIMER_MODE_REL);
 }
 
-static enum hrtimer_restart soc_decimal_timer_func(struct hrtimer *timer)
+void soc_decimal_timer_work(struct work_struct *work)
 {
 	struct soc_decimal_dev *l_dev = soc_decimal_get_dev();
 
 	if (!l_dev)
-		return HRTIMER_NORESTART;
+		return;
 
 	if (!l_dev->info.start)
 		goto restart_work;
@@ -186,10 +186,20 @@ static enum hrtimer_restart soc_decimal_timer_func(struct hrtimer *timer)
 
 	l_dev->info.soc = soc_decimal_calculate_soc(l_dev);
 	soc_decimal_timer_start(l_dev);
-	return HRTIMER_NORESTART;
+	return;
 
 restart_work:
 	power_platform_restart_capacity_work();
+}
+
+static enum hrtimer_restart soc_decimal_timer_func(struct hrtimer *timer)
+{
+	struct soc_decimal_dev *l_dev = soc_decimal_get_dev();
+
+	if (!l_dev || !timer)
+		return HRTIMER_NORESTART;
+
+	queue_work(system_highpri_wq, &l_dev->soc_decimal_timer_work);
 	return HRTIMER_NORESTART;
 }
 
@@ -486,6 +496,7 @@ static int soc_decimal_probe(struct platform_device *pdev)
 	if (ret)
 		goto fail_regist_event;
 
+	INIT_WORK(&l_dev->soc_decimal_timer_work, soc_decimal_timer_work);
 	l_dev->dev = soc_decimal_sysfs_create_group();
 	hrtimer_init(&l_dev->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	l_dev->timer.function = soc_decimal_timer_func;

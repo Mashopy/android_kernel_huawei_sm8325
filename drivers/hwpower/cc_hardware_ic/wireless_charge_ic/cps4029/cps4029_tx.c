@@ -329,7 +329,7 @@ static int cps4029_tx_stop_config(void *dev_data)
 
 static void cps4029_tx_select_init_para(struct cps4029_dev_info *di)
 {
-	di->tx_init_para.ping_freq = CPS4029_TX_PING_FREQ;
+	di->tx_init_para.ping_freq = di->tx_ping_freq;
 	di->tx_init_para.ping_interval = CPS4029_TX_PING_INTERVAL;
 }
 
@@ -340,7 +340,7 @@ static int cps4029_tx_set_init_para(struct cps4029_dev_info *di)
 	ret = cps4029_write_word(di, CPS4029_TX_OCP_TH_ADDR, CPS4029_TX_OCP_TH);
 	ret += cps4029_write_word(di, CPS4029_TX_OVP_TH_ADDR, CPS4029_TX_OVP_TH);
 	ret += cps4029_write_word(di, CPS4029_TX_IRQ_EN_ADDR, CPS4029_TX_IRQ_VAL);
-	ret += cps4029_write_word(di, CPS4029_TX_PING_OCP_ADDR, CPS4029_TX_PING_OCP_TH);
+	ret += cps4029_write_word(di, CPS4029_TX_PING_OCP_ADDR, di->tx_pocp_th);
 	ret += cps4029_tx_init_fod_coef(di);
 	ret += cps4029_tx_set_ping_frequency(di->tx_init_para.ping_freq, di);
 	ret += cps4029_tx_set_min_fop(di->tx_fop.tx_min_fop, di);

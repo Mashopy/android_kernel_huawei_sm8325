@@ -34,6 +34,11 @@
 
 #include "peripheral-loader.h"
 
+#ifdef CONFIG_BLACKBOX
+#include <platform/linux/blackbox.h>
+#include <platform/linux/blackbox_subsystem.h>
+#endif
+
 #define PIL_TZ_AVG_BW  0
 #define PIL_TZ_PEAK_BW UINT_MAX
 
@@ -53,6 +58,9 @@
 
 #define ERR_READY	0
 #define PBL_DONE	1
+
+#define RETRY_BOOT_COUNT 3
+#define RETRY_BOOT_INTERNAL 1000
 
 #define desc_to_data(d) container_of(d, struct pil_tz_data, desc)
 #define subsys_to_data(d) container_of(d, struct pil_tz_data, subsys_desc)
@@ -799,6 +807,9 @@ static void log_failure_reason(const struct pil_tz_data *d)
 		wpss_reset_save_log(reason, MAX_SSR_REASON_LEN);
 	}
 #endif
+#ifdef CONFIG_BLACKBOX
+	save_crash_reason_data(name, reason, MAX_SSR_REASON_LEN);
+#endif
 	err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "%s_crash", name);
 	if (err >= 0)
 		trace_rb_sreason_set(attach_info_buffer);
@@ -832,6 +843,7 @@ static int subsys_powerup(const struct subsys_desc *subsys)
 {
 	struct pil_tz_data *d = subsys_to_data(subsys);
 	int ret = 0;
+	int retry_count = 0;
 
 	reinit_completion(&d->err_ready);
 
@@ -839,7 +851,17 @@ static int subsys_powerup(const struct subsys_desc *subsys)
 		reinit_completion(&d->stop_ack);
 
 	d->desc.fw_name = subsys->fw_name;
+
+retry:
 	ret = pil_boot(&d->desc);
+
+	if (ret == -EBUSY && retry_count < RETRY_BOOT_COUNT) {
+		retry_count++;
+		pr_err("pil_boot failed with EBUSY, retry: %d\n", retry_count);
+		msleep(RETRY_BOOT_INTERNAL);
+		goto retry;
+	}
+
 	if (ret) {
 		pr_err("pil_boot failed for %s\n",  d->subsys_desc.name);
 		return ret;
@@ -1636,6 +1658,10 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	match = of_match_node(pil_tz_match_table, pdev->dev.of_node);
 	if (!match)
 		return -ENODEV;
+
+#ifdef CONFIG_BLACKBOX
+	subsystem_register_module_ops();
+ #endif
 
 	pil_tz_probe = match->data;
 	return pil_tz_probe(pdev);

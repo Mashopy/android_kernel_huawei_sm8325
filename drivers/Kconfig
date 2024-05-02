@@ -240,6 +240,8 @@ source "drivers/dsm/Kconfig"
 
 source "drivers/huawei_platform/Kconfig"
 
+source "drivers/huawei/Kconfig"
+
 source "drivers/devkit/audiokit/Kconfig"
 
 source "drivers/devkit/tpkit/Kconfig"
@@ -271,6 +273,8 @@ source "drivers/chr/Kconfig"
 source "drivers/hw_dpi_mark/Kconfig"
 
 source "drivers/network_aware/Kconfig"
+
+source "drivers/network_dcp/Kconfig"
 
 source "drivers/rmeminspect/Kconfig"
 
@@ -320,9 +324,20 @@ source "drivers/perf_ctrl/Kconfig"
 
 source "drivers/perfhub/Kconfig"
 
+source "drivers/accesstokenid/Kconfig"
+
 source "drivers/connectivity/Kconfig"
 
 source "drivers/rsmc/Kconfig"
 
+source "drivers/rsmc_x801/Kconfig"
+
 source "drivers/hwgtm/Kconfig"
+
+source "drivers/shutdown_wdt/Kconfig"
+
+source "drivers/camera_power/Kconfig"
+
+source "drivers/storage_rofa/Kconfig"
+
 endmenu

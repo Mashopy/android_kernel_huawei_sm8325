@@ -9,6 +9,8 @@ obj-$(CONFIG_WIRELESS_MT5727) += mt5727/
 obj-$(CONFIG_WIRELESS_STWLC33) += stwlc33/
 obj-$(CONFIG_WIRELESS_CPS4067) += cps4067/
 obj-$(CONFIG_WIRELESS_MT5785) += mt5785/
+obj-$(CONFIG_WIRELESS_CPS8601) += cps8601/
+obj-$(CONFIG_WIRELESS_MT5806) += mt5806/
 # idtp9415 no dev_check, must compile last
 obj-$(CONFIG_WIRELESS_IDTP9415) += idtp9415/
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_ic_fod.o

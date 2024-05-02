@@ -112,7 +112,6 @@ struct thp_core_data *g_thp_core;
 static u8 *spi_sync_tx_buf;
 static u8 *spi_sync_rx_buf;
 static u8 is_fw_update;
-static bool locked_by_daemon;
 static int spi_sync_count_in_suspend;
 static int get_frame_count_in_suspend;
 
@@ -132,6 +131,7 @@ static struct hw_comm_pmic_cfg_t tp_pmic_ldo_set;
 #define TEMP_OPEN_DEBUG_LOG 2
 #define DISABLE_DEBUG_LOG 0
 #define MAX_SUPPORT_DEBUG_IRQ_NUM 5
+#define NO_NEED_OFF_POWER_STATUS 1
 static int irq_count_for_debug;
 
 #if defined(CONFIG_TEE_TUI)
@@ -265,6 +265,8 @@ static void thp_multi_suspend(void);
 static void thp_multi_resume(void);
 static void tskit_multi_resume(void);
 static void tskit_multi_suspend(void);
+static int thp_aod_screen_off_notify(u32 val);
+static int thp_aod_state_notify(u32 val);
 #if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
 static void thp_suspend_thread(void);
 static void thp_resume_thread(void);
@@ -277,6 +279,8 @@ struct ts_kit_ops thp_ops = {
 	.ts_multi_power_notify = thp_multi_power_control_notify,
 	.get_afe_status = thp_get_afe_download_status,
 	.send_esd_event = thp_send_esd_event,
+	.ts_aod_screen_off_notify = thp_aod_screen_off_notify,
+	.ts_aod_state_notify = thp_aod_state_notify,
 };
 
 static int thp_send_esd_event(unsigned int status)
@@ -1212,6 +1216,8 @@ static bool need_work_in_suspend_switch(struct thp_core_data *cd)
 	bool result = false;
 	unsigned int double_tap_status;
 	unsigned int ap_gesture_status;
+	unsigned int off_power_status;
+	unsigned int stylus_status;
 
 	if (!cd->use_ap_gesture)
 		return (cd->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE &&
@@ -1219,11 +1225,20 @@ static bool need_work_in_suspend_switch(struct thp_core_data *cd)
 
 	double_tap_status = (cd->easy_wakeup_info.sleep_mode ==
 		TS_GESTURE_MODE) && cd->support_gesture_mode;
+	stylus_status = (thp_get_status(THP_STATUS_STYLUS) ||
+			thp_get_status(THP_STATUS_STYLUS3));
 	ap_gesture_status = thp_get_status(THP_STATUS_UDFP) ||
-		cd->aod_touch_status || (thp_get_status(THP_STATUS_STYLUS) ||
-		thp_get_status(THP_STATUS_STYLUS3));
+		cd->aod_touch_status;
+
+	/* Without judging the state of the pen, CEL and CET should be consistent */
+	if (!cd->no_resume_only_stylus)
+		ap_gesture_status = ap_gesture_status || stylus_status;
+	off_power_status = cd->aod_touch_status && cd->tddi_aod_screen_off_flag;
+
+	off_power_status = cd->aod_support_on_tddi ?
+		off_power_status : NO_NEED_OFF_POWER_STATUS;
 	result = (double_tap_status || ap_gesture_status) &&
-		!cd->support_shb_thp;
+		!cd->support_shb_thp && off_power_status;
 	return result;
 }
 
@@ -1258,8 +1273,10 @@ static int thp_suspend(struct thp_core_data *cd)
 #endif
 		if (cd->disable_irq_gesture_suspend)
 			thp_set_irq_status(cd, THP_IRQ_DISABLE);
+		mutex_lock(&cd->thp_tp_lowpower_cmd_lock);
 		cd->thp_dev->ops->suspend(cd->thp_dev);
 		cd->work_status = SUSPEND_DONE;
+		mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
 		thp_set_irq_status(cd, THP_IRQ_ENABLE);
 	} else {
 #ifndef CONFIG_HUAWEI_THP_MTK
@@ -1281,15 +1298,22 @@ static int thp_resume(struct thp_core_data *cd)
 		return 0;
 	}
 
+	thp_log_info("%s:hold lock\n", __func__);
+	mutex_lock(&cd->thp_tp_lowpower_cmd_lock);
 	cd->work_status = BEFORE_RESUME;
+	mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
+	thp_log_info("%s:release lock\n", __func__);
 	thp_log_info("%s: %s\n", __func__, cd->project_id);
 	thp_log_info("%s: spi_sync_count_in_suspend = %d, get_get_frame_count_in_suspend = %d\n",
 		__func__, spi_sync_count_in_suspend, get_frame_count_in_suspend);
 	spi_sync_count_in_suspend = 0;
 	get_frame_count_in_suspend = 0;
-	cd->aod_window_ready_status = false;
+	if (!cd->aod_support_on_tddi)
+		cd->aod_window_ready_status = false;
 
 	cd->thp_dev->ops->resume(cd->thp_dev);
+	if (cd->aod_support_on_tddi)
+		cd->tddi_aod_screen_off_flag = 0;
 
 	/* clear rawdata frame buffer list */
 	mutex_lock(&cd->mutex_frame);
@@ -1971,6 +1995,8 @@ static int pm_type_switch(struct thp_core_data *cd,
 		break;
 
 	case TS_RESUME_DEVICE:
+		if (cd->aod_support_on_tddi)
+			thp_set_irq_status(cd, THP_IRQ_DISABLE);
 		thp_log_info("%s: resume\n", __func__);
 		if (cd->support_daemon_init_protect &&
 			atomic_read(&(cd->fw_update_protect)) &&
@@ -2014,6 +2040,8 @@ static int pm_type_switch(struct thp_core_data *cd,
 		break;
 
 	case TS_AFTER_RESUME:
+		if (cd->aod_support_on_tddi)
+			thp_set_irq_status(cd, THP_IRQ_ENABLE);
 		thp_after_resume(cd);
 		break;
 	case TS_2ND_POWER_OFF:
@@ -2051,7 +2079,7 @@ int thp_power_control_notify(enum lcd_kit_ts_pm_type pm_type, int timeout)
 	 * click-display, all-day display, and fingerprint, the
 	 * AOD controls the TP power status.
 	 */
-	if (cd->use_aod_power_ctrl_notify && cd->aod_notify_tp_power_status &&
+	if (!cd->aod_support_on_tddi && cd->use_aod_power_ctrl_notify && cd->aod_notify_tp_power_status &&
 		(cd->multi_panel_index == SINGLE_TOUCH_PANEL)) {
 		thp_log_info("%s: use AOD notify, return\n", __func__);
 		return 0;
@@ -2302,6 +2330,23 @@ static void thp_resume_thread(void)
 		thp_set_multi_pm_status(TS_RESUME_DEVICE, MAIN_TOUCH_PANEL);
 }
 
+void aod_status_notify_to_daemon(unsigned int status)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (status == AOD_NOTIFY_TP_SUSPEND) {
+		thp_set_status(THP_STATUS_AOD, ENTER_AOD_CONDITION);
+	} else if (status == AOD_NOTIFY_TP_RESUME) {
+		thp_set_status(THP_STATUS_AOD, EXIT_AOD_CONDITION);
+		cd->aod_window_ready_status = false;
+		cd->aod_state_flag = 0;
+		thp_log_info("%s: aod_window_ready_status is %u\n", __func__, cd->aod_window_ready_status);
+		thp_log_info("%s : aod_state_flag value %u\n",
+		__func__, cd->aod_state_flag);
+	}
+	return;
+}
+
 void aod_status_notifier(struct thp_core_data *cd, unsigned int status)
 {
 	static unsigned int last_status = INVALID_VALUE;
@@ -2315,6 +2360,10 @@ void aod_status_notifier(struct thp_core_data *cd, unsigned int status)
 	if ((cd->multi_panel_index == SINGLE_TOUCH_PANEL) &&
 		(status == last_status)) {
 		thp_log_info("%s: repeat event, dont handle!!\n", __func__);
+		return;
+	}
+	if (cd->aod_support_on_tddi) {
+		aod_status_notify_to_daemon(status);
 		return;
 	}
 	memset(&cmd, 0, sizeof(cmd));
@@ -2417,12 +2466,6 @@ static int thp_release(struct inode *inode, struct file *filp)
 
 	thp_wake_up_frame_waitq(cd);
 	thp_set_irq_status(cd, THP_IRQ_DISABLE);
-
-	if (locked_by_daemon) {
-		thp_log_info("%s: need unlock here\n", __func__);
-		thp_bus_unlock();
-		locked_by_daemon = false;
-	}
 
 	return 0;
 }
@@ -2670,26 +2713,14 @@ static long thp_spi_sync_mem_init(u8 **tx_buf,
 	u8 **rx_buf, struct thp_ioctl_spi_sync_data sync_data)
 {
 	int rc = 0;
-	struct thp_core_data *cd = thp_get_core_data();
 
-	if (cd->need_huge_memory_in_spi) {
-		rc = thp_spi_sync_alloc_mem();
-		if (rc) {
-			thp_log_err("%s:buf request memory fail\n", __func__);
-			return rc;
-		}
-		*rx_buf = spi_sync_rx_buf;
-		*tx_buf = spi_sync_tx_buf;
-	} else {
-		*rx_buf = kzalloc(sync_data.size, GFP_KERNEL);
-		*tx_buf = kzalloc(sync_data.size, GFP_KERNEL);
-		if (!(*rx_buf) || !(*tx_buf)) {
-			thp_log_err(
-				"%s:buf request memory fail,sync_data.size = %d\n",
-				__func__, sync_data.size);
-			return -ENOMEM;
-		}
+	rc = thp_spi_sync_alloc_mem();
+	if (rc) {
+		thp_log_err("%s:buf request memory fail\n", __func__);
+		return rc;
 	}
+	*rx_buf = spi_sync_rx_buf;
+	*tx_buf = spi_sync_tx_buf;
 	return rc;
 }
 
@@ -2729,19 +2760,6 @@ static long thp_spi_sync_data_with_user(unsigned int lock_status, u8 *tx_buf,
 	return rc;
 }
 
-static void thp_spi_sync_mem_free(u8 **tx_buf, u8 **rx_buf)
-{
-	struct thp_core_data *cd = thp_get_core_data();
-
-	if (!cd->need_huge_memory_in_spi) {
-		kfree(*rx_buf);
-		*rx_buf = NULL;
-
-		kfree(*tx_buf);
-		*tx_buf = NULL;
-	}
-}
-
 static long thp_spi_sync_common(const void __user *data,
 	unsigned int lock_status)
 {
@@ -2775,7 +2793,6 @@ static long thp_spi_sync_common(const void __user *data,
 		goto exit;
 
 exit:
-	thp_spi_sync_mem_free(&tx_buf, &rx_buf);
 	return rc;
 }
 
@@ -3098,18 +3115,8 @@ static long thp_ioctl_reset(unsigned long reset)
 
 static long thp_ioctl_hw_lock_status(unsigned long arg)
 {
-	thp_log_info("%s: set hw lock status %lu\n", __func__, arg);
-	if (arg) {
-		if (thp_bus_lock()) {
-			thp_log_err("%s: get lock failed\n", __func__);
-			return -ETIME;
-		}
-		locked_by_daemon = true;
-	} else {
-		thp_bus_unlock();
-		locked_by_daemon = false;
-	}
-	return 0;
+	thp_log_err("%s: set hw lock status %lu\n", __func__, arg);
+	return -EINVAL;
 }
 
 static long thp_ioctl_set_timeout(unsigned long arg)
@@ -3781,7 +3788,6 @@ static irqreturn_t thp_irq_thread(int irq, void *dev_id)
 		thp_log_info("daemon_flag is success");
 		return IRQ_HANDLED;
 	}
-
 #if defined(CONFIG_TEE_TUI)
 	if (tui_enable) {
 		thp_log_err("%s:tui_mode, disable irq\n", __func__);
@@ -3930,6 +3936,7 @@ static struct thp_vendor thp_vendor_table[] = {
 	{ "250", "txd" },
 	{ "270", "tcl" },
 	{ "320", "dpt" },
+	{ "272", "tcl" },
 };
 
 static struct thp_ic_name thp_ic_table[] = {
@@ -3963,6 +3970,7 @@ static struct thp_ic_name thp_ic_table[] = {
 	{ "9N", "focaltech" },
 	{ "9S", "goodix" },
 	{ "9Y", "novatech" },
+	{ "9Z", "novatech" },
 	{ "A5", "synaptics" },
 	{ "A7", "novatech" },
 	{ "A8", "synaptics" },
@@ -3973,6 +3981,11 @@ static struct thp_ic_name thp_ic_table[] = {
 	{ "AQ", "ilitek" },
 	{ "9Q", "himax" },
 	{ "AV", "focaltech" },
+	{ "AX", "ilitek" },
+	{ "B9", "novatech" },
+	{ "BA", "synaptics" },
+	{ "C1", "chipone" },
+	{ "AY", "chipone" },
 };
 
 static int thp_projectid_to_vender_name(const char *project_id,
@@ -4791,6 +4804,7 @@ static int thp_core_init(struct thp_core_data *cd)
 	mutex_init(&cd->thp_mutex);
 	mutex_init(&cd->status_mutex);
 	mutex_init(&cd->suspend_flag_mutex);
+	mutex_init(&cd->thp_tp_lowpower_cmd_lock);
 #if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
 	mutex_init(&cd->aod_power_ctrl_mutex);
 #endif
@@ -5873,12 +5887,6 @@ int thp_parse_feature_config(struct device_node *thp_node,
 	unsigned int value = 0;
 
 	thp_log_debug("%s:Enter!\n", __func__);
-	rc = of_property_read_u32(thp_node, "need_huge_memory_in_spi", &value);
-	if (!rc) {
-		cd->need_huge_memory_in_spi = value;
-		thp_log_info("%s:need_huge_memory_in_spi configed %u\n",
-				__func__, value);
-	}
 	rc = of_property_read_u32(thp_node, "self_control_power", &value);
 	if (!rc) {
 		cd->self_control_power = value;
@@ -5951,6 +5959,12 @@ int thp_parse_feature_config(struct device_node *thp_node,
 	if (!rc) {
 		cd->use_ap_gesture = value;
 		thp_log_info("%s:use_ap_gesture configed %u\n",
+			__func__, value);
+	}
+	rc = of_property_read_u32(thp_node, "no_resume_only_stylus", &value);
+	if (!rc) {
+		cd->no_resume_only_stylus = value;
+		thp_log_info("%s:no_resume_only_stylus configed %u\n",
 			__func__, value);
 	}
 	rc = of_property_read_u32(thp_node, "use_aod_power_ctrl_notify",
@@ -6373,8 +6387,7 @@ static void thp_prox_add_poweroff(struct thp_core_data *cd, bool enable)
 				thp_set_status(THP_STATUS_DAEMON_SLEEP, 1);
 				cd->daemon_flag = 1;
 			}
-			thp_log_info(
-				"[Proximity_feature] timeout, bypass poweroff\n");
+			thp_log_info("[Proximity_feature] timeout, bypass poweroff\n");
 			return;
 		}
 #ifdef CONFIG_LCDKIT_DRIVER
@@ -6473,6 +6486,34 @@ bool thp_get_prox_switch_status(void)
 	return 0;
 }
 
+static int thp_aod_screen_off_notify(u32 status)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd) {
+		thp_log_err("%s: thp_core_data is not inited\n", __func__);
+		return 0;
+	}
+	cd->tddi_aod_screen_off_flag = status;
+	thp_log_info("%s : tddi_aod_screen_off_flag value %u\n",
+		__func__, cd->tddi_aod_screen_off_flag);
+	return 0;
+}
+
+static int thp_aod_state_notify(u32 status)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (!cd) {
+		thp_log_err("%s: thp_core_data is not inited\n", __func__);
+		return 0;
+	}
+	cd->aod_state_flag = status;
+	thp_log_info("%s : aod_state_flag value %u\n",
+		__func__, cd->aod_state_flag);
+	return 0;
+}
+
 #ifndef CONFIG_HUAWEI_THP_MTK
 static int thp_parse_gpio_config(struct device_node *thp_node,
 	struct thp_core_data *cd)
@@ -6483,7 +6524,7 @@ static int thp_parse_gpio_config(struct device_node *thp_node,
 	thp_log_info("irq gpio_ = %d\n", value);
 	if (!gpio_is_valid(value)) {
 		thp_log_err("%s: get irq_gpio failed\n", __func__);
-		return -EINVAL;;
+		return -EINVAL;
 	}
 	cd->gpios.irq_gpio = value;
 
@@ -6491,7 +6532,7 @@ static int thp_parse_gpio_config(struct device_node *thp_node,
 	thp_log_info("rst_gpio = %d\n", value);
 	if (!gpio_is_valid(value)) {
 		thp_log_err("%s: get rst_gpio failed\n", __func__);
-		return -EINVAL;;
+		return -EINVAL;
 	}
 	cd->gpios.rst_gpio = value;
 	if (!cd->not_support_cs_control) {
@@ -6499,7 +6540,7 @@ static int thp_parse_gpio_config(struct device_node *thp_node,
 		thp_log_info("cs_gpio = %d\n", value);
 		if (!gpio_is_valid(value)) {
 			thp_log_err("%s: get cs_gpio failed\n", __func__);
-			return -EINVAL;;
+			return -EINVAL;
 		}
 		cd->gpios.cs_gpio = value;
 	}
@@ -6565,7 +6606,6 @@ static int thp_parse_config(struct thp_core_data *cd,
 		thp_log_info("%s:parsed failed, proximity_support = %u\n",
 			__func__, cd->proximity_support);
 	}
-
 	cd->platform_type = THP_PLATFORM_HISI;
 	rc = of_property_read_u32(thp_node, "platform_type", &value);
 	if (!rc) {

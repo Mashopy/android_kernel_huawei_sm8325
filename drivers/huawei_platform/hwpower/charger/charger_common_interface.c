@@ -166,6 +166,14 @@ void charge_set_usbpd_disable(bool flag)
 #else
 void charge_set_usbpd_disable(bool flag)
 {
+	int usb_type = 0;
+	int val = 0;
+
+	power_supply_get_int_property_value("usb", POWER_SUPPLY_PROP_REAL_TYPE, &usb_type);
+	if (usb_type == POWER_SUPPLY_TYPE_USB_DCP) {
+		(void)power_supply_set_int_property_value("usb", POWER_SUPPLY_PROP_AICL_THRESHOLD, val);
+		hwlog_info("adapter set aicl thershold, val is %d\n", val);
+	}
 }
 #endif /* IS_ENABLED(CONFIG_QTI_PMIC_GLINK) */
 

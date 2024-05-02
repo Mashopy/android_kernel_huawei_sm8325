@@ -33,19 +33,13 @@ HWLOG_REGIST();
 
 #define DMD_CONTENT_BASE_LEN 24
 #define DMD_REPORT_CONTENT_LEN 256
-#define DEFAULT_NV_VALUE       0xFF
-#define NV_LEN                 104
-#define NV_RESERVE_LEN         (NV_LEN - sizeof(int))
+#define DEFAULT_NV_VALUE       0x0
 #define CYCLE_UNIT             100
 #define RETRY_TIMES            5
 #define BATT_CELL_INDEX        1
 #define ITEM_CODE_LEN          4
 #define ITEM_CODE_BUF_MAX      20
-
-struct hw_coul_nv_info {
-	int cycle_count;
-	char reserved[NV_RESERVE_LEN];
-};
+#define BATT_IO_IS_MASK        1
 
 static LIST_HEAD(batt_checkers_head);
 static unsigned int valid_checkers;
@@ -1671,12 +1665,62 @@ static void batt_cycle_init(struct batt_info *drv_data)
 	if (power_nv_read(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info)))
 		hwlog_err("[%s] read cycle count fail\n", __func__);
 
-	hwlog_info("[%s] cycle is %d\n", __func__, nv_info.cycle_count);
+	hwlog_info("[%s] cycle is %d, io status is %d\n", __func__,
+		nv_info.cycle_count, nv_info.io_status);
+	drv_data->io_status = nv_info.io_status;
 	drv_data->batt_cycles = nv_info.cycle_count;
+
 	drv_data->batt_cycles_listener.notifier_call =
 		batt_info_charge_cycles_cb;
 	if (power_supply_reg_notifier(&drv_data->batt_cycles_listener))
 		hwlog_err("[%s] regist to coul failed\n", __func__);
+}
+
+static void battery_io_work_func(struct work_struct *work)
+{
+	struct batt_info *drv_data = NULL;
+	struct hw_coul_nv_info nv_info;
+
+	drv_data = container_of(work, struct batt_info, battery_io_work);
+	if (!drv_data)
+		return;
+
+	hwlog_info("[%s] io_status=%d\n", __func__, drv_data->io_status);
+
+	memset(&nv_info, DEFAULT_NV_VALUE, sizeof(nv_info));
+	if (power_nv_read(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info)))
+		hwlog_err("[%s] nv read fail\n", __func__);
+
+	nv_info.io_status = drv_data->io_status;
+
+	if (power_nv_write(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info)))
+		hwlog_err("[%s] nv write failed\n", __func__);
+}
+
+static int batt_io_status_check(struct batt_info *drv_data)
+{
+	char dsm_buf[DMD_REPORT_CONTENT_LEN] = { 0 };
+	int ret;
+
+	hwlog_info("[%s] support_io_check is %d\n", __func__, drv_data->support_io_check);
+	if (!drv_data->support_io_check)
+		return 0;
+
+	/* check nv: if io status is not masked, return 0 */
+	hwlog_info("[%s] io_status=%d\n", __func__, drv_data->io_status);
+	if (drv_data->io_status != BATT_IO_IS_MASK)
+		return 0;
+
+	/* report DMD */
+	snprintf(dsm_buf, sizeof(dsm_buf),
+		"battery ct is shielded by io reason, battery cycle=%d\n",
+		drv_data->batt_cycles);
+	ret = power_dsm_report_dmd(POWER_DSM_BATTERY_DETECT,
+		POWER_DSM_BATTERY_IO_BREAK, dsm_buf);
+	if (ret)
+		hwlog_err("dmd report failed in %s\n", __func__);
+
+	return -1;
 }
 
 static void check_func(struct work_struct *work)
@@ -1693,11 +1737,22 @@ static void check_func(struct work_struct *work)
 
 	hwlog_info("[%s] battery checking started\n", __func__);
 	drv_data = container_of(work, struct batt_info, check_work);
+	if (!drv_data) {
+		hwlog_err("[%s] drv_data is null\n", __func__);
+		return;
+	}
 	final_result = &drv_data->result;
+
 	/* wait for service powerct ready */
 	wait_for_completion(&ct_srv_ready);
 
 	batt_cycle_init(drv_data);
+
+	if (batt_io_status_check(drv_data)) {
+		hwlog_info("[%s] battery ct is shielded by io reason\n", __func__);
+		/* 1: enable shield battery ct */
+		shield_ct_sign = 1;
+	}
 	/* check last result */
 	for (i = 0; i < RETRY_TIMES; i++) {
 		ret = get_last_check_result(&last_result);
@@ -2117,6 +2172,102 @@ static ssize_t battery_item_code_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s", temp_buf);
 }
 
+static ssize_t support_io_check_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return snprintf(buf, PAGE_SIZE, "Error data");
+
+	return snprintf(buf, PAGE_SIZE, "%d", drv_data->support_io_check);
+}
+
+static ssize_t io_status_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return snprintf(buf, PAGE_SIZE, "Error data");
+
+	return snprintf(buf, PAGE_SIZE, "%d", drv_data->io_status);
+}
+
+static ssize_t batt_code_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+	struct batt_checker_entry *temp = NULL;
+	struct platform_device *pdev = NULL;
+	struct batt_chk_data *checker_data = NULL;
+	const unsigned char *code = NULL;
+	unsigned int code_len = 0;
+	int ret;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return snprintf(buf, PAGE_SIZE, "drv_data null");
+
+#ifdef BATTERY_LIMIT_DEBUG
+	if (drv_data->shield_code)
+		return snprintf(buf, PAGE_SIZE, "Error_Code shield");
+#endif
+
+	list_for_each_entry(temp, &batt_checkers_head, node) {
+		pdev = temp->pdev;
+		checker_data = platform_get_drvdata(pdev);
+		if (!checker_data ||
+			!checker_data->bco.get_batt_code)
+			continue;
+
+		ret = checker_data->bco.get_batt_code(checker_data, 0, &code, &code_len);
+		if (ret) {
+			hwlog_info("[%s] get battery code failed\n", __func__);
+			return snprintf(buf, PAGE_SIZE, "Error_Code:Can't get code from IC");
+		}
+	}
+
+	if (!code_len)
+		return snprintf(buf, PAGE_SIZE, "not support get code from IC");
+
+	memcpy(buf, code, code_len);
+	buf[code_len] = 0;
+	hwlog_info("[%s] get battery code succ\n", __func__);
+
+	return code_len;
+}
+
+static ssize_t io_check_result_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct batt_info *drv_data = NULL;
+	int val = 0;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return -1;
+
+	if (!drv_data->support_io_check)
+		return 0;
+
+	if (!buf || kstrtoint(buf, 0, &val)) {
+		hwlog_err("[%s] input error\n", __func__);
+		return -1;
+	}
+
+	hwlog_info("[%s] val=%d\n", __func__, val);
+	if (val)
+		val = BATT_IO_IS_MASK;
+
+	drv_data->io_status = val;
+	schedule_work(&drv_data->battery_io_work);
+
+	return count;
+}
+
 #ifdef BATTERY_LIMIT_DEBUG
 static ssize_t ftime_show(struct device *dev, struct device_attribute *attr,
 			  char *buf)
@@ -2411,6 +2562,38 @@ static ssize_t batt_param_show(struct device *dev,
 
 	return len;
 }
+
+static ssize_t shield_code_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct batt_info *drv_data = NULL;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return snprintf(buf, PAGE_SIZE, "Error data");
+
+	return snprintf(buf, PAGE_SIZE, "%d", drv_data->shield_code);
+}
+
+static ssize_t shield_code_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct batt_info *drv_data = NULL;
+	int val;
+
+	dev_get_drv_data(drv_data, dev);
+	if (!drv_data)
+		return -1;
+
+	if (!buf || kstrtoint(buf, 0, &val)) {
+		hwlog_err("[%s] input error\n", __func__);
+		return -1;
+	}
+
+	drv_data->shield_code = val;
+
+	return count;
+}
 #endif
 
 static const DEVICE_ATTR_RO(ic_status);
@@ -2427,6 +2610,10 @@ static const DEVICE_ATTR_RO(board_runnable);
 static const DEVICE_ATTR_RO(battery_ct_shield);
 static const DEVICE_ATTR_RO(current_group_sn);
 static const DEVICE_ATTR_RO(battery_item_code);
+static const DEVICE_ATTR_RO(support_io_check);
+static const DEVICE_ATTR_RO(io_status);
+static const DEVICE_ATTR_RO(batt_code);
+static const DEVICE_ATTR_WO(io_check_result);
 #ifdef BATTERY_LIMIT_DEBUG
 static const DEVICE_ATTR_RO(ftime);
 static const DEVICE_ATTR_RO(ctime);
@@ -2437,6 +2624,7 @@ static const DEVICE_ATTR_WO(final);
 static const DEVICE_ATTR_RW(sn_checker);
 static const DEVICE_ATTR_RW(check_result);
 static const DEVICE_ATTR_RO(batt_param);
+static const DEVICE_ATTR_RW(shield_code);
 #endif
 
 static const struct attribute *batt_info_attrs[] = {
@@ -2454,6 +2642,10 @@ static const struct attribute *batt_info_attrs[] = {
 	&dev_attr_battery_ct_shield.attr,
 	&dev_attr_current_group_sn.attr,
 	&dev_attr_battery_item_code.attr,
+	&dev_attr_support_io_check.attr,
+	&dev_attr_io_status.attr,
+	&dev_attr_batt_code.attr,
+	&dev_attr_io_check_result.attr,
 #ifdef BATTERY_LIMIT_DEBUG
 	&dev_attr_ftime.attr,
 	&dev_attr_ctime.attr,
@@ -2464,6 +2656,7 @@ static const struct attribute *batt_info_attrs[] = {
 	&dev_attr_sn_checker.attr,
 	&dev_attr_check_result.attr,
 	&dev_attr_batt_param.attr,
+	&dev_attr_shield_code.attr,
 #endif
 	NULL, /* sysfs_create_files need last one be NULL */
 };
@@ -2715,6 +2908,16 @@ static void init_shield_ct_sign(struct platform_device *pdev)
 		shield_ct_sign = 0;
 }
 
+static void init_battery_io_check(struct batt_info *drv_data,
+	struct platform_device *pdev)
+{
+	if (of_property_read_u32(pdev->dev.of_node, "support_io_check",
+		&drv_data->support_io_check))
+		hwlog_info("[%s] %s read support_io_check failed\n", __func__, pdev->name);
+
+	hwlog_info("[%s] support_io_check is %d\n", __func__, drv_data->support_io_check);
+}
+
 static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 {
 	struct batt_info *drv_data = NULL;
@@ -2747,9 +2950,11 @@ static struct batt_info *batt_info_data_init(struct platform_device *pdev)
 	drv_data->dmd_retry = 0;
 
 	init_shield_ct_sign(pdev);
+	init_battery_io_check(drv_data, pdev);
 	INIT_DELAYED_WORK(&drv_data->dmd_report_dw, dmd_report_func);
 	INIT_WORK(&drv_data->check_work, check_func);
 	INIT_WORK(&drv_data->cycles_work, cycles_work_func);
+	INIT_WORK(&drv_data->battery_io_work, battery_io_work_func);
 	init_battery_check_result(&drv_data->result);
 
 	while ((next = of_get_next_available_child(pdev->dev.of_node, prev))) {
@@ -2799,7 +3004,7 @@ static int battery_info_probe(struct platform_device *pdev)
 		return BATTERY_DRIVER_SUCCESS;
 	}
 
-	hwlog_info("[%s] Battery information driver is going to probing...\n", __func__);
+	hwlog_info("[%s] battery information driver is going to probing...\n", __func__);
 	drv_data = batt_info_data_init(pdev);
 	if (!drv_data) {
 		hwlog_err("[%s] battery information driver data init failed\n", __func__);
@@ -2826,7 +3031,7 @@ static int battery_info_probe(struct platform_device *pdev)
 	 * reason: if batt_info not valid, no battery checker should be valid
 	 */
 	create_battery_checker_devices(pdev);
-	hwlog_info("[%s] Battery information driver was probed successfully\n", __func__);
+	hwlog_info("[%s] battery information driver was probed successfully\n", __func__);
 
 	return BATTERY_DRIVER_SUCCESS;
 }

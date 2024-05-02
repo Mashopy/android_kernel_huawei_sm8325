@@ -3,7 +3,7 @@
  *
  * save and read stack information
  *
- * Copyright (c) 2021 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2021-2022 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -20,16 +20,19 @@
 #define _MEMCHECK_STACK_H
 
 #include <linux/types.h>
-#include "memcheck_ioctl.h"
-#include "impl/memstat_imp.h"
-#include "impl/memstack_imp.h"
+#include <platform/linux/memcheck.h>
 
 #ifdef CONFIG_DFX_MEMCHECK_STACK
+int memcheck_do_command(const struct track_cmd *cmd);
 int memcheck_stack_read(void *buf, struct stack_info *info);
 int memcheck_stack_write(const void *buf, const struct stack_info *info);
 int memcheck_stack_clear(void);
 int memcheck_wait_stack_ready(u16 type);
 #else /* CONFIG_DFX_MEMCHECK_STACK */
+static int memcheck_do_command(const struct track_cmd *cmd)
+{
+	return -EINVAL;
+}
 static inline int memcheck_stack_read(void *buf, struct stack_info *info)
 {
 	return -EINVAL;

@@ -53,6 +53,7 @@
 
 extern int lcd_kit_dbg_get_dbg_level(void);
 extern void lcd_kit_dbg_set_dbg_level(int level);
+extern int lcd_kit_get_esd_recovery_status(uint32_t panel_id);
 
 /* log level */
 #define MSG_LEVEL_ERROR   1
@@ -225,6 +226,7 @@ enum lcd_kit_power_mode {
 	NONE_MODE,
 	REGULATOR_MODE,
 	GPIO_MODE,
+	BLIIC_MODE,
 };
 
 enum lcd_kit_power_type {
@@ -308,6 +310,13 @@ enum esd_state {
 enum lcd_type {
 	LCD_TYPE = 1,
 	AMOLED_TYPE = 2,
+};
+
+enum oled_type {
+	LTPS = 0,
+	LTPO1 = 1,
+	LTPO2 = 2,
+	IGZO = 3,
 };
 
 enum esd_judge_type {
@@ -594,6 +603,7 @@ struct lcd_kit_esd {
 	u32 fac_esd_support;
 	u32 recovery_bl_support;
 	u32 te_check_support;
+	u32 esd_timing_switch;
 	u32 status;
 	struct lcd_kit_dsi_panel_cmds cmds;
 	struct lcd_kit_array_data value;
@@ -851,6 +861,8 @@ struct lcd_kit_common_info {
 	char *panel_model;
 	/* panel type */
 	u32 panel_type;
+	/* oled type */
+	u32 oled_type;
 	/* esd check commond */
 	struct lcd_kit_esd esd;
 	/* backlight */
@@ -881,6 +893,12 @@ struct lcd_kit_common_info {
 	/* check thread */
 	struct lcd_kit_check_thread check_thread;
 	struct lcd_kit_fold fold_info;
+	int need_keep_high_in_doze_off;
+	int tddi_aod_support;
+	struct lcd_kit_array_data tddi_aod_high_light;
+	struct lcd_kit_array_data tddi_aod_middle_light;
+	struct lcd_kit_array_data tddi_aod_low_light;
+	struct lcd_kit_array_data tddi_aod_no_light;
 	/* end */
 };
 
@@ -906,11 +924,13 @@ struct lcd_kit_power_seq {
 	struct lcd_kit_arrays_data power_on_seq;
 	struct lcd_kit_arrays_data panel_on_lp_seq;
 	struct lcd_kit_arrays_data panel_on_hs_seq;
+	struct lcd_kit_arrays_data esd_power_on_seq;
 	struct lcd_kit_arrays_data gesture_power_on_seq;
 	struct lcd_kit_arrays_data panel_off_hs_seq;
 	struct lcd_kit_arrays_data panel_off_lp_seq;
 	struct lcd_kit_arrays_data power_off_seq;
 	struct lcd_kit_arrays_data only_power_off_seq;
+	struct lcd_kit_arrays_data esd_power_off_seq;
 };
 
 struct color_cmds_rgb {

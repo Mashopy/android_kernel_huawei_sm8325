@@ -58,7 +58,7 @@
 		<!--OemInfo support-->
 		<OemInfoSupport>1</OemInfoSupport>
 		<!--OemBarcode2DSupport support-->
-		<OemBarcode2DSupport>1</OemBarcode2DSupport>
+		<OemBarcode2DSupport>0</OemBarcode2DSupport>
 		<!--OemBarcode2DNumOffset-->
 		<OemBarcode2DNumOffset>0</OemBarcode2DNumOffset>
 		<!--Lcdkit fps support -->

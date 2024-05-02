@@ -45,14 +45,25 @@
 		<lcd>310-C03-6p67-qcom,                         0x08,   8002,    bne,    bne,  def     </lcd>
 		<lcd>350-C03-6p67-qcom,                         0x02,   8002,    bne,    bne,  def     </lcd>
 		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   8002,    bne,    bne,  def     </lcd>
+		<lcd>190-210-1-6p78-qcom,                       0x01,   8005,    mao,    mao,  def     </lcd>
+		<lcd>110-a06-1-6p78-qcom,                       0x04,   8005,    mao,    mao,  def     </lcd>
+		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   8005,    mao,    mao,  def     </lcd>
 		<lcd>110-a07-6p7-qcom,                          0x01,   9001,    ctr,    ctr,  def     </lcd>
 		<lcd>330-105-6p7-qcom,                          0x06,   9001,    ctr,    ctr,  def     </lcd>
 		<lcd>290-105-6p7-qcom,                          0x08,   9001,    ctr,    ctr,  def     </lcd>
 		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   9001,    ctr,    ctr,  def     </lcd>
 		<lcd>190-503-10p36-qcom,                        0x0A,   13000,    ags5,    ags5,  def     </lcd>
 		<lcd>190-5031-10p36-qcom,                       0x02,   13000,    ags5,    ags5,  def     </lcd>
+		<lcd>190-5032-10p36-qcom,                       0x08,   13000,    ags5,    ags5,  def     </lcd>
+		<lcd>190-d04-10p36-qcom,                        0x09,   13000,    ags5,    ags5,  def     </lcd>
 		<lcd>120-601-10p36-qcom,                        0x00,   13000,    ags5,    ags5,  def     </lcd>
 		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x05,   13000,    ags5,    ags5,  def     </lcd>
+		<lcd>110-108-6p9-qcom,                          0x06,   14001,    stg,    stg,  def     </lcd>
+		<lcd>290-210-6p9-qcom,                          0x02,   14001,    stg,    stg,  def     </lcd>
+		<lcd>110-108-6p9-qcom,                          0x01,   14001,    stg,    stg,  def     </lcd>
+		<lcd>290-210-6p9-qcom,                          0x00,   14001,    stg,    stg,  def     </lcd>
+		<lcd>290-d07-6p9-qcom,                          0x05,   14001,    stg,    stg,  def     </lcd>
+		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   14001,    stg,    stg,  def     </lcd>
 	</lcdlist>
 
 	<PanelEntry>

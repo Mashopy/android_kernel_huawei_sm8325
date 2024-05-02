@@ -47,13 +47,22 @@ struct wlrx_plim  {
 };
 
 static struct wlrx_plim g_plim_tbl[WLRX_PLIM_SRC_END] = {
-	{ WLRX_PLIM_SRC_OTG,        "otg",        false, 5000,  5500,  1000 },
-	{ WLRX_PLIM_SRC_RPP,        "rpp",        true,  12000, 12000, 1300 },
-	{ WLRX_PLIM_SRC_FAN,        "fan",        true,  9000,  9900,  1250 },
-	{ WLRX_PLIM_SRC_VOUT_ERR,   "vout_err",   true,  9000,  9900,  1250 },
-	{ WLRX_PLIM_SRC_TX_BST_ERR, "tx_bst_err", true,  5000,  5500,  1000 },
-	{ WLRX_PLIM_SRC_KB,         "keyboard",   true,  9000,  9900,  1100 },
-	{ WLRX_PLIM_SRC_THERMAL,    "thermal",    false, 9000,  9900,  1250 },
+	[WLRX_PLIM_SRC_OTG] =
+		{ WLRX_PLIM_SRC_OTG,        "otg",        false, 5000,  5500,  1000 },
+	[WLRX_PLIM_SRC_RPP] =
+		{ WLRX_PLIM_SRC_RPP,        "rpp",        true,  12000, 12000, 1300 },
+	[WLRX_PLIM_SRC_FAN] =
+		{ WLRX_PLIM_SRC_FAN,        "fan",        true,  9000,  9900,  1250 },
+	[WLRX_PLIM_SRC_VOUT_ERR] =
+		{ WLRX_PLIM_SRC_VOUT_ERR,   "vout_err",   true,  9000,  9900,  1250 },
+	[WLRX_PLIM_SRC_TX_BST_ERR] =
+		{ WLRX_PLIM_SRC_TX_BST_ERR, "tx_bst_err", true,  5000,  5500,  1000 },
+	[WLRX_PLIM_SRC_KB] =
+		{ WLRX_PLIM_SRC_KB,         "keyboard",   true,  9000,  9900,  1100 },
+	[WLRX_PLIM_SRC_THERMAL] =
+		{ WLRX_PLIM_SRC_THERMAL,    "thermal",    false, 9000,  9900,  1250 },
+	[WLRX_PLIM_SRC_RSMC] =
+		{ WLRX_PLIM_SRC_RSMC,       "rsmc",       false, 5000,  5500,  1000 },
 };
 
 struct wlrx_plim_dev {
@@ -166,11 +175,6 @@ static int wlrx_revise_plim_para(struct wlrx_plim_dev *di, struct wlrx_plim *tbl
 {
 	int i, src_id;
 
-	di->tbl = kcalloc(WLRX_PLIM_SRC_END, sizeof(*di->tbl), GFP_KERNEL);
-	if (!di->tbl)
-		return -ENOMEM;
-
-	memcpy(di->tbl, &g_plim_tbl[0], sizeof(*di->tbl) * WLRX_PLIM_SRC_END);
 	for (i = 0; i < len; i++) {
 		src_id = tbl[i].src_id;
 		if ((src_id < WLRX_PLIM_SRC_BEGIN) || (src_id >= WLRX_PLIM_SRC_END)) {
@@ -213,7 +217,6 @@ static int wlrx_parse_plim_para(const struct device_node *np, struct wlrx_plim_d
 	len = power_dts_read_count_strings(power_dts_tag(HWLOG_TAG), np,
 		"plim_para", WLRX_PLIM_SRC_END, PLIM_INFO_TOTAL);
 	if (len <= 0) {
-		di->tbl = &g_plim_tbl[0];
 		wlrx_plim_para_print(di);
 		return 0;
 	}
@@ -250,6 +253,11 @@ static int wlrx_parse_plim_para(const struct device_node *np, struct wlrx_plim_d
 
 static int wlrx_plim_parse_dts(const struct device_node *np, struct wlrx_plim_dev *di)
 {
+	di->tbl = kcalloc(WLRX_PLIM_SRC_END, sizeof(*di->tbl), GFP_KERNEL);
+	if (!di->tbl)
+		return -ENOMEM;
+
+	memcpy(di->tbl, &g_plim_tbl[0], sizeof(*di->tbl) * WLRX_PLIM_SRC_END);
 	return wlrx_parse_plim_para(np, di);
 }
 
@@ -258,11 +266,13 @@ static void wlrx_plim_kfree_dev(struct wlrx_plim_dev *di)
 	if (!di)
 		return;
 
+	kfree(di->tbl);
 	kfree(di);
 }
 
 int wlrx_plim_init(unsigned int drv_type, struct device *dev)
 {
+	int ret;
 	struct wlrx_plim_dev *di = NULL;
 
 	if (!dev || !wltrx_is_drv_type_valid(drv_type))
@@ -272,13 +282,16 @@ int wlrx_plim_init(unsigned int drv_type, struct device *dev)
 	if (!di)
 		return -ENOMEM;
 
-	if (wlrx_plim_parse_dts(dev->of_node, di)) {
-		kfree(di);
-		return -EINVAL;
-	}
+	ret = wlrx_plim_parse_dts(dev->of_node, di);
+	if (ret)
+		goto exit;
 
 	g_rx_plim_di[drv_type] = di;
 	return 0;
+
+exit:
+	wlrx_plim_kfree_dev(di);
+	return ret;
 }
 
 void wlrx_plim_deinit(unsigned int drv_type)

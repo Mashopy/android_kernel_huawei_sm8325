@@ -3,7 +3,7 @@
  *
  * save and read stack information
  *
- * Copyright (c) 2021 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2021-2022 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -16,279 +16,41 @@
  *
  */
 
-#include "memcheck_stack.h"
-#include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include <linux/jiffies.h>
-#include <linux/sort.h>
 #include <linux/version.h>
+#include <linux/vmalloc.h>
 #include <linux/thread_info.h>
 #if (KERNEL_VERSION(4, 14, 0) <= LINUX_VERSION_CODE)
 #include <linux/sched/signal.h>
 #else
 #include <linux/sched.h>
 #endif
-
-static int slub_type[] = { SLUB_ALLOC, SLUB_FREE };
-
-static const char *const slub_text[] = {
-	"SLUB_ALLOC",
-	"SLUB_FREE",
-};
+#include "memcheck_stack.h"
+#include "memcheck_ioctl.h"
 
 /* for stack information save and read */
 #define STACK_WAIT_TIME_SEC	5
-#define IDX_JAVA		0
-#define IDX_NATIVE		1
 #define STACK_NUM		2
+#define ADDR_NUM		2
+
 static DEFINE_MUTEX(stack_mutex);
 static void *stack_buf[STACK_NUM];
 static u64 stack_len[STACK_NUM];
 static wait_queue_head_t stack_ready;
 static bool is_waiting[STACK_NUM];
-
-static size_t memcheck_append_str(const char *str, char *buf, size_t total,
-				  size_t used)
-{
-	int tmp;
-
-	tmp = snprintf(buf + used, total - used, "%s\n", str);
-	if (tmp < 0)
-		return used;
-	used += min((size_t) tmp, total - used - 1);
-	return used;
-}
-
-static int stack_cmp(const void *a, const void *b)
-{
-	const struct mm_stack_info *info1 = a;
-	const struct mm_stack_info *info2 = b;
-
-	if (atomic_read(&info1->ref) < atomic_read(&info2->ref))
-		return 1;
-	else if (atomic_read(&info1->ref) > atomic_read(&info2->ref))
-		return -1;
-	else
-		return 0;
-}
-
-static size_t memcheck_stack_to_str(struct mm_stack_info *list, size_t num,
-				    char *buf, size_t total, size_t used)
-{
-	int i;
-	int tmp;
-
-	sort(list, num, sizeof(*list), stack_cmp, NULL);
-
-	tmp = snprintf(buf + used, total - used, "PC	hits\n");
-	if (tmp < 0)
-		goto buf_done;
-	used += min((size_t) tmp, total - used - 1);
-	for (i = 0; i < num; i++) {
-		tmp = snprintf(buf + used, total - used, "%pS %zu\n",
-			       list[i].caller, list[i].ref);
-		if (tmp < 0)
-			goto buf_done;
-		used += min((size_t)tmp, total - used - 1);
-		if (used >= (total - 1))
-			break;
-	}
-buf_done:
-	return used;
-}
-
-static size_t memcheck_get_slub_stack(struct mm_stack_info *list, size_t num,
-				      char *buf, size_t total)
-{
-	int i;
-	int ret;
-	size_t used = 0;
-	size_t ret_num;
-
-	for (i = 0; i < ARRAY_SIZE(slub_type); i++) {
-		ret = mm_page_trace_open(SLUB_TRACK, slub_type[i]);
-		if (ret) {
-			memcheck_info("open SLUB trace failed");
-			return used;
-		}
-		ret_num = mm_page_trace_read(SLUB_TRACK, list, num,
-					       slub_type[i]);
-		if (ret_num == 0) {
-			memcheck_info("empty %s stack record", slub_text[i]);
-			mm_page_trace_close(SLUB_TRACK, slub_type[i]);
-			continue;
-		}
-		ret = mm_page_trace_close(SLUB_TRACK, slub_type[i]);
-		if (ret) {
-			memcheck_info("close SLUB trace failed");
-			return used;
-		}
-		used = memcheck_append_str(slub_text[i], buf, total, used);
-		if (used >= (total - 1))
-			return used;
-		used = memcheck_stack_to_str(list, ret_num, buf, total, used);
-		if ((ret_num >= num) || (used >= (total - 1)))
-			return used;
-	}
-
-	return used;
-}
-
-static size_t memcheck_get_vmalloc_stack(struct mm_stack_info *list, size_t num,
-					 char *buf, size_t total)
-{
-	int i;
-	int ret;
-	size_t used = 0;
-	size_t ret_num;
-
-	for (i = 0; i < ARRAY_SIZE(vmalloc_type); i++) {
-		ret = mm_page_trace_open(VMALLOC_TRACK, vmalloc_type[i]);
-		if (ret) {
-			memcheck_info("open VMALLOC trace failed");
-			return used;
-		}
-		ret_num = mm_page_trace_read(VMALLOC_TRACK, list, num,
-					     vmalloc_type[i]);
-		if (ret_num == 0) {
-			memcheck_info("empty %s stack record",
-				      vmalloc_text[i]);
-			mm_page_trace_close(VMALLOC_TRACK, vmalloc_type[i]);
-			continue;
-		}
-		ret = mm_page_trace_close(VMALLOC_TRACK, vmalloc_type[i]);
-		if (ret) {
-			memcheck_info("close VMALLOC trace failed");
-			return used;
-		}
-		used = memcheck_append_str(vmalloc_text[i], buf, total, used);
-		if (used >= (total - 1))
-			return used;
-		used = memcheck_stack_to_str(list, ret_num, buf, total, used);
-		if ((ret_num >= num) || (used >= (total - 1)))
-			return used;
-	}
-
-	return used;
-}
-
-static size_t memcheck_get_buddy_stack(struct mm_stack_info *list, size_t num,
-				       char *buf, size_t total)
-{
-	int ret;
-	size_t used = 0;
-	size_t ret_num;
-
-	ret = mm_page_trace_open(BUDDY_TRACK, BUDDY_TRACK);
-	if (ret) {
-		memcheck_info("open BUDDY trace failed");
-		return used;
-	}
-	ret_num = mm_page_trace_read(BUDDY_TRACK, list, num, BUDDY_TRACK);
-	if (ret_num == 0) {
-		memcheck_info("empty buddy stack record");
-		mm_page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
-		return used;
-	}
-	ret = mm_page_trace_close(BUDDY_TRACK, BUDDY_TRACK);
-	if (ret) {
-		memcheck_info("close BUDDY trace failed");
-		return used;
-	}
-	used = memcheck_stack_to_str(list, ret_num, buf, total, used);
-	return used;
-}
-
-static size_t memcheck_get_lslub_stack(struct mm_stack_info *list, size_t num,
-				       char *buf, size_t total)
-{
-	int ret;
-	size_t used = 0;
-	size_t ret_num;
-
-	ret = mm_page_trace_open(LSLUB_TRACK, LSLUB_TRACK);
-	if (ret) {
-		memcheck_info("open LSLUB trace failed");
-		return used;
-	}
-	ret_num = mm_page_trace_read(LSLUB_TRACK, list, num, LSLUB_TRACK);
-	if (ret_num == 0) {
-		memcheck_info("empty buddy stack record");
-		mm_page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
-		return used;
-	}
-	ret = mm_page_trace_close(LSLUB_TRACK, LSLUB_TRACK);
-	if (ret) {
-		memcheck_info("close LSLUB trace failed");
-		return used;
-	}
-	used = memcheck_stack_to_str(list, ret_num, buf, total, used);
-	return used;
-}
-
-static int memcheck_get_stack_items(size_t num, char *buf, size_t total,
-				    struct stack_info *info)
-{
-	struct mm_stack_info *list = NULL;
-	size_t used = 0;
-
-	list = vzalloc(num * sizeof(*list));
-	if (!list)
-		return 0;
-	if (info->type == MTYPE_KERN_SLUB)
-		used = memcheck_get_slub_stack(list, num, buf, total);
-	else if (info->type == MTYPE_KERN_VMALLOC)
-		used = memcheck_get_vmalloc_stack(list, num, buf, total);
-	else if (info->type == MTYPE_KERN_BUDDY)
-		used = memcheck_get_buddy_stack(list, num, buf, total);
-	else if (info->type == MTYPE_KERN_LSLUB)
-		used = memcheck_get_lslub_stack(list, num, buf, total);
-	vfree(list);
-
-	return used;
-}
-
-static int memcheck_kernel_stack_read(void *buf, struct stack_info *info)
-{
-	char *tmp = NULL;
-	size_t num;
-	size_t len;
-	int ret;
-
-	num = info->size / sizeof(struct mm_stack_info);
-	if (!num) {
-		info->size = 0;
-		if (copy_to_user(buf, info, sizeof(*info))) {
-			memcheck_err("copy_to_user failed\n");
-			return -EFAULT;
-		}
-		memcheck_info("buf is too small to contain stack data\n");
-		return 0;
-	}
-
-	tmp = vzalloc(info->size + 1);
-	if (!tmp)
-		return -ENOMEM;
-	len = memcheck_get_stack_items(num, tmp, info->size, info);
-
-	info->size = len;
-	if (copy_to_user(buf, info, sizeof(*info))) {
-		memcheck_err("copy_to_user failed\n");
-		ret = -EFAULT;
-		goto err_buf;
-	}
-	if (len && copy_to_user(buf + sizeof(*info), tmp, len)) {
-		memcheck_err("copy_to_user failed\n");
-		ret = -EFAULT;
-		goto err_buf;
-	}
-	ret = 0;
-
-err_buf:
-	vfree(tmp);
-	return ret;
-}
+static u64 addr_array[][ADDR_NUM] = {
+	/* MEMCMD_NONE */
+	{ 0, 0 },
+	/* MEMCMD_ENABLE */
+	{ ADDR_JAVA_ENABLE, ADDR_NATIVE_ENABLE },
+	/* MEMCMD_DISABLE */
+	{ ADDR_JAVA_DISABLE, ADDR_NATIVE_DISABLE },
+	/* MEMCMD_SAVE_LOG */
+	{ ADDR_JAVA_SAVE, ADDR_NATIVE_SAVE },
+	/* MEMCMD_CLEAR_LOG */
+	{ ADDR_JAVA_CLEAR, ADDR_NATIVE_CLEAR },
+};
 
 int memcheck_stack_read(void *buf, struct stack_info *info)
 {
@@ -297,9 +59,6 @@ int memcheck_stack_read(void *buf, struct stack_info *info)
 	size_t java_len = 0;
 	size_t total_len = 0;
 	int idx;
-
-	if (info->type & MTYPE_KERNEL)
-		return memcheck_kernel_stack_read(buf, info);
 
 	mutex_lock(&stack_mutex);
 	for (idx = 0; idx < STACK_NUM; idx++) {
@@ -311,7 +70,7 @@ int memcheck_stack_read(void *buf, struct stack_info *info)
 			memcheck_err("copy_to_user failed\n");
 			goto unlock;
 		}
-		if (info->type & MTYPE_USER_PSS_JAVA)
+		if (info->type & MTYPE_JAVA)
 			java_len = len;
 		memcheck_info("read idx=%d,len=%llu\n", idx, len);
 		total_len += len;
@@ -366,7 +125,7 @@ int memcheck_stack_write(const void *buf, const struct stack_info *info)
 	}
 	tmp[info->size] = 0;
 
-	idx = (info->type & MTYPE_USER_PSS_JAVA) ? IDX_JAVA : IDX_NATIVE;
+	idx = (info->type & MTYPE_JAVA) ? IDX_JAVA : IDX_NATIVE;
 	mutex_lock(&stack_mutex);
 	if (stack_buf[idx])
 		vfree(stack_buf[idx]);
@@ -408,8 +167,8 @@ static int memcheck_check_wait_result(int left, bool is_java, bool is_native)
 int memcheck_wait_stack_ready(u16 type)
 {
 	int left;
-	bool is_java = (type & MTYPE_USER_PSS_JAVA) ? true : false;
-	bool is_native = (type & MTYPE_USER_PSS_NATIVE) ? true : false;
+	bool is_java = (type & MTYPE_JAVA) ? true : false;
+	bool is_native = (type & MTYPE_NATIVE) ? true : false;
 	int index;
 	int ret = 0;
 
@@ -430,6 +189,76 @@ int memcheck_wait_stack_ready(u16 type)
 		ret = memcheck_check_wait_result(left, is_java, is_native);
 	is_waiting[index] = false;
 	mutex_unlock(&stack_mutex);
+
+	return ret;
+}
+
+static bool process_disappear(u64 t, const struct track_cmd *cmd)
+{
+	if (cmd->cmd == MEMCMD_ENABLE)
+		return false;
+	if (cmd->timestamp != nsec_to_clock_t(t))
+		return true;
+
+	return false;
+}
+
+int memcheck_do_command(const struct track_cmd *cmd)
+{
+	int ret = 0;
+	struct task_struct *p = NULL;
+	u64 addr = 0;
+	bool is_java = (cmd->type & MTYPE_JAVA) ? true : false;
+	bool is_native = (cmd->type & MTYPE_NATIVE) ? true : false;
+#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
+	kernel_siginfo_t info;
+
+	clear_siginfo(&info);
+#else
+	struct siginfo info;
+
+	memset(&info, 0, sizeof(info));
+#endif
+
+	if (is_java == is_native) {
+		memcheck_err("invalid type=%d\n", cmd->type);
+		return -EFAULT;
+	}
+	info.si_signo = SIGNO_MEMCHECK;
+	info.si_errno = 0;
+	info.si_code = SI_TKILL;
+	info.si_pid = task_tgid_vnr(current);
+	info.si_uid = from_kuid_munged(current_user_ns(), current_uid());
+
+	rcu_read_lock();
+	p = find_task_by_vpid(cmd->id);
+	if (p)
+		get_task_struct(p);
+	rcu_read_unlock();
+
+	if (p && (task_tgid_vnr(p) == cmd->id)) {
+		if (process_disappear(p->real_start_time, cmd)) {
+			memcheck_err("pid %d disappear\n", cmd->id);
+			ret = MEMCHECK_PID_INVALID;
+			goto err_pid_disappear;
+		}
+
+		if (is_java)
+			addr = addr_array[cmd->cmd][IDX_JAVA];
+		if (is_native)
+			addr |= addr_array[cmd->cmd][IDX_NATIVE];
+		info.si_addr = (void *)addr;
+		if (is_java || is_native)
+			ret = do_send_sig_info(SIGNO_MEMCHECK, &info, p, false);
+	}
+
+err_pid_disappear:
+	if (p)
+		put_task_struct(p);
+	if ((!ret) && (cmd->cmd == MEMCMD_SAVE_LOG))
+		memcheck_wait_stack_ready(cmd->type);
+	else if ((!ret) && (cmd->cmd == MEMCMD_CLEAR_LOG))
+		memcheck_stack_clear();
 
 	return ret;
 }

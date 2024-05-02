@@ -365,8 +365,8 @@ static void display_engine_brightness_handle_vblank_work(struct work_struct *wor
 		return;
 	}
 	/* ns to ms */
-	te_diff_ms = (de_context->brightness.te_timestamp -
-		de_context->brightness.te_timestamp_last) / 1000000;
+	te_diff_ms = div_s64(de_context->brightness.te_timestamp -
+		de_context->brightness.te_timestamp_last, 1000000);
 
 	LCD_KIT_DEBUG("te: diff [%lld] ms, timestamp [%lld]\n",
 		te_diff_ms, de_context->brightness.te_timestamp);
@@ -377,7 +377,9 @@ static void display_engine_brightness_handle_vblank_work(struct work_struct *wor
 		vblank_count++;
 		if (vblank_count == FINGERPRINT_HBM_NOTIFY_WAIT_FRAME_COUNT) {
 			LCD_KIT_INFO("Fingerprint HBM notify...\n");
+#if defined(CONFIG_FINGERPRINT)
 			ud_fp_on_hbm_completed();
+#endif
 		}
 	} else {
 		vblank_count = 0;
@@ -739,7 +741,7 @@ bool display_engine_hist_is_enable_change(void)
 
 static uint64_t correct_time_based_on_fps(uint32_t real_te_interval, uint64_t time_60_fps)
 {
-	return time_60_fps * real_te_interval / TE_INTERVAL_60_FPS_US;
+	return div_u64(time_60_fps * real_te_interval, TE_INTERVAL_60_FPS_US);
 }
 
 static uint64_t get_real_te_interval(uint32_t panel_id)
@@ -812,7 +814,7 @@ static uint64_t get_backlight_sync_delay_time_us(struct qcom_panel_info *panel_i
 		LCD_KIT_INFO("delay 1 frame to wait te, te = %d, diff_from_te_time =%ld\n",
 			real_te_interval, diff_from_te_time);
 	}
-	current_frame_time = diff_from_te_time - ((diff_from_te_time / te_interval) * te_interval);
+	current_frame_time = diff_from_te_time - (div_u64(diff_from_te_time, te_interval) * te_interval);
 	if (current_frame_time < left_thres_us)
 		delay_us = left_thres_us - current_frame_time;
 	else if (current_frame_time > right_thres_us)

@@ -73,9 +73,7 @@ bool sysrq_handle_keypress(struct sysrq_state *sysrq, unsigned int code, int val
 			rainbow_reset_detect_s_reason_str_set("Combin_Key");
 #endif
 			memcpy(attach_info_buffer, "combin_key", RB_SREASON_STR_MAX);
-#ifdef CONFIG_RAINBOW_REASON
 			trace_rb_sreason_set(attach_info_buffer);
-#endif
 			show_state_filter(TASK_UNINTERRUPTIBLE);
 			__handle_sysrq('c', true);
 		}

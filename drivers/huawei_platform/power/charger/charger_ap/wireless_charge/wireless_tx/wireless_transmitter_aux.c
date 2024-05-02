@@ -206,14 +206,14 @@ static void wltx_aux_dsm_dump(struct wltx_aux_dev_info *di, char *dsm_buff)
 	if (ret)
 		hwlog_err("%s: get tx vin/iin/vrect/temp fail", __func__);
 	snprintf(buff, sizeof(buff),
-		"init_tbatt = %d, tx_vrect = %umV, tx_vin = %umV, tx_iin = %umA, tx_iin_avg = %dmA, chip_temp = %d\n",
+		"init_tbatt = %d, tx_vrect = %umV, tx_vin = %umV, tx_iin = %umA, tx_iin_avg = %umA, chip_temp = %d\n",
 		g_init_tbatt, tx_vrect, tx_vin, tx_iin, di->tx_iin_avg,
 		chip_temp);
 	strncat(dsm_buff, buff, strlen(buff));
 	snprintf(buff, ERR_NO_STRING_SIZE, "tx_iin(mA): ");
 	strncat(dsm_buff, buff, strlen(buff));
 	for (i = 0; i < WL_TX_IIN_SAMPLE_LEN; i++) {
-		snprintf(buff, ERR_NO_STRING_SIZE, "%d ", g_tx_iin_samples[i]);
+		snprintf(buff, ERR_NO_STRING_SIZE, "%u ", g_tx_iin_samples[i]);
 		strncat(dsm_buff, buff, strlen(buff));
 	}
 }
@@ -253,6 +253,11 @@ static void wltx_aux_enable_power(bool enable)
 
 	if (!di) {
 		hwlog_err("%s: di null\n", __func__);
+		return;
+	}
+
+	if (di->q_detect_support && !enable) {
+		wltx_ic_lowpower_enable(WLTRX_IC_AUX, true);
 		return;
 	}
 
@@ -355,7 +360,8 @@ static void wltx_aux_check_in_tx_mode(struct wltx_aux_dev_info *di)
 	int ret;
 
 	if (!wltx_ic_is_in_tx_mode(WLTRX_IC_AUX)) {
-		if (++di->tx_mode_err_cnt >= WL_TX_MODE_ERR_CNT2) {
+		if ((++di->tx_mode_err_cnt >= WL_TX_MODE_ERR_CNT2) ||
+			(di->q_detect_support && (di->tx_mode_err_cnt >= WL_TX_MODE_ERR_CNT))) {
 			hwlog_err("%s: not in tx mode, close TX\n", __func__);
 			wltx_aux_set_tx_status(WL_TX_STATUS_TX_CLOSE);
 			di->stop_reverse_charge = true;
@@ -861,11 +867,8 @@ void wltx_aux_notify_android_uevent(struct wltx_acc_dev *di)
 			ACC_VALUE_MAX_LEN, "%s", ACC_PING_ERR_STR);
 		break;
 	case WL_ACC_DEV_STATE_CHARGE_DONE:
-		if (g_wltx_aux_di && g_wltx_aux_di->logic_ops &&
-			g_wltx_aux_di->logic_ops->support_switch &&
-			g_wltx_aux_di->logic_ops->support_switch())
-			snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_STATE].value,
-				ACC_VALUE_MAX_LEN, "%s", ACC_CHARGE_DONE_STR);
+		snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_STATE].value,
+			ACC_VALUE_MAX_LEN, "%s", ACC_CHARGE_DONE_STR);
 		break;
 	case WL_ACC_DEV_STATE_CHARGE_ERROR:
 		if (g_wltx_aux_di && g_wltx_aux_di->logic_ops &&
@@ -881,7 +884,7 @@ void wltx_aux_notify_android_uevent(struct wltx_acc_dev *di)
 	}
 
 	snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_NO].value,
-		ACC_VALUE_MAX_LEN, "%d", di->dev_no);
+		ACC_VALUE_MAX_LEN, "%u", di->dev_no);
 	/* dev_mac[0 1 2 3 4 5] is BT MAC ADDR */
 	snprintf(g_wl_acc_aux_info_tab[WL_TX_ACC_INFO_MAC].value, ACC_VALUE_MAX_LEN,
 		"%02x:%02x:%02x:%02x:%02x:%02x", di->dev_mac[0], di->dev_mac[1],
@@ -926,8 +929,7 @@ void wltx_aux_report_acc_info(int dev_no, int state)
 		}
 		wltx_aux_notify_android_uevent(acc_dev);
 	} else {
-		if ((state == WL_ACC_DEV_STATE_CHARGE_DONE) ||
-			(state == WL_ACC_DEV_STATE_PINGING) ||
+		if ((state == WL_ACC_DEV_STATE_PINGING) ||
 			(state == WL_ACC_DEV_STATE_CHARGE_ERROR))
 			return;
 		wltx_aux_set_acc_dev_state(di, state);
@@ -1018,7 +1020,7 @@ func_end:
 		wltx_aux_enable_tx_mode(di, false);
 	if (wltx_aux_get_stage() == WL_TX_STAGE_PING_RX)
 		wltx_aux_set_tx_open_flag(false);
-	if (wltx_aux_get_stage() >= WL_TX_STAGE_POWER_SUPPLY)
+	if ((wltx_aux_get_stage() >= WL_TX_STAGE_POWER_SUPPLY) || di->q_detect_support)
 		wltx_aux_enable_power(false);
 	wltx_aux_set_stage(WL_TX_STAGE_DEFAULT);
 	power_event_bnc_notify(POWER_BNT_CONNECT, POWER_NE_WIRELESS_AUX_TX_STOP, NULL);
@@ -1103,7 +1105,9 @@ func_end:
 		wltx_aux_set_tx_open_flag(false);
 	if (wltx_aux_get_stage() >= WL_TX_STAGE_PING_RX)
 		wltx_aux_enable_tx_mode(di, false);
-	if (wltx_aux_get_stage() >= WL_TX_STAGE_POWER_SUPPLY)
+	if (wltx_aux_get_stage() == WL_TX_STAGE_PING_RX)
+		wltx_aux_set_tx_open_flag(false);
+	if ((wltx_aux_get_stage() >= WL_TX_STAGE_POWER_SUPPLY) || di->q_detect_support)
 		wltx_aux_enable_power(false);
 	wltx_aux_set_stage(WL_TX_STAGE_DEFAULT);
 	power_event_bnc_notify(POWER_BNT_CONNECT, POWER_NE_WIRELESS_AUX_TX_STOP, NULL);
@@ -1256,6 +1260,9 @@ static void wltx_aux_event_work(struct work_struct *work)
 		hwlog_info("%s: POWER_NE_WLTX_TX_FOD\n",
 			__func__);
 		break;
+	case POWER_NE_WLTX_TX_Q_CALIBRATION:
+		di->q_calibration_result = di->tx_event_data;
+		break;
 	default:
 		hwlog_err("%s: has no this event_type %d\n",
 				__func__, di->tx_event_type);
@@ -1288,6 +1295,7 @@ static int wltx_aux_event_notifier_call(struct notifier_block *tx_event_nb,
 	case POWER_NE_WLTX_ACC_DEV_CONNECTED:
 	case POWER_NE_WLTX_TX_FOD:
 	case POWER_NE_WLTX_TX_PING_OCP:
+	case POWER_NE_WLTX_TX_Q_CALIBRATION:
 		break;
 	default:
 		return NOTIFY_OK;
@@ -1427,6 +1435,10 @@ static void wltx_aux_parse_dts(struct device_node *np,
 		"ping_timeout_1", &di->ping_timeout_1, WL_TX_PING_TIMEOUT_1);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"ping_timeout_2", &di->ping_timeout_2, WL_TX_PING_TIMEOUT_2);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"q_detect_support", &di->q_detect_support, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"q_auto_calibration", &di->q_auto_calibration, 0);
 }
 
 #ifdef CONFIG_WIRELESS_ACCESSORY
@@ -1450,6 +1462,7 @@ static struct power_sysfs_attr_info wltx_aux_sysfs_field_tbl[] = {
 	power_sysfs_attr_ro(wltx_aux, 0444, WL_TX_SYSFS_TX_VIN, tx_vin),
 	power_sysfs_attr_ro(wltx_aux, 0444, WL_TX_SYSFS_TX_IIN, tx_iin),
 	power_sysfs_attr_ro(wltx_aux, 0444, WL_TX_SYSFS_RX_PRODUCT_TYPE, rx_product_type),
+	power_sysfs_attr_rw(wltx_aux, 0644, WL_TX_SYSFS_TX_Q_CALI, tx_q_calibration),
 };
 
 static struct attribute *wltx_aux_sysfs_attrs[ARRAY_SIZE(wltx_aux_sysfs_field_tbl) + 1];
@@ -1514,6 +1527,37 @@ static void wltx_aux_get_tx_info(struct wltx_aux_dev_info *di)
 	}
 }
 
+static void wltx_aux_q_calibration(long val)
+{
+	struct wltx_aux_dev_info *di = g_wltx_aux_di;
+	int ret;
+
+	if (!di || g_tx_open_flag || !di->q_detect_support ||
+		(val != WLTX_AUX_TX_Q_CALI)) {
+		hwlog_err("q_calibration: tx_open=%d\n", g_tx_open_flag);
+		return;
+	}
+
+	ret = wltx_ic_lowpower_enable(WLTRX_IC_AUX, false);
+	if (ret) {
+		hwlog_err("q_calibration: disable lowpower failed\n");
+		return;
+	}
+	ret = wltx_ic_q_calibration(WLTRX_IC_AUX);
+	if (ret)
+		hwlog_err("q_calibration: send q calibrate cmd failed\n");
+}
+
+static void wltx_aux_q_calibration_work(struct work_struct *work)
+{
+	if (!work)
+		return;
+
+	hwlog_info("[q_cali_work] q calibrate now\n");
+	__pm_wakeup_event(g_wltx_aux_wakelock, 5000); /* wait for 2s(exit lowpower) + 2s(q sample) */
+	wltx_aux_q_calibration(WLTX_AUX_TX_Q_CALI);
+}
+
 static ssize_t wltx_aux_sysfs_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
@@ -1532,22 +1576,22 @@ static ssize_t wltx_aux_sysfs_show(struct device *dev,
 	case WL_TX_SYSFS_TX_STATUS:
 		return snprintf(buf, PAGE_SIZE, "%d\n", g_tx_status);
 	case WL_TX_SYSFS_TX_IIN_AVG:
-		return snprintf(buf, PAGE_SIZE, "%d\n", di->tx_iin_avg);
+		return snprintf(buf, PAGE_SIZE, "%u\n", di->tx_iin_avg);
 	case WL_TX_SYSFS_DPING_FREQ:
 		wltx_ic_get_ping_freq(WLTRX_IC_AUX, &temp_data);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_DPING_INTERVAL:
 		wltx_ic_get_ping_interval(WLTRX_IC_AUX, &temp_data);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_MAX_FOP:
 		wltx_ic_get_max_fop(WLTRX_IC_AUX, &temp_data);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_MIN_FOP:
 		wltx_ic_get_min_fop(WLTRX_IC_AUX, &temp_data);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_TX_FOP:
 		wltx_ic_get_fop(WLTRX_IC_AUX, &temp_data);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_HANDSHAKE:
 		return snprintf(buf, PAGE_SIZE, "%d\n",
 			wltx_check_handshake(di));
@@ -1557,14 +1601,17 @@ static ssize_t wltx_aux_sysfs_show(struct device *dev,
 	case WL_TX_SYSFS_TX_VIN:
 		wltx_ic_get_vin(WLTRX_IC_AUX, &temp_data);
 		hwlog_info("%s: WL_TX_SYSFS_TX_VIN\n", __func__);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_TX_IIN:
 		wltx_ic_get_iin(WLTRX_IC_AUX, &temp_data);
 		hwlog_info("%s: WL_TX_SYSFS_TX_IIN\n", __func__);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp_data);
+		return snprintf(buf, PAGE_SIZE, "%u\n", temp_data);
 	case WL_TX_SYSFS_RX_PRODUCT_TYPE:
 		wltx_aux_get_tx_info(di);
 		return snprintf(buf, PAGE_SIZE, "%s\n", di->bigdata_info);
+	case WL_TX_SYSFS_TX_Q_CALI:
+		hwlog_info("%s: WL_TX_SYSFS_Q_CALI\n", __func__);
+		return snprintf(buf, PAGE_SIZE, "%u\n", di->q_calibration_result);
 	default:
 		hwlog_err("%s: NO THIS NODE:%d\n", __func__, info->name);
 		break;
@@ -1620,9 +1667,11 @@ void wltx_aux_open_tx(enum wltx_aux_open_type type, bool enable)
 			(void)power_msleep(di->monitor_interval, 0, NULL);
 			hwlog_info("coil switch because of node\n");
 			wltx_aux_set_tx_open_flag(true);
-			if (di->logic_ops->get_ping_timeout)
+			if (di->logic_ops && di->logic_ops->get_ping_timeout)
 				di->ping_timeout = di->logic_ops->get_ping_timeout();
 		}
+		if (di->q_detect_support)
+			wltx_ic_lowpower_enable(WLTRX_IC_AUX, false);
 		schedule_work(&di->wltx_check_work);
 	} else {
 		wltx_aux_enable_power(false);
@@ -1683,6 +1732,14 @@ static ssize_t wltx_aux_sysfs_store(struct device *dev,
 	case WL_TX_SYSFS_CHK_TRXCOIL:
 		hwlog_info("%s: WL_TX_SYSFS_CHK_TRXCOIL\n", __func__);
 		break;
+	case WL_TX_SYSFS_TX_Q_CALI:
+		if (kstrtol(buf, POWER_BASE_DEC, &val) < 0) {
+			hwlog_err("%s: val is not valid\n", __func__);
+			return -EINVAL;
+		}
+		wltx_aux_q_calibration(val);
+		hwlog_info("%s: WL_TX_SYSFS_TX_Q_CALI\n", __func__);
+		break;
 	default:
 		hwlog_err("(%s)NODE ERR!!HAVE NO THIS NODE:%d\n",
 			__func__, info->name);
@@ -1701,6 +1758,24 @@ static struct wltx_aux_dev_info *wltx_aux_dev_info_alloc(void)
 {
 	struct wltx_aux_dev_info *di = kzalloc(sizeof(*di), GFP_KERNEL);
 	return di;
+}
+
+static void wltx_aux_init_work(struct wltx_aux_dev_info *di)
+{
+	INIT_WORK(&di->wltx_check_work, wltx_aux_start_check_work);
+	INIT_WORK(&di->wltx_evt_work, wltx_aux_event_work);
+	INIT_DELAYED_WORK(&di->wltx_aux_monitor_work, wltx_aux_monitor_work);
+	di->aux_tx_wq = create_singlethread_workqueue("wltx_aux_wq");
+	INIT_DELAYED_WORK(&di->hall_approach_work, hall_approach_process_work);
+	INIT_DELAYED_WORK(&di->hall_away_work, hall_away_process_work);
+
+	if (!di->q_detect_support || !di->q_auto_calibration)
+		return;
+
+	di->q_calibration_time = WLTX_AUX_Q_CALI_DELAY_SECS;
+	INIT_DELAYED_WORK(&di->wltx_aux_q_work, wltx_aux_q_calibration_work);
+	queue_delayed_work(di->aux_tx_wq, &di->wltx_aux_q_work,
+		msecs_to_jiffies(WLTX_AUX_Q_WORK_DELAY_MSECS));
 }
 
 static void wltx_aux_shutdown(struct platform_device *pdev)
@@ -1756,15 +1831,7 @@ static int wltx_aux_probe(struct platform_device *pdev)
 		"wireless_aux_tx_wakelock");
 
 	wltx_aux_parse_dts(np, di);
-
-	INIT_WORK(&di->wltx_check_work, wltx_aux_start_check_work);
-	INIT_WORK(&di->wltx_evt_work, wltx_aux_event_work);
-	INIT_DELAYED_WORK(&di->wltx_aux_monitor_work,
-		wltx_aux_monitor_work);
-	di->aux_tx_wq = create_singlethread_workqueue("wltx_aux_wq");
-
-	INIT_DELAYED_WORK(&di->hall_approach_work, hall_approach_process_work);
-	INIT_DELAYED_WORK(&di->hall_away_work, hall_away_process_work);
+	wltx_aux_init_work(di);
 
 	di->tx_event_nb.notifier_call = wltx_aux_event_notifier_call;
 	ret = power_event_bnc_register(POWER_BNT_WLTX_AUX, &di->tx_event_nb);
@@ -1795,6 +1862,42 @@ notifier_regist_fail:
 	return ret;
 }
 
+#ifdef CONFIG_PM
+static int wltx_aux_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int wltx_aux_resume(struct device *dev)
+{
+	struct wltx_aux_dev_info *di = g_wltx_aux_di;
+	time64_t boot_time;
+
+	if (!di || !dev || !di->q_detect_support || !di->q_auto_calibration)
+		return 0;
+
+	boot_time = power_get_monotonic_boottime();
+	if (boot_time < di->q_calibration_time)
+		return 0;
+
+	if (!power_is_within_time_interval(3, 0, 4, 0))
+		return 0;
+
+	di->q_calibration_time = boot_time + WLTX_AUX_Q_CALI_DELAY_SECS;
+	queue_delayed_work(di->aux_tx_wq, &di->wltx_aux_q_work, msecs_to_jiffies(0));
+	return 0;
+}
+
+static const struct dev_pm_ops wltx_aux_pm_ops = {
+	.suspend = wltx_aux_suspend,
+	.resume = wltx_aux_resume,
+};
+
+#define WLTX_AUX_PM_OPS (&wltx_aux_pm_ops)
+#else
+#define WLTX_AUX_PM_OPS (NULL)
+#endif /* CONFIG_PM */
+
 static const struct of_device_id wireless_aux_tx_match_table[] = {
 	{
 		.compatible = "huawei, wireless_aux_tx",
@@ -1811,6 +1914,7 @@ static struct platform_driver wltx_aux_driver = {
 		.name = "huawei, wireless_aux_tx",
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(wireless_aux_tx_match_table),
+		.pm = WLTX_AUX_PM_OPS,
 	},
 };
 

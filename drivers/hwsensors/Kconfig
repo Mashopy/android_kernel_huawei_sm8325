@@ -3,3 +3,9 @@
 #
 
 source "drivers/hwsensors/hall/Kconfig"
+
+#
+# huawei fkey
+#
+
+source "drivers/hwsensors/f_key/Kconfig"

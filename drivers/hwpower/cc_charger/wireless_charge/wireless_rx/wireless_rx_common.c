@@ -21,6 +21,8 @@
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_ic_intf.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_acc.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_status.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_plim.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_interfere.h>
 #include <chipset_common/hwpower/accessory/wireless_lightstrap.h>
 #include <chipset_common/hwpower/hardware_channel/wired_channel_switch.h>
 #include <chipset_common/hwpower/common_module/power_delay.h>
@@ -45,6 +47,7 @@ struct wlrx_common_dts {
 
 struct wlrx_common_dev {
 	struct wlrx_common_dts *dts;
+	bool high_pwr_test_flag;
 };
 
 static struct wlrx_common_dev *g_rx_common_di[WLTRX_DRV_MAX];
@@ -67,6 +70,32 @@ enum wlrx_scene wlrx_get_scene(void)
 		return WLRX_SCN_UEM;
 
 	return WLRX_SCN_NORMAL;
+}
+
+bool wlrx_in_high_pwr_test(unsigned int drv_type)
+{
+	struct wlrx_common_dev *di = wlrx_common_get_di(drv_type);
+
+	if (!di)
+		return false;
+
+	return di->high_pwr_test_flag;
+}
+
+void wlrx_set_high_pwr_test_flag(unsigned int drv_type, bool flag)
+{
+	struct wlrx_common_dev *di = wlrx_common_get_di(drv_type);
+
+	if (!di)
+		return;
+
+	di->high_pwr_test_flag = flag;
+	hwlog_info("[set_high_pwr_test_flag] flag=%d\n", di->high_pwr_test_flag);
+	if (!di->high_pwr_test_flag)
+		return;
+
+	wlrx_plim_clear_src(drv_type, WLRX_PLIM_SRC_THERMAL);
+	wlrx_intfr_clear_settings(drv_type);
 }
 
 static void wlrx_cut_off_all_wired_channel(void)

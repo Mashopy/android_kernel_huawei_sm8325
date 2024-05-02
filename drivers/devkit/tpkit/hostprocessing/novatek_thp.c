@@ -46,20 +46,16 @@
 #define NVT_SW_RETRY_TIME_DELAY_MS 10
 #define NVT_CHIP_VER_TRIM_RW_LEN 16
 #define NVT_CHIP_VER_TRIM_REG_ADDR 0x1F64E
-#define NVT_CHIP_VER_TRIM_REG_ADDR_9Z 0x3F004
 #define NVT_CHIP_VER_TRIM_RETRY_TIME 5
 #define WAIT_FOR_SPI_BUS_READ_DELAY 5
 #define NVT_SUSPEND_AFTER_DELAY_MS 30
 
 #define NVT_CMD_ADDR 0x21C50
 #define NVT_CMD_STAMP_ADDR 0x21C77
-#define NVT36672C_CMD_ADDR 0x22D50
-#define NVT36672C_CMD_STAMP_ADDR 0x22D77
-#define N9Z_CMD_ADDR 0x2FE50
-#define N9Z_CMD_STAMP_ADDR 0x2FE77
 #define NVT_GET_GESTURE_ADDR 0x218CC
 #define NVT_CMD_ENTER_CUSTOMIZED_DP_DSTB 0x7D
 #define NVT_CMD_ENTER_GESTURE_MODE 0x13
+#define NVT_CMD_ENTER_SLEEP_MODE 0X1A
 #define FORMAL_REPORT 1
 #define RETRY_NUM 20
 #define SEND_CMD_LEN 3
@@ -73,6 +69,7 @@
 #define STYLUS_EVENT 1
 #define STYLUS_GESTURE_ID 0x6F
 #define DOUBLE_CLICLK_GESTURE_ID 0x7F
+#define SINGLE_CLICLK_GESTURE_ID 0xCF
 #define BT_CONNECT_CMD_RETRY 3
 #define STATUS_CMD 0xC2
 #define STYLUS_CONNECT 2
@@ -88,10 +85,39 @@ static int send_status_flag;
  * 2:stylus connect status
  * 3:stylus disconnect status
  */
+#if defined(CONFIG_HUAWEI_THP_QCOM)
+static struct udfp_mode_status ud_mode_status;
+#endif
 
 enum nvt_ic_type {
 	NVT36672C_SERIES = 1,
 	N9Z_SERIES = 5,
+	NB1_SERIES = 6,
+};
+
+enum nvt_ts_ic_info_var {
+	SW_RST_REG_ADDR = 0,
+	VER_TRIM_REG_ADDR,
+	CMD_ADDR,
+	CMD_STAMP_ADDR,
+	NVT_VAR_MAX
+};
+struct nvt_ts_ic_info {
+	uint8_t ic_type;
+	uint32_t addr[NVT_VAR_MAX];
+};
+
+static const struct nvt_ts_ic_info ic_info_table[] = {
+	{
+		.ic_type = NVT36672C_SERIES,
+		.addr = {0x3F0FE, 0x1F64E, 0x22D50, 0x22D77}
+	}, {
+		.ic_type = N9Z_SERIES,
+		.addr = {0x3F0FE, 0x3F004, 0x2FE50, 0x2FE77}
+	}, {
+		.ic_type = NB1_SERIES,
+		.addr = {0x1FB43E, 0x1FB104, 0x125850, 0x125877}
+	}
 };
 
 struct nvt_ts_trim_id_table_entry {
@@ -166,6 +192,9 @@ static const struct nvt_ts_trim_id_table_entry trim_id_table[] = {
 	}, {
 		.id = { 0x20, 0xFF, 0xFF, 0x23, 0x65, 0x03 },
 		.mask = { 1, 0, 0, 1, 1, 1 }
+	}, {
+		.id = { 0xFF, 0xFF, 0xFF, 0x32, 0x65, 0x03 },
+		.mask = { 0, 0, 0, 1, 1, 1 }
 	}
 };
 
@@ -176,6 +205,21 @@ struct nvt_ts_spi_buf {
 
 static int touch_driver_nt_bt_handler(struct thp_device *tdev,
 	bool delay_enable);
+
+static void touch_driver_ic_type_set_addr(uint32_t *addr, enum nvt_ts_ic_info_var var)
+{
+	int list;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (var >= NVT_VAR_MAX) {
+		thp_log_err("%s: parameter is out of range, return\n", __func__);
+		return;
+	}
+	for (list = 0; list < ARRAY_SIZE(ic_info_table); list++) {
+		if (ic_info_table[list].ic_type == cd->support_vendor_ic_type)
+			*addr = ic_info_table[list].addr[var];
+	}
+}
 
 static int touch_driver_spi_read_write(struct spi_device *client,
 	void *tx_buf, void *rx_buf, size_t len)
@@ -229,6 +273,9 @@ void touch_driver_sw_reset_idle(struct spi_device *sdev)
 		thp_log_err("%s: w_buf is null\n", __func__);
 		return;
 	}
+
+	touch_driver_ic_type_set_addr(&addr, SW_RST_REG_ADDR);
+
 	/* write 0xAA @0x3F0FE */
 	w_buf[index++] = spi_write_mask(0x7F);
 	w_buf[index++] = nvt_hi_word_bit_mask(addr);
@@ -263,6 +310,9 @@ void touch_driver_bootloader_reset(struct spi_device *sdev)
 		thp_log_err("%s: w_buf is null\n", __func__);
 		return;
 	}
+
+	touch_driver_ic_type_set_addr(&addr, SW_RST_REG_ADDR);
+
 	/* write 0xAA @0x3F0FE */
 	w_buf[index++] = spi_write_mask(0x7F);
 	w_buf[index++] = nvt_hi_word_bit_mask(addr);
@@ -340,7 +390,6 @@ static int8_t touch_driver_check_chip_ver_trim(struct spi_device *sdev)
 	int rw_len;
 	int32_t retry;
 	int ret;
-	struct thp_core_data *cd = thp_get_core_data();
 
 	if (!w_buf) {
 		thp_log_err("%s: w_buf is null\n", __func__);
@@ -351,8 +400,7 @@ static int8_t touch_driver_check_chip_ver_trim(struct spi_device *sdev)
 		return -EINVAL;
 	}
 
-	if (cd->support_vendor_ic_type == N9Z_SERIES)
-		addr = NVT_CHIP_VER_TRIM_REG_ADDR_9Z;
+	touch_driver_ic_type_set_addr(&addr, VER_TRIM_REG_ADDR);
 
 	/* Check for 5 times */
 	for (retry = NVT_CHIP_VER_TRIM_RETRY_TIME; retry > 0; retry--) {
@@ -426,16 +474,48 @@ static int touch_driver_init(struct thp_device *tdev)
 		cd->support_spi_resume_delay = 0;
 	thp_log_info("%s: support_spi_resume_delay %u\n", __func__,
 		cd->support_spi_resume_delay);
+	rc = of_property_read_u32(nova_node,
+		"aod_support_on_tddi", &cd->aod_support_on_tddi);
+	if (rc)
+		cd->aod_support_on_tddi = 0;
+	thp_log_info("%s: aod_support_on_tddi %u\n",
+			__func__, cd->aod_support_on_tddi);
 
+	return 0;
+}
+
+static int touch_driver_ic_series_config(struct thp_device *tdev)
+{
+	bool flag;
+	int rc = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	struct device_node *nova_node = NULL;
+
+	nova_node = of_get_child_by_name(cd->thp_node,
+		THP_NOVA_DEV_NODE_NAME);
+	if (!nova_node) {
+		thp_log_err("%s: dev not config in dts\n", __func__);
+		return -ENODEV;
+	}
+
+	flag = (cd->support_vendor_ic_type == N9Z_SERIES) ||
+		(cd->support_vendor_ic_type == NB1_SERIES);
+	if (flag) {
+		thp_parse_trigger_config(nova_node, cd);
+		thp_parse_feature_config(nova_node, cd);
+
+		if (cd->send_bt_status_to_fw) {
+			rc = touch_driver_nt_bt_handler(tdev, false);
+			if (rc)
+				thp_log_err("power on send stylus3 connect status fail\n");
+		}
+	}
 	return 0;
 }
 
 static int touch_driver_chip_detect(struct thp_device *tdev)
 {
 	int rc;
-	struct thp_core_data *cd = thp_get_core_data();
-	struct device_node *nova_node = of_get_child_by_name(cd->thp_node,
-		THP_NOVA_DEV_NODE_NAME);
 
 	g_nvt_ts_spi_buf.w_buf = kzalloc(NVT_CHIP_VER_TRIM_RW_LEN, GFP_KERNEL);
 	if (!g_nvt_ts_spi_buf.w_buf) {
@@ -459,21 +539,9 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 		rc = -ENODEV;
 		goto exit;
 	}
-
-	if (cd->support_vendor_ic_type == N9Z_SERIES) {
-		rc = thp_parse_trigger_config(nova_node, cd);
-		if (rc)
-			thp_log_err("%s: trigger_config fail\n", __func__);
-
-		rc = thp_parse_feature_config(nova_node, cd);
-		if (rc)
-			thp_log_err("%s: feature_config fail\n", __func__);
-	}
-
-	if ((cd->send_bt_status_to_fw) && (cd->support_vendor_ic_type == N9Z_SERIES)) {
-		if (touch_driver_nt_bt_handler(tdev, false))
-			thp_log_err("power on send stylus3 connect status fail\n");
-	}
+	rc = touch_driver_ic_series_config(tdev);
+	if (rc)
+		goto exit;
 
 	return 0;
 
@@ -567,6 +635,8 @@ static int touch_driver_resume(struct thp_device *tdev)
 	touch_driver_sw_reset_idle(tdev->sdev);
 	gpio_set_value(tdev->gpios->rst_gpio, 1);
 	thp_time_delay(tdev->timing_config.resume_reset_after_delay_ms);
+	if (tdev->thp_core->aod_support_on_tddi)
+		ud_mode_status.lowpower_mode = 0; /* clear lowpower status */
 #else
 	if (tdev->thp_core->support_pinctrl == 0) {
 		thp_log_info("%s: not support pinctrl\n", __func__);
@@ -596,11 +666,43 @@ static int touch_driver_wrong_touch(struct thp_device *tdev)
 	return 0;
 }
 
+static int parse_event_info(struct thp_device *tdev,
+	const uint8_t *r_buf, struct thp_udfp_data *udfp_data, int len)
+{
+	bool flag;
+
+	flag = !r_buf || !udfp_data || (len == 0);
+	if (flag) {
+		thp_log_err("%s: data is NULL\n", __func__);
+		return -EINVAL;
+	}
+	thp_log_info("%s: called\n", __func__);
+
+	/* r_buff [6] = gester ID */
+	udfp_data->key_event = r_buf[6];
+	thp_log_info("%s:version:%x, udfp_event:%d, aod:%u, key:%u\n",
+		__func__, udfp_data->tpud_data.version,
+		udfp_data->tpud_data.udfp_event, udfp_data->aod_event,
+		udfp_data->key_event);
+
+	/* when verify gesture info from tp ic, TP driver will receive a package
+	 * which include package head and package tail, hence tp driver should
+	 * judge (~r_buf[6] + 1) & 0xFF) == r_buf[7] to verify package is correct
+	 */
+	if ((udfp_data->key_event == SINGLE_CLICLK_GESTURE_ID) &&
+		(((~r_buf[6] + 1) & 0xFF) == r_buf[7])) {
+		udfp_data->aod_event = AOD_VALID_EVENT;
+		thp_log_info("single tap enter, trigger AOD event\n");
+	}
+	return NO_ERR;
+}
+
 static int gesture_data_read_write_by_frame(struct thp_device *tdev,
 	uint8_t *r_buf, uint8_t *w_buf)
 {
 	int retval;
 	u32 i;
+	bool flag;
 
 	w_buf[0] = (uint8_t)(spi_read_mask(NVT_GET_FRAME_CMD));
 	for (i = 0; i < tdev->thp_core->gesture_retry_times; i++) {
@@ -613,10 +715,18 @@ static int gesture_data_read_write_by_frame(struct thp_device *tdev,
 		msleep(WAIT_FOR_SPI_BUS_READ_DELAY); /* retry time delay */
 	}
 	/* r_buf bit 6 and 7 are used to check gesture id */
-	if ((tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) && (tdev->thp_core->pen_supported) &&
-		((r_buf[6] == STYLUS_GESTURE_ID) && (((~r_buf[6] + 1) & 0xFF) == r_buf[7]))) {
+	flag = ((tdev->thp_core->support_vendor_ic_type == NB1_SERIES) ||
+		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES)) &&
+		(tdev->thp_core->pen_supported) && ((r_buf[6] == STYLUS_GESTURE_ID) &&
+		(((~r_buf[6] + 1) & 0xFF) == r_buf[7]));
+	if (flag) {
 		return STYLUS_EVENT;
-	} else if ((r_buf[6] == DOUBLE_CLICLK_GESTURE_ID) && (((~r_buf[6] + 1) & 0xFF) == r_buf[7])) {
+	} else if ((r_buf[6] == DOUBLE_CLICLK_GESTURE_ID) &&
+		((~r_buf[6] + 1) & 0xFF) == r_buf[7]) {
+	/* when verify gesture info from tp ic, TP driver will receive a package
+	 * which include package head and package tail, hence tp driver should
+	 * judge (~r_buf[6] + 1) & 0xFF) == r_buf[7] to verify package is correct
+	 */
 		thp_log_info("found valid gesture id\n");
 		return NO_ERR;
 	}
@@ -630,6 +740,7 @@ static int gesture_data_read_write(struct thp_device *tdev)
 {
 	int retval;
 	u32 i;
+	bool flag;
 	uint8_t *r_buf = g_nvt_ts_spi_buf.r_buf;
 	uint8_t *w_buf = g_nvt_ts_spi_buf.w_buf;
 
@@ -639,8 +750,10 @@ static int gesture_data_read_write(struct thp_device *tdev)
 	}
 	memset(r_buf, 0, NVT_SPI_RW_BUF_LEN);
 	memset(w_buf, 0, NVT_SPI_RW_BUF_LEN);
-	if ((tdev->thp_core->support_vendor_ic_type == NVT36672C_SERIES) ||
-		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES))
+	flag = ((tdev->thp_core->support_vendor_ic_type == NVT36672C_SERIES) ||
+		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) ||
+		(tdev->thp_core->support_vendor_ic_type == NB1_SERIES));
+	if (flag)
 		return gesture_data_read_write_by_frame(tdev, r_buf, w_buf);
 	w_buf[0] = spi_write_mask(0x7F);
 	w_buf[1] = nvt_hi_word_bit_mask(NVT_GET_GESTURE_ADDR);
@@ -682,6 +795,7 @@ static int touch_driver_gesture_report(struct thp_device *tdev,
 	unsigned int *gesture_wakeup_value)
 {
 	int ret;
+	bool flag;
 
 	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev)) {
 		thp_log_info("%s: input dev null\n", __func__);
@@ -693,8 +807,9 @@ static int touch_driver_gesture_report(struct thp_device *tdev,
 		return -EINVAL;
 	}
 
-	if ((tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) &&
-		(tdev->thp_core->support_spi_resume_delay))
+	flag = ((tdev->thp_core->support_vendor_ic_type == NB1_SERIES) ||
+		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES));
+	if (flag && (tdev->thp_core->support_spi_resume_delay))
 		msleep(WAIT_FOR_SPI_BUS_RESUMED_DELAY_QCOM);
 
 	ret = gesture_data_read_write(tdev);
@@ -706,10 +821,50 @@ static int touch_driver_gesture_report(struct thp_device *tdev,
 	if (tdev->thp_core->easy_wakeup_info.off_motion_on == true) {
 		tdev->thp_core->easy_wakeup_info.off_motion_on = false;
 		*gesture_wakeup_value = TS_DOUBLE_CLICK;
-		if ((tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) && (ret == STYLUS_EVENT))
+		if (flag && (ret == STYLUS_EVENT))
 			*gesture_wakeup_value = TS_STYLUS_WAKEUP_TO_MEMO;
 	}
 	mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
+
+	return 0;
+}
+
+static int touch_driver_get_event_info(struct thp_device *tdev,
+	struct thp_udfp_data *udfp_data)
+{
+	int retval;
+	uint8_t *r_buf = g_nvt_ts_spi_buf.r_buf;
+	uint8_t *w_buf = g_nvt_ts_spi_buf.w_buf;
+	u32 i;
+	bool flag;
+
+	thp_log_info("%s enter!\n", __func__);
+	flag = (!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev);
+	if (flag) {
+		thp_log_info("%s: input dev null\n", __func__);
+		return -ENOMEM;
+	}
+
+	if (tdev->thp_core->support_vendor_ic_type != NVT36672C_SERIES)
+		return 0;
+
+	w_buf[0] = (uint8_t)(spi_read_mask(NVT_GET_FRAME_CMD));
+	for (i = 0; i < tdev->thp_core->gesture_retry_times; i++) {
+		retval = touch_driver_spi_read_write(tdev->thp_core->sdev,
+			w_buf, r_buf, DEBUG_GESTURE_DATA_LEN);
+		if (retval == 0)
+			break;
+		thp_log_info("%s: spi write abnormal retval %d retry\n",
+			__func__, retval);
+		msleep(WAIT_FOR_SPI_BUS_READ_DELAY); /* retry time delay */
+	}
+
+	retval = parse_event_info(tdev, r_buf, udfp_data, DEBUG_GESTURE_DATA_LEN);
+	if (retval) {
+		thp_log_err("parse_event_info fail %d\n", retval);
+		return -EINVAL;
+	}
+	thp_log_info("%s call end\n", __func__);
 
 	return 0;
 }
@@ -798,19 +953,13 @@ static int touch_driver_set_cmd_args(struct thp_device *tdev, uint8_t *w_buf)
 	 * 3:need to send stylus status
 	 * 4:stylus connect or disconnect
 	 */
-	if ((send_status_flag == STYLUS_CONNECT) &&
-		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) &&
-		(tdev->thp_core->send_bt_status_to_fw)) {
+	if (send_status_flag == STYLUS_CONNECT) {
 		w_buf[3] = 0x02;
 		w_buf[4] = 0x01;
-	} else if ((send_status_flag == STYLUS_DISCONNECT) &&
-		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) &&
-		(tdev->thp_core->send_bt_status_to_fw)) {
+	} else if (send_status_flag == STYLUS_DISCONNECT) {
 		w_buf[3] = 0x02;
 		w_buf[4] = 0x00;
-	} else if ((send_status_flag == STYLUS_CONNECT_NEAR) &&
-		(tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) &&
-		(tdev->thp_core->send_adsorption_status_to_fw)) {
+	} else if (send_status_flag == STYLUS_CONNECT_NEAR) {
 		w_buf[3] = 0x02;
 		w_buf[4] = 0x02;
 	} else {
@@ -833,20 +982,15 @@ static int touch_driver_send_fw_cmd(struct thp_device *tdev, uint8_t cmd)
 	unsigned int cmd_addr = NVT_CMD_ADDR;
 	unsigned int stamp_addr = NVT_CMD_STAMP_ADDR;
 
-	if (tdev->thp_core->support_vendor_ic_type == NVT36672C_SERIES) {
-		cmd_addr = NVT36672C_CMD_ADDR;
-		stamp_addr = NVT36672C_CMD_STAMP_ADDR;
-	}
-
-	if (tdev->thp_core->support_vendor_ic_type == N9Z_SERIES) {
-		cmd_addr = N9Z_CMD_ADDR;
-		stamp_addr = N9Z_CMD_STAMP_ADDR;
-	}
+	touch_driver_ic_type_set_addr(&cmd_addr, CMD_ADDR);
+	touch_driver_ic_type_set_addr(&stamp_addr, CMD_STAMP_ADDR);
 
 	if (w_buf == NULL) {
 		thp_log_info("%s: w_buf is null\n", __func__);
 		return -ENOMEM;
 	}
+	if (tdev->thp_core->aod_support_on_tddi)
+		mdelay(120);
 	ret = touch_driver_read_fw_stamp(tdev, &stamp_val, stamp_addr);
 	if (ret) {
 		thp_log_err("%s, fail read fw stamp\n", __func__);
@@ -980,6 +1124,7 @@ static void touch_driver_enter_gesture_mode(
 	struct thp_device *tdev)
 {
 	int retval;
+	thp_log_info("%s, called\n", __func__);
 
 	retval = touch_driver_send_fw_cmd(tdev,
 		NVT_CMD_ENTER_GESTURE_MODE);
@@ -988,25 +1133,50 @@ static void touch_driver_enter_gesture_mode(
 	mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 	tdev->thp_core->easy_wakeup_info.off_motion_on = true;
 	mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
+	thp_log_info("%s, enter gesture mode succ\n", __func__);
+}
+
+static void touch_driver_enter_sleep_mode(
+	struct thp_device *tdev)
+{
+	int retval;
+
+	thp_log_info("%s, called\n", __func__);
+	retval = touch_driver_send_fw_cmd(tdev,
+		NVT_CMD_ENTER_SLEEP_MODE);
+	if (retval < 0) {
+		thp_log_err("%s, enter sleep mode failed\n", __func__);
+		return;
+	}
+	thp_log_info("%s, enter sleep mode succ\n", __func__);
 }
 
 static int touch_driver_suspend(struct thp_device *tdev)
 {
 	int pt_test_mode;
+	int tddi_aod_status;
+	int gesture_support_status;
+	int gesture_mode_branch;
 	struct thp_core_data *cd = NULL;
 	enum ts_sleep_mode gesture_status;
+	int flag;
 
 	thp_log_info("%s: called\n", __func__);
-	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev)) {
+	flag = (!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev);
+	if (flag) {
 		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
 	cd = tdev->thp_core;
 	pt_test_mode = is_pt_test_mode(tdev);
 	gesture_status = tdev->thp_core->easy_wakeup_info.sleep_mode;
-
-	if (tdev->thp_core->support_gesture_mode &&
-		tdev->thp_core->lcd_gesture_mode_support) {
+	tddi_aod_status = (tdev->thp_core->aod_support_on_tddi &&
+		tdev->thp_core->aod_touch_status);
+	gesture_support_status = tdev->thp_core->support_gesture_mode &&
+		tdev->thp_core->lcd_gesture_mode_support;
+	gesture_mode_branch = (gesture_status == TS_GESTURE_MODE &&
+		tdev->thp_core->lcd_gesture_mode_support) || tddi_aod_status;
+	if (gesture_support_status) {
 		if (pt_test_mode) { /* PT test spec */
 			thp_log_info("%s: PT sleep mode\n", __func__);
 			/* gesture mode don't need */
@@ -1015,15 +1185,23 @@ static int touch_driver_suspend(struct thp_device *tdev)
 #ifndef CONFIG_HUAWEI_THP_MTK
 			touch_driver_cs_contrl(tdev, GPIO_LOW);
 #endif
-		} else if (gesture_status == TS_GESTURE_MODE &&
-			tdev->thp_core->lcd_gesture_mode_support) {
+		} else if (gesture_mode_branch) {
 			thp_log_info("%s: TS_GESTURE_MODE\n", __func__);
 			touch_driver_enter_gesture_mode(tdev);
+			if (cd->aod_support_on_tddi && cd->tp_ud_lowpower_status) {
+				mdelay(20);
+				(void)touch_driver_send_fw_cmd(tdev,
+					NVT_CMD_ENTER_SLEEP_MODE);
+				ud_mode_status.lowpower_mode = cd->tp_ud_lowpower_status;
+				thp_log_info("%s: complementary send tp lowpower cmd succ\n", __func__);
+			}
 		} else { /* power off spec */
 			thp_log_info("%s: power off mode\n", __func__);
 			/* gesture mode don't need */
 			(void)touch_driver_send_fw_cmd(tdev,
 				NVT_CMD_ENTER_CUSTOMIZED_DP_DSTB);
+			if (cd->aod_support_on_tddi)
+				mdelay(20);
 #ifndef CONFIG_HUAWEI_THP_MTK
 			if (!cd->suspend_no_reset)
 				gpio_set_value(tdev->gpios->rst_gpio, 0);
@@ -1050,6 +1228,10 @@ static int touch_driver_suspend(struct thp_device *tdev)
 #ifndef CONFIG_HUAWEI_THP_MTK
 	if (pt_test_mode) {
 		thp_log_info("%s: sleep mode\n", __func__);
+		/* if tddi screen support aod fuction, PT position need send CMD 7D to ic */
+		if (cd->aod_support_on_tddi)
+			(void)touch_driver_send_fw_cmd(tdev,
+				NVT_CMD_ENTER_CUSTOMIZED_DP_DSTB);
 		touch_driver_cs_contrl(tdev, GPIO_LOW);
 	} else {
 		thp_log_info("%s: power off mode\n", __func__);
@@ -1075,6 +1257,41 @@ static int touch_driver_suspend(struct thp_device *tdev)
 
 	return 0;
 }
+
+#if defined(CONFIG_HUAWEI_THP_QCOM)
+static int touch_driver_set_lowpower_state(struct thp_device *tdev,
+	u8 state)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	thp_log_info("%s: called state = %u\n", __func__, state);
+	if (tdev == NULL) {
+		thp_log_err("%s: tdev null\n", __func__);
+		return -EINVAL;
+	}
+	/*
+	 *	aod_state_flag is true demostrate phone is working under
+	 *	aod condition, when screen on occurs during this period, TP driver will
+	 *	run off power branch during touch drver suspend.
+	 */
+	thp_log_info("%s : aod_state_flag value %u\n", __func__, cd->aod_state_flag);
+	if (!cd->aod_state_flag && cd->work_status != SUSPEND_DONE) {
+		thp_log_info("%s: resumed, not handle lp\n", __func__);
+		return NO_ERR;
+	}
+	if (ud_mode_status.lowpower_mode == state) {
+		thp_log_info("%s:don't repeat old status %u\n",
+			__func__, state);
+		return 0;
+	}
+	if (state)
+		touch_driver_enter_sleep_mode(tdev); /* enable lowpower */
+	else
+		touch_driver_enter_gesture_mode(tdev); /* disable lowpower */
+	ud_mode_status.lowpower_mode = state;
+	return 0;
+}
+#endif
 
 static void touch_driver_exit(struct thp_device *tdev)
 {
@@ -1102,6 +1319,10 @@ struct thp_device_ops nova_dev_ops = {
 	.chip_gesture_report = touch_driver_gesture_report,
 	.second_poweroff = touch_driver_second_poweroff,
 	.bt_handler = touch_driver_nt_bt_handler,
+#if defined(CONFIG_HUAWEI_THP_QCOM)
+	.get_event_info = touch_driver_get_event_info,
+	.tp_lowpower_ctrl = touch_driver_set_lowpower_state,
+#endif
 };
 
 static int __init touch_driver_module_init(void)

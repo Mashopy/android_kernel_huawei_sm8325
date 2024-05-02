@@ -699,8 +699,8 @@ static void flp_resort_cellbatching_data(char *data, unsigned int len)
 
 	int index = 0;
 	int ret;
-	unsigned long time1 = 0;
-	unsigned long time2 = 0;
+	unsigned long long time1 = 0;
+	unsigned long long time2 = 0;
 	bool is_resort = false;
 	unsigned int temp_len = len;
 
@@ -711,9 +711,9 @@ static void flp_resort_cellbatching_data(char *data, unsigned int len)
 	while ((temp_len - sizeof(struct cell_batching_data_t)) != 0) {
 		index++;
 		time1 = temp1[index-1].timestamplow;
-		time1 |= (unsigned long) (temp1[index-1].timestamphigh) << 32;
+		time1 |= (unsigned long long) (temp1[index-1].timestamphigh) << 32;
 		time2 = temp2[index].timestamplow;
-		time2 |= (unsigned long) (temp2[index].timestamphigh) << 32;
+		time2 |= (unsigned long long) (temp2[index].timestamphigh) << 32;
 		if (time1 > time2) {
 			is_resort = true;
 			pr_info("flp: %s resort cellbatching index %d\n", __func__, index);
@@ -2455,7 +2455,7 @@ static ssize_t flp_write(struct file *file, const char __user *data,
 	char *user_data = (char *)kzalloc(len, GFP_KERNEL);
 	hwlog_err("%s enter, len = %d\n", __func__, len);
 
-	if (user_data == NULL) {
+	if (user_data == NULL || len == 0) {
 		hwlog_err("%s user_data NULL\n", __func__);
 		return len;
 	}
@@ -2472,6 +2472,14 @@ static ssize_t flp_write(struct file *file, const char __user *data,
 			kfree(user_data);
 		return len;
 	}
+
+	if (((pkt_subcmd_req_t *)user_data)->hd.length + sizeof(struct pkt_header) < len) {
+		hwlog_err("%s len is too short\n", __func__);
+		if (user_data != NULL)
+			kfree(user_data);
+		return len;
+	}
+
 	if (((pkt_subcmd_req_t *)user_data)->hd.cmd == CMD_CMN_CONFIG_REQ) {
 		if (((pkt_subcmd_req_t *)user_data)->hd.resp == 0) {
 			hwlog_err("%s get_data_from_mcu enter \n", __func__);

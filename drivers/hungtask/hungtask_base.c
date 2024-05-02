@@ -35,9 +35,11 @@
 #include <linux/suspend.h>
 #include <linux/spinlock.h>
 #include <platform/linux/zrhung.h>
+
+#ifdef CONFIG_BLACKBOX
 #include <platform/trace/events/rainbow.h>
 #include <platform/linux/rainbow.h>
-
+#endif
 #include "securec.h"
 #include "hungtask_base.h"
 #include "hungtask_ext.h"
@@ -427,6 +429,10 @@ void htbase_show_state_filter(u64 state_filter)
 
 	if ((state_filter == TASK_UNINTERRUPTIBLE) || !state_filter)
 		debug_show_all_locks();
+
+#ifdef RCU_GP_KTHREADS_DEBUG
+	show_rcu_gp_kthreads_debug();
+#endif
 }
 
 void hungtask_show_state_filter(u64 state_filter)
@@ -485,11 +491,15 @@ void do_show_task(struct task_struct *task, u32 flag, int d_state_time)
 
 static void do_panic(void)
 {
+#if defined (CONFIG_BLACKBOX) && defined(CONFIG_QCOM_ARCH)
 	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
+#endif
 	if (hungtask_get_panic()) {
 		trigger_all_cpu_backtrace();
+#if defined (CONFIG_BLACKBOX) && defined(CONFIG_QCOM_ARCH)
 		memcpy(attach_info_buffer, "hungtask", RB_SREASON_STR_MAX);
 		trace_rb_sreason_set(attach_info_buffer);
+#endif
 		panic("hungtask: blocked tasks");
 	}
 }

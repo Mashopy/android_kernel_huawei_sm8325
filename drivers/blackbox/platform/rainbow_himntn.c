@@ -34,6 +34,10 @@ static unsigned long long g_himntn_data = HIMNTN_DEFAULT_BETA;
 // if item read data before himntn init, return false
 static unsigned int g_himntn_data_inited;
 
+// cache for HIMNTN_ID_BOOTDUMP_SWITCH
+static bool g_is_bootdump_read = false;
+static bool g_himntn_bootdump_switch = false;
+
 unsigned long long get_global_himntn_data(void)
 {
 	return g_himntn_data;
@@ -42,6 +46,7 @@ unsigned long long get_global_himntn_data(void)
 void set_global_himntn_data(unsigned long long value)
 {
 	g_himntn_data = value;
+	g_is_bootdump_read = false;
 }
 
 static int __init second_reason_print(char *p)
@@ -113,6 +118,9 @@ void cmd_himntn_item_switch(unsigned int index, bool *rtn)
 	tmp_value = (BASE_VALUE_GET_SWITCH >> index);
 	tmp_global = get_global_himntn_data();
 
+	if (index == HIMNTN_ID_BOOTDUMP_SWITCH)
+		g_is_bootdump_read = true;
+
 	if ((tmp_global & tmp_value) == 0) {
 		HIMNTN_INFO("%d: status is close", index);
 		*rtn = false;
@@ -123,3 +131,14 @@ void cmd_himntn_item_switch(unsigned int index, bool *rtn)
 	*rtn = true;
 	return;
 }
+
+// Description: get HIMNTN_ID_BOOTDUMP_SWITCH's himntn value fast
+bool cmd_himntn_bootdump_switch_fast(void)
+{
+	if (g_is_bootdump_read)
+		return g_himntn_bootdump_switch;
+
+	cmd_himntn_item_switch(HIMNTN_ID_BOOTDUMP_SWITCH, &g_himntn_bootdump_switch);
+	return g_himntn_bootdump_switch;
+}
+EXPORT_SYMBOL(cmd_himntn_bootdump_switch_fast);

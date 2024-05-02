@@ -43,7 +43,9 @@
 #include <tpkit_platform_adapter.h>
 #include <huawei_ts_kit_api.h>
 #include <huawei_ts_kit_algo.h>
-
+#ifdef CONFIG_LCD_KIT_HYBRID
+#include "hybrid/huawei_ts_kit_hybrid_core.h"
+#endif
 #ifdef CONFIG_HUAWEI_DEVKIT_MTK_3_0
 #include <linux/of_irq.h>
 #endif
@@ -3969,6 +3971,11 @@ static void ts_proc_command_process(struct ts_cmd_node *proc_cmd,
 	case TS_SET_RECOVERY_WINDOW:
 		ts_set_recovery_window();
 		break;
+#ifdef CONFIG_LCD_KIT_HYBRID
+	case TS_HYBRID_SWITCH_CONTROL:
+		ts_kit_hybrid_switch_control(proc_cmd);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -5569,6 +5576,9 @@ static int __init huawei_ts_module_init(void)
 	atomic_set(&g_ts_kit_platform_data.register_flag, TS_UNREGISTER);
 	atomic_set(&g_ts_kit_platform_data.power_state, TS_UNINIT);
 
+#ifdef CONFIG_LCD_KIT_HYBRID
+	ts_kit_hybrid_init();
+#endif
 	if (get_ts_driver_type() == I3C_MASTER_I2C_DRIVER)
 		return i2c_add_driver(&g_ts_kit_i2c_driver);
 	error = get_ts_board_info();
@@ -5591,6 +5601,9 @@ out:
 static void __exit huawei_ts_module_exit(void)
 {
 	TS_LOG_INFO("huawei_ts, %s called here\n", __func__);
+#ifdef CONFIG_LCD_KIT_HYBRID
+	ts_kit_hybrid_release();
+#endif
 	if (g_ts_kit_platform_data.ts_task)
 		kthread_stop(g_ts_kit_platform_data.ts_task);
 	ts_release_platform_mem();

@@ -26,6 +26,9 @@
 #include "lcd_kit_factory.h"
 #endif
 #include "lcd_kit_utils.h"
+#ifdef CONFIG_MATTING_ALGO_TASK
+#include "matting_algo_fs_interface.h"
+#endif
 /* marco define */
 #ifndef strict_strtoul
 #define strict_strtoul kstrtoul
@@ -74,6 +77,7 @@ static ssize_t lcd_type_show(struct device *dev,
 static int __init early_parse_nit_cmdline(char *arg)
 {
 	int len;
+	int ret;
 
 	if (arg == NULL) {
 		LCD_KIT_ERR("nit is null\n");
@@ -81,13 +85,48 @@ static int __init early_parse_nit_cmdline(char *arg)
 	}
 
 	len = strlen(arg);
-	if (len <= NIT_LENGTH)
-		strict_strtoul(arg, 0, &g_display_nit);
-
+	if (len <= NIT_LENGTH) {
+		ret = strict_strtoul(arg, 0, &g_display_nit);
+		if (ret < 0)
+			LCD_KIT_WARNING("nit string to unsigned long fail\n");
+	}
 	return LCD_KIT_OK;
 }
 
 early_param("display_nit", early_parse_nit_cmdline);
+
+static void get_panel_type(uint32_t panel_id, char *panel_type, int len)
+{
+	if (len <= sizeof("INVALID")) {
+		LCD_KIT_ERR("len too short\n");
+		return;
+	}
+	if (common_info->panel_type == LCD_TYPE)
+		strncpy(panel_type, "LCD", strlen("LCD"));
+	else if (common_info->panel_type == AMOLED_TYPE)
+		strncpy(panel_type, "AMOLED", strlen("AMOLED"));
+	else
+		strncpy(panel_type, "INVALID", strlen("INVALID"));
+}
+
+static void get_oled_type(uint32_t panel_id, char *oled_type, int len)
+{
+	if (len <= sizeof("INVALID")) {
+		LCD_KIT_ERR("len too short\n");
+		return;
+	}
+
+	if (common_info->oled_type == LTPS)
+		strncpy(oled_type, "LTPS", strlen("LTPS"));
+	else if (common_info->oled_type == LTPO1)
+		strncpy(oled_type, "LTPO1", strlen("LTPO1"));
+	else if (common_info->oled_type == LTPO2)
+		strncpy(oled_type, "LTPO2", strlen("LTPO2"));
+	else if (common_info->oled_type == IGZO)
+		strncpy(oled_type, "IGZO", strlen("IGZO"));
+	else
+		strncpy(oled_type, "LTPS", strlen("LTPS"));
+}
 
 static ssize_t lcd_panel_info_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -97,22 +136,95 @@ static ssize_t lcd_panel_info_show(struct device *dev,
 	struct lcd_kit_bl_ops *bl_ops = NULL;
 	char *bl_type = NULL;
 	uint32_t panel_id = lcd_get_active_panel_id();
+	char oled_type[PANEL_MAX] = {0};
 
-	if (common_info->panel_type == LCD_TYPE)
-		strncpy(panel_type, "LCD", strlen("LCD"));
-	else if (common_info->panel_type == AMOLED_TYPE)
-		strncpy(panel_type, "AMOLED", strlen("AMOLED"));
-	else
-		strncpy(panel_type, "INVALID", strlen("INVALID"));
-
+	get_panel_type(panel_id, panel_type, PANEL_MAX);
 	bl_ops = lcd_kit_get_bl_ops();
 	if ((bl_ops != NULL) && (bl_ops->name != NULL))
 		bl_type = bl_ops->name;
-
-	ret = snprintf(buf, PAGE_SIZE, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,bl_type:%s\n",
+	get_oled_type(panel_id, oled_type, PANEL_MAX);
+	ret = snprintf(buf, PAGE_SIZE, "blmax:%u,blmin:%u,blmax_nit_actual:%d,blmax_nit_standard:%d,lcdtype:%s,bl_type:%s,oled_type:%s\n",
 		common_info->bl_level_max, common_info->bl_level_min,
 		g_display_nit, common_info->bl_max_nit,
-		panel_type, bl_type);
+		panel_type, bl_type, oled_type);
+	return ret;
+}
+
+static int fps_list_cat(char *str, int len)
+{
+	int ret;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	int fps_rate;
+	char tmp[MAX_BUF] = {0};
+	int i;
+
+	ret = snprintf(str, len, "current_fps:%d;default_fps:%d",
+		disp_info->fps.current_fps, disp_info->fps.default_fps);
+	strncat(str, ";support_fps_list:", strlen(";support_fps_list:"));
+	for (i = 0; i < disp_info->fps.panel_support_fps_list.cnt; i++) {
+		fps_rate = (int)disp_info->fps.panel_support_fps_list.buf[i];
+		if (i > 0)
+			strncat(str, ",", strlen(","));
+		ret += snprintf(tmp, sizeof(tmp), "%d", fps_rate);
+		strncat(str, tmp, strlen(tmp));
+	}
+	return ret;
+}
+
+static int product_panel_num_cat(char *str, int len)
+{
+	int ret;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	char tmp[MAX_BUF] = {0};
+	int panel_num = lcd_get_panel_num();
+
+	strncat(str, ";product_panel_num:", strlen(";product_panel_num:"));
+	ret = snprintf(tmp, sizeof(tmp), "%d", panel_num);
+	strncat(str, tmp, strlen(tmp));
+	strncat(str, ";current_panel_id:", strlen(";current_panel_id:"));
+	ret += snprintf(tmp, sizeof(tmp), "%d", panel_id);
+	strncat(str, tmp, strlen(tmp));
+	return ret;
+}
+
+static int panel_id_type_fps_cat(char *str, int len)
+{
+	int ret;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	int fps_rate;
+	char tmp[MAX_BUF] = {0};
+	int i;
+	int j;
+	char oled_type[PANEL_MAX] = {0};
+	int panel_num = lcd_get_panel_num();
+
+	for (i = 0; i < panel_num; i++) {
+		strncat(str, ";panel_id:", strlen(";panel_id:"));
+		ret = snprintf(tmp, sizeof(tmp), "%d", i);
+		strncat(str, tmp, strlen(tmp));
+		strncat(str, ";panel_type:", strlen(";panel_type:"));
+		get_oled_type(i, oled_type, PANEL_MAX);
+		strncat(str, oled_type, strlen(oled_type));
+		strncat(str, ";support_fps:", strlen(";support_fps:"));
+		panel_id = i;
+		for (j = 0; j < disp_info->fps.panel_support_fps_list.cnt; j++) {
+			fps_rate = disp_info->fps.panel_support_fps_list.buf[j];
+			if (j > 0)
+				strncat(str, ",", strlen(","));
+			ret += snprintf(tmp, sizeof(tmp), "%d", fps_rate);
+			strncat(str, tmp, strlen(tmp));
+		}
+	}
+	return ret;
+}
+
+static int fps_scence_show(char *str, int len)
+{
+	int ret;
+
+	ret = fps_list_cat(str, len);
+	ret += product_panel_num_cat(str, len);
+	ret += panel_id_type_fps_cat(str, len);
 	return ret;
 }
 
@@ -121,26 +233,11 @@ static ssize_t lcd_fps_scence_show(struct device *dev,
 {
 	int ret;
 	char str[LCD_REG_LENGTH_MAX] = {0};
-	char tmp[MAX_BUF] = {0};
-	int i;
-	int fps_rate;
-	struct qcom_panel_info *pinfo = NULL;
 	uint32_t panel_id = lcd_get_active_panel_id();
 
 	if (disp_info->fps.support) {
-		ret = snprintf(str, sizeof(str), "current_fps:%d;default_fps:%d",
-			disp_info->fps.current_fps, disp_info->fps.default_fps);
-		strncat(str, ";support_fps_list:", strlen(";support_fps_list:"));
-		for (i = 0; i < disp_info->fps.panel_support_fps_list.cnt; i++) {
-			fps_rate = (int)disp_info->fps.panel_support_fps_list.buf[i];
-			if (i > 0)
-				strncat(str, ",", strlen(","));
-			ret += snprintf(tmp, sizeof(tmp), "%d", fps_rate);
-			strncat(str, tmp, strlen(tmp));
-		}
+		fps_scence_show(str, LCD_REG_LENGTH_MAX);
 	} else {
-		pinfo = lcm_get_panel_info(panel_id);
-
 		ret = snprintf(str, sizeof(str), "lcd_fps=%d",
 			disp_info->fps.default_fps);
 	}
@@ -236,7 +333,7 @@ static ssize_t lcd_alpm_setting_store(struct device *dev,
 		return LCD_KIT_FAIL;
 
 	g_alpm_setting_ret = LCD_KIT_OK;
-	return LCD_KIT_OK;
+	return count;
 }
 
 #ifdef LCD_FACTORY_MODE
@@ -748,6 +845,33 @@ static int lcd_checksum_compare(uint8_t *read_value, uint32_t *value,
 	return err_no;
 }
 
+static int lcd_check_checksum_ext(uint32_t panel_id, uint32_t pic_index)
+{
+	int err_cnt_ext;
+	int check_cnt;
+	uint8_t read_value[LCD_KIT_CHECKSUM_SIZE + 1] = {0};
+	uint32_t *checksum_ext = NULL;
+
+	check_cnt = FACT_INFO->checksum.value_ext.arry_data[pic_index].cnt;
+	if (check_cnt > LCD_KIT_CHECKSUM_SIZE) {
+		LCD_KIT_ERR("checksum count is larger than checksum size\n");
+		return LCD_KIT_FAIL;
+	}
+	if (FACT_INFO->checksum.value_ext.arry_data) {
+		LCD_KIT_INFO("checksum value ext find, do checksum again\n");
+		checksum_ext = FACT_INFO->checksum.value_ext.arry_data[pic_index].buf;
+		err_cnt_ext = lcd_checksum_compare(read_value, checksum_ext, check_cnt);
+		if (!err_cnt_ext) {
+			LCD_KIT_INFO("ext checksum pass, ret is LCD_KIT_OK\n");
+			return LCD_KIT_OK;
+		} else {
+			LCD_KIT_ERR("ext checksum failed, err_cnt_ext:%d\n", err_cnt_ext);
+		}
+	}
+
+	return LCD_KIT_FAIL;
+}
+
 static int lcd_check_checksum(uint32_t panel_id)
 {
 	int ret;
@@ -782,8 +906,9 @@ static int lcd_check_checksum(uint32_t panel_id)
 	checksum = FACT_INFO->checksum.value.arry_data[pic_index].buf;
 	err_cnt = lcd_checksum_compare(read_value, checksum, check_cnt);
 	if (err_cnt) {
-		LCD_KIT_ERR("err_cnt:%d\n", err_cnt);
-		ret = LCD_KIT_FAIL;
+		ret = lcd_check_checksum_ext(panel_id, pic_index);
+		if (ret == LCD_KIT_FAIL)
+			LCD_KIT_ERR("err_cnt:%d\n", err_cnt);
 	}
 	return ret;
 }
@@ -1770,8 +1895,8 @@ static ssize_t lcd_fps_cmd_show(struct device *dev,
 	uint32_t panel_id = lcd_get_active_panel_id();
 
 	if (disp_info->fps.support)
-		ret = snprintf(str, sizeof(str), "FPS60:%s;FPS90:%s;FPS120:%s;",
-			disp_info->fps.fps_60_cmd, disp_info->fps.fps_90_cmd,
+		ret = snprintf(str, sizeof(str), "FPS30:%s;FPS60:%s;FPS90:%s;FPS120:%s;",
+			disp_info->fps.fps_30_cmd, disp_info->fps.fps_60_cmd, disp_info->fps.fps_90_cmd,
 			disp_info->fps.fps_120_cmd);
 	ret = snprintf(buf, PAGE_SIZE, "%s\n", str);
 	LCD_KIT_INFO("%s\n", str);
@@ -1834,6 +1959,13 @@ static int lcd_check_support(int index)
 		return pinfo->panel_version.support;
 	case LCD_CABC_MODE:
 		return common_info->cabc.support;
+#ifdef CONFIG_MATTING_ALGO_TASK
+	case MATTING_ALGO_DEBUG_INDEX:
+	case MATTING_ALGO_CROP_DEBUG_INDEX:
+	case MATTING_ALGO_LUX_VALUE_INDEX:
+	case MATTING_ALGO_ALS_PARAM_INDEX:
+	    return SYSFS_SUPPORT;
+#endif
 	default:
 		return SYSFS_NOT_SUPPORT;
 	}
@@ -2089,6 +2221,16 @@ struct lcd_kit_sysfs_ops g_lcd_sysfs_ops = {
 	.panel_version_show = lcd_panel_version_show,
 	.lcd_cabc_mode_show = lcd_kit_cabc_show,
 	.lcd_cabc_mode_store = lcd_kit_cabc_store,
+#ifdef CONFIG_MATTING_ALGO_TASK
+	.matting_algo_debug_show = interface_matting_algo_debug_show,
+	.matting_algo_debug_store = interface_matting_algo_debug_store,
+	.matting_algo_crop_debug_show = interface_matting_algo_crop_debug_show,
+	.matting_algo_crop_debug_store = interface_matting_algo_crop_debug_store,
+	.matting_algo_lux_value_show = interface_matting_algo_lux_value_show,
+	.matting_algo_lux_value_store = interface_matting_algo_lux_value_store,
+	.matting_algo_als_param_show = interface_matting_algo_als_param_show,
+	.matting_algo_als_param_store = interface_matting_algo_als_param_store,
+#endif
 #ifdef LCD_FACTORY_MODE
 	.ddic_lv_detect_test_show = lcd_ddic_lv_detect_test_show,
 	.ddic_lv_detect_test_store = lcd_ddic_lv_detect_test_store,

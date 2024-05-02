@@ -191,9 +191,6 @@ void fcp_charge_check(struct huawei_battery_info *info)
 		return;
 	}
 
-	if (hvdcp_check_running_current((int)hvdcp_get_rt_current_thld()))
-		hvdcp_set_rt_result(true);
-
 	if (direct_charge_is_failed() &&
 		(hvdcp_get_charging_stage() < HVDCP_STAGE_SUCCESS))
 		hvdcp_set_charging_stage(HVDCP_STAGE_DEFAUTL);

@@ -33,7 +33,7 @@
 #define SC8546_SCP_IS_ERR                      1
 #define SC8546_SCP_WRITE_OP                    0
 #define SC8546_SCP_READ_OP                     1
-#define SC8546_SCP_MULTI_READ_LEN              2
+#define SC8546_SCP_MULTI_READ_LEN              8
 #define SC8546_SCP_ACK_AND_CRC_LEN             2
 #define SC8546_SCP_SBRWR_NUM                   1
 #define SC8546_SCP_CMD_SBRRD                   0x0c
@@ -106,11 +106,9 @@
 
 /* SCP_FIFO_STAT reg=0x28 */
 #define SC8546_SCP_FIFO_STAT_REG               0x28
-#define SC8546_DM_BUSY_STAT_MASK               BIT(7)
-#define SC8546_DM_BUSY_STAT_SHIFT              7
-#define SC8546_TX_FIFO_CNT_STAT_MASK           (BIT(5) | BIT(4) | BIT(3))
-#define SC8546_TX_FIFO_CNT_STAT_SHIFT          3
-#define SC8546_RX_FIFO_CNT_STAT_MASK           (BIT(2) | BIT(1) | BIT(0))
+#define SC8546_TX_FIFO_CNT_STAT_MASK           (BIT(7) | BIT(6) | BIT(5) | BIT(4))
+#define SC8546_TX_FIFO_CNT_STAT_SHIFT          4
+#define SC8546_RX_FIFO_CNT_STAT_MASK           (BIT(3) | BIT(2) | BIT(1) | BIT(0))
 #define SC8546_RX_FIFO_CNT_STAT_SHIFT          0
 #define SC8546_SCP_FIFO_DEEPTH                 5
 

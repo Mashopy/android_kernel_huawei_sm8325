@@ -105,21 +105,20 @@ void dc_update_charging_info(int mode, struct dc_charge_info *info, int *vbat_co
 void dc_show_realtime_charging_info(int mode, unsigned int path)
 {
 	int vbat;
-	int vadp = 0;
-	int iadp = 0;
 	int vbus = 0;
 	int ibus = 0;
 	int ibat = 0;
+	struct adapter_source_info source_info = { 0 };
+	unsigned int flag = BIT(ADAPTER_OUTPUT_VOLT) | BIT(ADAPTER_OUTPUT_CURR);
 
-	dc_get_adapter_voltage(&vadp);
-	dc_get_adapter_current(&iadp);
+	dc_get_adapter_source_info(flag, &source_info);
 	dcm_get_ic_vbus(mode, path, &vbus);
 	dcm_get_ic_ibus(mode, path, &ibus);
 	vbat = dcm_get_ic_vbtb(mode, path);
 	dcm_get_total_ibat(mode, path, &ibat);
 
 	hwlog_info("Vadp=%d, Iadp=%d, Vbus=%d, Ibus=%d, Vbat=%d, Ibat=%d\n",
-		vadp, iadp, vbus, ibus, vbat, ibat);
+		source_info.output_volt, source_info.output_curr, vbus, ibus, vbat, ibat);
 }
 
 int dc_get_gain_ibus(void)

@@ -61,6 +61,9 @@
 #define AID_RADIO 1001 /* telephony subsystem, RIL */
 #define AID_WIFI_INDEX 3
 #define AID_WIFI 1010 /* wifi subsystem */
+#define ICMPV6 58 /* icmp for IPV6 */
+#define ROUTER_SOLICITATION 133
+#define ROUTER_ADVERTISEMENT 134
 
 #define PROC_NET_INFO_NODE "proc_netstat"
 #define PROCESS_STATS "stats"
@@ -690,6 +693,19 @@ static unsigned int hook_datastat(void *priv, struct sk_buff *skb, const struct 
 		goto exit;
 
 	skb_info.sk = skb_to_full_sk(skb);
+
+	// ICMPV6 ROUTER_SOLICITATION -> DEFAULT_ICMP
+	if (state->pf == NFPROTO_IPV6) {
+		skb_info.protocol = ipv6_hdr(skb)->nexthdr;
+		if (skb_info.protocol == ICMPV6) {
+			if (((icmp6_hdr(skb)->icmp6_type == ROUTER_SOLICITATION) || (icmp6_hdr(skb)->icmp6_type == ROUTER_ADVERTISEMENT))
+				&& (NF_INET_LOCAL_IN == state->hook)) {
+				skb_info.comm = DEFAULT_ICMP;
+				goto account_default;
+			}
+		}
+	}
+
 	skb_info.protocol = ip_hdr(skb)->protocol;
 	log_skb_info_before_stat(skb, &skb_info, state);
 	if (!skb_info.sk && NF_INET_LOCAL_IN == state->hook)

@@ -1,7 +1,8 @@
 /*
+ * rotary_crown.c
  * Rotary Crown driver
  *
- * Copyright (c) 2020-2020 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -15,29 +16,21 @@
  */
 
 #include "rotary_crown.h"
-#include "securec.h"
+
 #include <huawei_platform/log/log_jank.h>
-#include <linux/mtd/hisi_nve_interface.h>
 #include <linux/pinctrl/pinctrl-state.h>
 #include <linux/platform_device.h>
+#include <linux/timer.h>
+#include <linux/mtd/hw_nve_interface.h>
 
-#if defined(CONFIG_HUAWEI_DSM)
-#include <dsm/dsm_pub.h>
+#include "securec.h"
+#ifdef CONFIG_LCD_KIT_HYBRID
+#include "huawei_ts_kit_hybrid_core.h"
 #endif
 
-#define CROWN_RECOVERY_TIME 5
-
-typedef int (*crown_callback)(struct i2c_client *client);
-
-struct event_work_struct {
-	struct work_struct event_work;
-	struct i2c_client *client;
-	crown_callback callback;
-};
-
-static struct timer_list crown_recovery_timer;
-static struct work_struct crown_recovery_work;
-
+static struct timer_list g_crown_check_timer;
+static struct work_struct g_crown_check_work;
+static struct mutex g_work_lock;
 /* global values */
 struct rotary_crown_data *g_rotary_crown_pdata;
 
@@ -111,9 +104,6 @@ int rc_i2c_write(uint8_t *buf, uint16_t length)
 
 		msleep(I2C_WAIT_TIME);
 	} while (++count < I2C_RW_TRIES);
-#if defined(CONFIG_HUAWEI_DSM)
-	// repot dmd
-#endif
 
 	rc_err("%s: failed", __func__);
 	return -EIO;
@@ -127,6 +117,15 @@ static int rotary_crown_write_reg(uint8_t addr, uint8_t value)
 	// write reg
 	cmd[ROTARY_I2C_MSG_INDEX0] = addr;
 	cmd[ROTARY_I2C_MSG_INDEX1] = value;
+
+	// soft reset do not give ack back
+	if ((addr == PA_DEVICE_CONTROL) && (value == PA_CHIP_RESET)) {
+		ret = i2c_master_send(g_rotary_crown_pdata->client,
+			(const char *)cmd, ROTARY_REG_WRITE_LEN);
+		rc_info("%s:soft reset send", __func__);
+		return 0;
+	}
+
 	ret = rc_i2c_write(cmd, ROTARY_REG_WRITE_LEN);
 	if (ret != NO_ERR)
 		rc_err("set value(0x%02x) to reg(0x%02x) failed", value, addr);
@@ -136,24 +135,43 @@ static int rotary_crown_write_reg(uint8_t addr, uint8_t value)
 
 static int rotary_crown_parse_dts(void)
 {
-	struct device_node *np = g_rotary_crown_pdata->dev->of_node;
+	struct device_node *np = NULL;
 	int ret;
 	uint32_t value = 0;
+	uint32_t target_x = 0;
+	uint32_t nv_number = 0;
 
 	rc_debug("%s enter\n", __func__);
 	if (!g_rotary_crown_pdata) {
 		rc_err("%s: parameters invalid !\n", __func__);
 		return -EINVAL;
 	}
-
+	np = g_rotary_crown_pdata->dev->of_node;
 	g_rotary_crown_pdata->irq_gpio = of_get_named_gpio(np, "irq_gpio", 0);
 	if (!gpio_is_valid(g_rotary_crown_pdata->irq_gpio)) {
 		rc_err("%s:irq_gpio is not valid !\n", __func__);
 		return -EINVAL;
 	}
 
-	rc_debug("%s,irq_gpio=%d\n", __func__,
-		g_rotary_crown_pdata->irq_gpio);
+	rc_debug("%s,irq_gpio=%d\n", __func__, g_rotary_crown_pdata->irq_gpio);
+
+	ret = of_property_read_u32(np, ROTARY_CROWN_TARGET_X, &target_x);
+	if (ret) {
+		g_rotary_crown_pdata->target_x = ROTARY_STD_DELTA_VAL;
+		rc_err("get targe_x failed\n");
+	} else {
+		g_rotary_crown_pdata->target_x = (uint16_t)target_x;
+	}
+	rc_debug("%s,target_x=%d\n", __func__, g_rotary_crown_pdata->target_x);
+
+	ret = of_property_read_u32(np, ROTARY_CROWN_NV_NUMBER, &nv_number);
+	if (ret) {
+		rc_err("get nv_number failed\n");
+		return -EINVAL;
+	}
+	g_rotary_crown_pdata->nv_number = nv_number;
+	rc_debug("%s,nv_number=%d\n", __func__, g_rotary_crown_pdata->nv_number);
+
 	// i2c one byte or not
 	ret = of_property_read_u32(np, ROTARY_I2C_TYPE, &value);
 	if (ret) {
@@ -162,8 +180,7 @@ static int rotary_crown_parse_dts(void)
 	} else {
 		g_rotary_crown_pdata->is_one_byte = value ? true : false;
 	}
-	rc_debug("%s,one byte=%d\n", __func__,
-		g_rotary_crown_pdata->is_one_byte);
+	rc_debug("%s,one byte=%d\n", __func__, g_rotary_crown_pdata->is_one_byte);
 
 	return 0;
 }
@@ -227,36 +244,6 @@ static int rotary_crown_pinctrl_init(void)
 	return ret;
 }
 
-static void event_callback_work(struct work_struct *work)
-{
-	struct event_work_struct *event_work =
-	container_of(work, struct event_work_struct, event_work);
-
-	if (!event_work)
-		return;
-	event_work->callback(event_work->client);
-
-	rc_debug("%s event callback", __func__);
-	kfree(event_work);
-}
-
-static void crown_handle_event(struct i2c_client *client,
-				crown_callback callback)
-{
-	struct event_work_struct *ws = NULL;
-	bool ret = false;
-	/* free after callback work has done */
-	ws = kmalloc(sizeof(*ws), GFP_KERNEL);
-	if (!ws)
-		return;
-	INIT_WORK(&ws->event_work, event_callback_work);
-	ws->client = client;
-	ws->callback = callback;
-	ret = schedule_work(&ws->event_work);
-	if (!ret)
-		kfree(ws);
-}
-
 static int rotary_crown_check_chip_id(void)
 {
 	uint8_t addr = PA_PRODUCT_ID1;
@@ -306,9 +293,15 @@ static void rotary_crown_clear_interrupt(void)
 		ROTARY_REG_VALUE_LEN);
 	if (ret != NO_ERR)
 		rc_err("%s: read low delta y failed", __func__);
+
+	addr = PA_DELTA_XY_HIGH;
+	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN, &value,
+		ROTARY_REG_VALUE_LEN);
+	if (ret != NO_ERR)
+		rc_err("%s: read delta xy_high failed", __func__);
 }
 
-static int rotary_crown_chip_init(void)
+static int rotary_crown_chip_init(uint8_t x_res)
 {
 	int ret;
 
@@ -338,8 +331,7 @@ static int rotary_crown_chip_init(void)
 		return ret;
 
 	// set X-axis resolution
-	ret = rotary_crown_write_reg(PA_RESOLUTION_X_CONFIG,
-		g_rotary_crown_pdata->res_x_nv);
+	ret = rotary_crown_write_reg(PA_RESOLUTION_X_CONFIG, x_res);
 	if (ret != NO_ERR)
 		return ret;
 
@@ -389,11 +381,15 @@ static irqreturn_t rotary_crown_irq_handler(int irq, void *dev_id)
 	if (!rc)
 		return IRQ_HANDLED;
 
-	if (rc->is_init_ok) {
-		if (rc->irq_is_use)
-			disable_irq_nosync(rc->client->irq);
-		schedule_work(&rc->work);
+	if (!rc->is_init_ok)
+		return IRQ_HANDLED;
+
+	disable_irq_nosync(rc->client->irq);
+	if (!schedule_work(&rc->work)) {
+		rc_err("%s: failed to schedule work\n", __func__);
+		enable_irq(rc->client->irq);
 	}
+	g_rotary_crown_pdata->irq_cnt++;
 
 	return IRQ_HANDLED;
 }
@@ -422,6 +418,17 @@ static int rotary_crown_read_motion(int16_t *dx)
 	rc_debug("%s: low delta x reg 0x%02x", __func__, value);
 	delta_x_low |= value;
 
+	// read delta y low 8-bit
+	addr = PA_DELTA_Y_LOW;
+	value = 0;
+	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN,
+		&value, ROTARY_REG_VALUE_LEN);
+	if (ret != NO_ERR) {
+		rc_err("%s: read low delta y failed", __func__);
+		return ret;
+	}
+	rc_debug("%s: low delta y reg 0x%02x", __func__, value);
+
 	// read delta xy high 4-bit
 	addr = PA_DELTA_XY_HIGH;
 	value = 0;
@@ -443,60 +450,107 @@ static int rotary_crown_read_motion(int16_t *dx)
 	return NO_ERR;
 }
 
-static void rotary_crown_work_func(struct work_struct *work)
+static int rotary_crown_data_read(int16_t *data)
 {
 	int ret;
+	uint8_t motion_valid = 0;
 	uint8_t addr = PA_MOTION_STATUS;
-	uint8_t motion_valid;
+
+	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN,
+		&motion_valid, ROTARY_REG_VALUE_LEN);
+	if (ret != NO_ERR) {
+		rc_err("%s: read motion status failed", __func__);
+		return ret;
+	}
+	motion_valid &= ROTARY_MOTION_VALID_MASK;
+	if (motion_valid) {
+		ret = rotary_crown_read_motion(data);
+		if (ret != NO_ERR) {
+			rc_err("%s: read motion failed", __func__);
+			return ret;
+		}
+	}
+
+	return NO_ERR;
+}
+
+static void rotary_crown_data_report(struct rotary_crown_data *rc)
+{
+	int ret;
+	uint8_t no_motion_cnt = 0;
+	uint8_t valid_cnt = 0;
+	int16_t rdval[ROTARY_SMOOTH_DATA_NUM] = {0};
+	int16_t report_x;
+	int32_t temp_x = 0;
 	uint8_t i;
-	uint8_t no_motion_cnt;
-	int16_t delta_x = 0;
+
+	while (no_motion_cnt <= ROTARY_READ_MOTION_TIMES) {
+		if (rc->is_suspend) {
+			rc_info("%s:in suspend, break", __func__);
+			break;
+		}
+		if (!gpio_get_value(g_rotary_crown_pdata->irq_gpio)) {
+			no_motion_cnt = 0;
+			ret = rotary_crown_data_read(&rdval[valid_cnt++]);
+			if (ret != NO_ERR) {
+				rc_err("%s: read motion data failed", __func__);
+				break;
+			}
+		} else {
+			no_motion_cnt++;
+			rdval[valid_cnt++] = 0;
+		}
+		// smooth data process
+		for (i = 0; i < ROTARY_SMOOTH_DATA_NUM; i++)
+			temp_x += rdval[i];
+		report_x = temp_x / ROTARY_SMOOTH_DATA_NUM;
+		if (valid_cnt >= ROTARY_SMOOTH_DATA_NUM)
+			valid_cnt %= ROTARY_SMOOTH_DATA_NUM;
+		temp_x = 0;
+		// 0/1/2/3/4 is read data index
+		rc_debug("%s: read motion data %d %d %d %d %d report data %d", __func__,
+			rdval[0], rdval[1], rdval[2], rdval[3], rdval[4], report_x);
+		input_report_rel(rc->input_dev, REL_WHEEL, report_x);
+		input_sync(rc->input_dev);
+		msleep(ROTARY_READ_DELTA_DELAY);
+	}
+}
+
+static void rotary_crown_work_func(struct work_struct *work)
+{
 	struct rotary_crown_data *rc = container_of(work,
 		struct rotary_crown_data, work);
 
+	if (rc->is_suspend) {
+		rc_info("%s:in suspend, return", __func__);
+		goto out;
+	}
+
+#ifdef CONFIG_LCD_KIT_HYBRID
+	if (!hybrid_i2c_check()) {
+		rc_info("%s:i2c is not at AP, exit", __func__);
+		goto out;
+	}
+#endif
 	rc_debug("%s: enter", __func__);
-	do {
-		no_motion_cnt = 0;
-		for (i = 0; i < ROTARY_READ_MOTION_TIMES; i++) {
-			motion_valid = 0;
-			ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN,
-				&motion_valid, ROTARY_REG_VALUE_LEN);
-			if (ret != NO_ERR) {
-				rc_err("%s: read motion status failed",
-					__func__);
-				break;
-			}
-
-			motion_valid &= ROTARY_MOTION_VALID_MASK;
-			if (motion_valid)
-				break;
-
-			no_motion_cnt++;
-		}
-
-		// no motion for ROTARY_READ_MOTION_TIMES times
-		if (no_motion_cnt >= ROTARY_READ_MOTION_TIMES) {
-			rc_debug("%s: no motion for %d times",
-				__func__, no_motion_cnt);
-			break;
-		}
-
-		no_motion_cnt = 0;
-		ret = rotary_crown_read_motion(&delta_x);
-		if (ret != NO_ERR) {
-			rc_err("%s: read motion failed", __func__);
-			continue;
-		}
-
-		rc_debug("%s: delta x 0x%04x", __func__, delta_x);
-		input_report_rel(rc->input_dev, REL_WHEEL, delta_x);
-		input_sync(rc->input_dev);
-
-		msleep(ROTARY_READ_DELTA_DELAY);
-	} while (motion_valid);
-
-	if (rc->irq_is_use)
-		enable_irq(rc->client->irq);
+	mutex_lock(&g_work_lock);
+	rc->is_working = true;
+	// report delta x
+	rotary_crown_data_report(rc);
+	enable_irq(rc->client->irq);
+	rc_info("%s:crown irq enable", __func__);
+	if (!gpio_get_value(g_rotary_crown_pdata->irq_gpio)) {
+		// clear interrupt
+		rotary_crown_clear_interrupt();
+		rc_info("%s: irq abnormal clear", __func__);
+	}
+	rc->is_working = false;
+	mutex_unlock(&g_work_lock);
+	rc_debug("%s: exit", __func__);
+	return;
+out:
+	/* disabled in irq handler */
+	enable_irq(rc->client->irq);
 }
 
 static int rotary_crown_run_mode_set(bool enable)
@@ -519,28 +573,34 @@ static int rotary_crown_run_mode_set(bool enable)
 				__func__, PA_ENTER_SLEEP1_MODE);
 			return ret;
 		}
-
-		return NO_ERR;
-	}
-
-	// enter power down mode
-	ret = rotary_crown_write_reg(PA_DEVICE_CONTROL, PA_CHIP_POWER_DOWN);
-	if (ret != NO_ERR) {
-		rc_err("%s: enter power down mode failed, value = %d",
-			__func__, PA_CHIP_POWER_DOWN);
-		return ret;
+	} else {
+		// enter power down mode
+		ret = rotary_crown_write_reg(PA_DEVICE_CONTROL, PA_CHIP_POWER_DOWN);
+		if (ret != NO_ERR) {
+			rc_err("%s: enter power down mode failed, value = %d",
+				__func__, PA_CHIP_POWER_DOWN);
+			return ret;
+		}
 	}
 
 	return NO_ERR;
 }
 
+#ifdef CONFIG_LCD_KIT_HYBRID
 static int rotary_crown_suspend(struct i2c_client *client)
 {
 	int ret;
 	struct rotary_crown_data *rc = i2c_get_clientdata(client);
 
-	rc_debug("%s: enter", __func__);
+	rc_info("%s: enter", __func__);
+	if (rc->is_suspend) {
+		rc_info("%s:already in suspend, skip", __func__);
+		return 0;
+	}
+
 	rc->is_suspend = true;
+	// disable interrupt
+	disable_irq_nosync(rc->client->irq);
 	if (!IS_ERR(rc->rc_pinctrl)) {
 		ret = pinctrl_select_state(rc->rc_pinctrl,
 			rc->pinctrl_state_suspend);
@@ -548,18 +608,13 @@ static int rotary_crown_suspend(struct i2c_client *client)
 			rc_err("%s:failed to set suspend state", __func__);
 	}
 
-	ret = rotary_crown_run_mode_set(false);
-	if (ret)
-		rc_err("%s: enter sleep 2 mode failed", __func__);
-
-	// clear interrupt
-	rotary_crown_clear_interrupt();
-
-	// disable interrupt
-	if (rc->irq_is_use)
-		disable_irq_nosync(rc->client->irq);
-
-	rc_debug("%s: exit\n", __func__);
+	if (hybrid_i2c_check()) {
+		rc_info("%s:i2c is at AP, set mode", __func__);
+		ret = rotary_crown_run_mode_set(false);
+		if (ret)
+			rc_err("%s: enter sleep 2 mode failed", __func__);
+	}
+	rc_info("%s: exit\n", __func__);
 
 	return 0;
 }
@@ -569,99 +624,57 @@ static int rotary_crown_resume(struct i2c_client *client)
 	int ret;
 	struct rotary_crown_data *rc = i2c_get_clientdata(client);
 
-	rc_debug("%s enter", __func__);
+	rc_info("%s enter", __func__);
+	if (!rc->is_suspend) {
+		rc_info("%s:already in resume, skip", __func__);
+		return 0;
+	}
+
+	if (!hybrid_i2c_check()) {
+		rc_info("%s:i2c is not at AP, exit", __func__);
+		enable_irq(rc->client->irq);
+		return 0;
+	}
+
 	if (!IS_ERR(rc->rc_pinctrl)) {
 		ret = pinctrl_select_state(rc->rc_pinctrl,
 			rc->pinctrl_state_active);
 		if (ret < 0)
 			rc_err("%s:failed to set active state", __func__);
 	}
-
-	ret = rotary_crown_run_mode_set(true);
+	// chip write reg
+	ret = rotary_crown_chip_init(g_rotary_crown_pdata->res_x_nv);
 	if (ret)
-		rc_err("%s: enter run mode failed", __func__);
-
-	rc->is_suspend = false;
-
-	// clear interrupt
-	rotary_crown_clear_interrupt();
+		rc_err("%s: chip init failed", __func__);
 
 	// enable irq
-	if (rc->irq_is_use)
-		enable_irq(rc->client->irq);
-
-	rc_debug("%s exit", __func__);
-
-	return 0;
-}
-
-#if defined(CONFIG_FB)
-static int fb_notifier_callback(
-	struct notifier_block *self, unsigned long event, void *data)
-{
-	struct fb_event *evdata = data;
-	int *blank;
-	struct rotary_crown_data *rc_data = container_of(self,
-		struct rotary_crown_data, fb_notif);
-
-	rc_debug("%s: enter", __func__);
-	if (evdata && evdata->data && event == FB_EVENT_BLANK &&
-	    rc_data && rc_data->client) {
-		blank = evdata->data;
-		if (*blank == FB_BLANK_UNBLANK)
-			crown_handle_event(rc_data->client, rotary_crown_resume);
-		else if (*blank == FB_BLANK_POWERDOWN)
-			crown_handle_event(rc_data->client, rotary_crown_suspend);
-	}
-	rc_debug("%s: exit", __func__);
-
-	return 0;
-}
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-static void rotary_crown_early_suspend(struct early_suspend *h)
-{
-	struct rotary_crown_data *rc;
-
-	rc_debug("%s: enter", __func__);
-	rc = container_of(h, struct rotary_crown_data, early_suspend);
-	rotary_crown_suspend(rc->client);
-}
-
-static void rotary_crown_late_resume(struct early_suspend *h)
-{
-	struct rotary_crown_data *rc;
-
-	rc_debug("%s: enter", __func__);
-	rc = container_of(h, struct rotary_crown_data, early_suspend);
-	rotary_crown_resume(rc->client);
-}
-#endif
-
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-
-static int rotary_crown_pm_suspend(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-
-	rc_debug("%s: enter", __func__);
-	rotary_crown_suspend(client);
+	enable_irq(rc->client->irq);
+	rc->is_suspend = false;
+	rc_info("%s exit", __func__);
 
 	return 0;
 }
 
-static int rotary_crown_pm_resume(struct device *dev)
+static int rotary_crown_hybrid_suspend(void)
 {
-	struct i2c_client *client = to_i2c_client(dev);
+	if (!g_rotary_crown_pdata)
+		return -EFAULT;
 
-	rc_debug("%s: enter", __func__);
-	rotary_crown_resume(client);
-
-	return 0;
+	return rotary_crown_suspend(g_rotary_crown_pdata->client);
 }
 
-static const struct dev_pm_ops rotary_crown_dev_pm_ops = {
-	.suspend = rotary_crown_pm_suspend,
-	.resume = rotary_crown_pm_resume,
+static int rotary_crown_hybrid_resume(void)
+{
+	if (!g_rotary_crown_pdata)
+		return -EFAULT;
+
+	return rotary_crown_resume(g_rotary_crown_pdata->client);
+}
+
+struct ts_hybrid_chip_ops ts_hybrid_crown_ops = {
+	.hybrid_suspend = rotary_crown_hybrid_suspend,
+	.hybrid_resume = rotary_crown_hybrid_resume,
+	.hybrid_idle = rotary_crown_hybrid_suspend,
 };
 #endif
 
@@ -690,35 +703,32 @@ static int rotary_crown_irq_init(void)
 
 		g_rotary_crown_pdata->client->irq =
 			gpio_to_irq(g_rotary_crown_pdata->irq_gpio);
-		g_rotary_crown_pdata->irq_is_use = true;
 		rc_debug("irq num:%d\n", g_rotary_crown_pdata->client->irq);
-		disable_irq_nosync(g_rotary_crown_pdata->client->irq);
 		INIT_WORK(&(g_rotary_crown_pdata->work),
 			rotary_crown_work_func);
 
-		if (g_rotary_crown_pdata->irq_is_use) {
-			// IRQF_TRIGGER_NONE 0x00000000
-			// IRQF_TRIGGER_RISING   0x00000001
-			// IRQF_TRIGGER_FALLING  0x00000002
-			// IRQF_TRIGGER_HIGH 0x00000004
-			// IRQF_TRIGGER_LOW  0x00000008
-			ret = request_irq(g_rotary_crown_pdata->client->irq,
-				rotary_crown_irq_handler,
-				IRQF_TRIGGER_FALLING,
-				g_rotary_crown_pdata->client->name,
-				g_rotary_crown_pdata);
-			if (ret != 0) {
-				rc_err("request_irq failed");
-				break;
-			}
+		// IRQF_TRIGGER_NONE 0x00000000
+		// IRQF_TRIGGER_RISING   0x00000001
+		// IRQF_TRIGGER_FALLING  0x00000002
+		// IRQF_TRIGGER_HIGH 0x00000004
+		// IRQF_TRIGGER_LOW  0x00000008
+		ret = request_irq(g_rotary_crown_pdata->client->irq,
+			rotary_crown_irq_handler,
+			IRQF_TRIGGER_FALLING,
+			g_rotary_crown_pdata->client->name,
+			g_rotary_crown_pdata);
+		if (ret != 0) {
+			rc_err("request_irq failed");
+			break;
 		}
+		disable_irq_nosync(g_rotary_crown_pdata->client->irq);
+		rc_info("%s:crown irq disable", __func__);
+
 		return NO_ERR;
 	} while (0);
 
-	if (gpio_is_valid(g_rotary_crown_pdata->irq_gpio)) {
+	if (gpio_is_valid(g_rotary_crown_pdata->irq_gpio))
 		gpio_free(g_rotary_crown_pdata->irq_gpio);
-		g_rotary_crown_pdata->irq_is_use = false;
-	}
 
 	return ret;
 }
@@ -771,7 +781,7 @@ static int rotary_crown_input_init(void)
 	return ret;
 }
 
-static ssize_t rotary_crown_self_test(
+static ssize_t rotary_crown_self_test_show(
 	struct device *dev,
 	struct device_attribute *attr,
 	char *buf)
@@ -784,6 +794,12 @@ static ssize_t rotary_crown_self_test(
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_LCD_KIT_HYBRID
+	if (!hybrid_i2c_check()) {
+		rc_info("%s:i2c is not at AP, exit", __func__);
+		return -EINVAL;
+	}
+#endif
 	ret = rotary_crown_check_chip_id();
 	if (ret != NO_ERR)
 		ret = snprintf_s(buf, ROTARY_STR_LEN, ROTARY_STR_LEN - 1,
@@ -791,70 +807,95 @@ static ssize_t rotary_crown_self_test(
 	else
 		ret = snprintf_s(buf, ROTARY_STR_LEN, ROTARY_STR_LEN - 1,
 			"%s\n", "Success");
+	if (ret < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
 
 	return ret;
 }
 
-static int rotary_crown_read_res_from_nv(void)
+static int rotary_crown_status_report_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	char *irq_gpio_sta = NULL;
+	int offset = 0;
+
+	rc_debug("%s: called\n", __func__);
+	if (!dev || !buf) {
+		rc_err("%s: parameter is null\n", __func__);
+		return -EINVAL;
+	}
+	if (!gpio_get_value(g_rotary_crown_pdata->irq_gpio))
+		irq_gpio_sta = "low";
+	else
+		irq_gpio_sta = "high";
+
+	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
+			ROTARY_STR_LEN - offset - 1,
+			"irq_gpio:%s, init_status:%u, work_status:%u, power_status:%u\n",
+			irq_gpio_sta,
+			g_rotary_crown_pdata->is_init_ok,
+			g_rotary_crown_pdata->is_working,
+			g_rotary_crown_pdata->is_suspend);
+	if (offset < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
+
+	return offset;
+}
+
+static int rotary_crown_read_res_from_nv(uint8_t *res)
 {
 	int ret;
-	struct hisi_nve_info_user user_info;
+	struct hw_nve_info_user user_info;
 
-	memset_s(&user_info, sizeof(user_info), 0, sizeof(user_info));
+	if (memset_s(&user_info, sizeof(user_info), 0, sizeof(user_info)) != EOK) {
+		rc_err("%s: memset error\n", __func__);
+		return -EINVAL;
+	}
 	user_info.nv_operation = NV_READ_OPERATION;
-	user_info.nv_number = NV_NUMBER_VALUE;
+	user_info.nv_number = g_rotary_crown_pdata->nv_number;
 	user_info.valid_size = RC_RES_NV_DATA_SIZE;
-	strncpy_s(user_info.nv_name, sizeof(user_info.nv_name), "RCRES",
-		RC_NV_NAME_LEN);
+	if (strncpy_s(user_info.nv_name, sizeof(user_info.nv_name), "RCRES",
+		RC_NV_NAME_LEN) != EOK)
+		rc_err("%s: strncpy error\n", __func__);
 	user_info.nv_name[sizeof(user_info.nv_name) - 1] = '\0';
-	ret = hisi_nve_direct_access(&user_info);
+	ret = hw_nve_direct_access(&user_info);
 	if (ret) {
-		rc_err("hisi_nve_direct_access read error %d\n", ret);
+		rc_err("hw_nve_direct_access read error %d\n", ret);
 		return -EINVAL;
 	}
-
-	if ((user_info.nv_data[0] <= ROTARY_MIN_RES_X) ||
-	    (user_info.nv_data[0] >= ROTARY_MAX_RES_X)) {
-		rc_err("nv value is not invalid %d\n", user_info.nv_data[0]);
-		return -EINVAL;
-	}
-
-	g_rotary_crown_pdata->res_x_nv = user_info.nv_data[0];
-	rc_debug("%s: 0x%02x\n", __func__, g_rotary_crown_pdata->res_x_nv);
+	*res = user_info.nv_data[0];
+	rc_debug("%s: 0x%02x\n", __func__, *res);
 	return 0;
 }
 
-// calibration defition
-static int rotary_crown_set_res(void)
+#ifdef RC_FACTORY_MODE
+static int rotary_crown_write_res_to_nv(uint8_t res)
 {
 	int ret;
+	struct hw_nve_info_user user_info;
 
-	rc_debug("%s:called\n", __func__);
-	// disable write protect
-	ret = rotary_crown_write_reg(PA_WRITE_PROTECT, PA_DISABLE_WR_PROTECT);
-	if (ret != NO_ERR)
-		return ret;
-
-	// set X-axis resolution
-	ret = rotary_crown_write_reg(PA_RESOLUTION_X_CONFIG,
-		g_rotary_crown_pdata->res_x_nv);
-	if (ret != NO_ERR)
-		return ret;
-
-	// set Y-axis resolution
-	ret = rotary_crown_write_reg(PA_RESOLUTION_Y_CONFIG, PA_Y_RES_VALUE);
-	if (ret != NO_ERR)
-		return ret;
-
-	// enable write protect
-	ret = rotary_crown_write_reg(PA_WRITE_PROTECT, PA_ENABLE_WR_PROTECT);
-	if (ret != NO_ERR)
-		return ret;
-
-	return NO_ERR;
+	if (memset_s(&user_info, sizeof(user_info), 0, sizeof(user_info)) != EOK) {
+		rc_err("%s: memset error\n", __func__);
+		return -EINVAL;
+	}
+	user_info.nv_operation = NV_WRITE_OPERATION;
+	user_info.nv_number = g_rotary_crown_pdata->nv_number;
+	user_info.valid_size = RC_RES_NV_DATA_SIZE;
+	if (strncpy_s(user_info.nv_name, sizeof(user_info.nv_name), "RCRES",
+		RC_NV_NAME_LEN) != EOK)
+		rc_err("%s: strncpy error\n", __func__);
+	user_info.nv_name[sizeof(user_info.nv_name) - 1] = '\0';
+	user_info.nv_data[0] = res;
+	ret = hw_nve_direct_access(&user_info);
+	if (ret) {
+		rc_err("hw_nve_direct_access write error %d\n", ret);
+		return -EINVAL;
+	}
+	rc_debug("%s: 0x%02x\n", __func__, res);
+	return 0;
 }
 
-static ssize_t rotary_crown_calibrate_store(
+static ssize_t rotary_crown_calibrate_nv_store(
 	struct device *dev,
 	struct device_attribute *attr,
 	const char *buf,
@@ -876,35 +917,23 @@ static ssize_t rotary_crown_calibrate_store(
 	}
 
 	rc_debug("%s: val(%lu)\n", __func__, val);
-	if (val) {
-		g_rotary_crown_pdata->res_x_nv = (u8)val;
-	} else {
-		ret = rotary_crown_read_res_from_nv();
-		if (ret) {
-			rc_err("%s: failed to read nv\n", __func__);
-			return ret;
-		}
-	}
-
-	ret = rotary_crown_set_res();
+	ret = rotary_crown_write_res_to_nv((uint8_t)val);
 	if (ret) {
-		rc_err("%s: write nv to chip failed :%d\n",
-			__func__, ret);
+		rc_err("%s: failed to write nv\n", __func__);
 		return ret;
 	}
 
 	return count;
 }
 
-static ssize_t rotary_crown_calibrate_show(
+static ssize_t rotary_crown_calibrate_nv_show(
 	struct device *dev,
 	struct device_attribute *attr,
 	char *buf)
 {
 	int ret;
-	uint8_t addr = PA_RESOLUTION_X_CONFIG;
-	uint8_t value = 0;
-	uint8_t offset = 0;
+	uint8_t res = 0;
+	int offset = 0;
 
 	rc_debug("%s: called\n", __func__);
 	if ((dev == NULL) || (buf == NULL)) {
@@ -912,20 +941,89 @@ static ssize_t rotary_crown_calibrate_show(
 		return -EINVAL;
 	}
 
-	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN, &value,
-		ROTARY_REG_VALUE_LEN);
-	if (ret != NO_ERR)
-		rc_err("%s: read x resolution failed", __func__);
+	ret = rotary_crown_read_res_from_nv(&res);
+	if (ret) {
+		rc_err("%s: failed to read nv\n", __func__);
+		return ret;
+	}
 
-	rc_debug("%s: x resoluttion(0x%02x)\n", __func__, value);
+	rc_debug("%s: x resoluttion(0x%02x)\n", __func__, res);
 	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
-		ROTARY_STR_LEN - offset - 1, "%d\n", value);
+		ROTARY_STR_LEN - offset - 1, "%u\n", res);
+	if (offset < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
 
 	return offset;
 }
 
-#ifdef RC_FACTORY_MODE
-// enter calibration
+static ssize_t rotary_crown_irq_cnt_store(
+	struct device *dev,
+	struct device_attribute *attr,
+	const char *buf,
+	size_t count)
+{
+	rc_debug("%s: called\n", __func__);
+	if ((dev == NULL) || (buf == NULL)) {
+		rc_err("%s: parameter is null\n", __func__);
+		return -EINVAL;
+	}
+	g_rotary_crown_pdata->irq_cnt = 0;
+	// clear interrupt
+	rotary_crown_clear_interrupt();
+
+	return count;
+}
+
+static ssize_t rotary_crown_irq_cnt_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	int offset = 0;
+
+	rc_debug("%s: called\n", __func__);
+	if ((dev == NULL) || (buf == NULL)) {
+		rc_err("%s: parameter is null\n", __func__);
+		return -EINVAL;
+	}
+
+	rc_debug("%s: irq cnt %d\n", __func__, g_rotary_crown_pdata->irq_cnt);
+	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
+		ROTARY_STR_LEN - offset - 1, "%d\n", g_rotary_crown_pdata->irq_cnt);
+	if (offset < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
+
+	return offset;
+}
+
+static int rotary_crown_set_res(uint8_t res)
+{
+	int ret;
+
+	rc_debug("%s:called\n", __func__);
+	// disable write protect
+	ret = rotary_crown_write_reg(PA_WRITE_PROTECT, PA_DISABLE_WR_PROTECT);
+	if (ret != NO_ERR)
+		return ret;
+
+	// set X-axis resolution
+	ret = rotary_crown_write_reg(PA_RESOLUTION_X_CONFIG, res);
+	if (ret != NO_ERR)
+		return ret;
+
+	// set Y-axis resolution
+	ret = rotary_crown_write_reg(PA_RESOLUTION_Y_CONFIG, PA_Y_RES_VALUE);
+	if (ret != NO_ERR)
+		return ret;
+
+	// enable write protect
+	ret = rotary_crown_write_reg(PA_WRITE_PROTECT, PA_ENABLE_WR_PROTECT);
+	if (ret != NO_ERR)
+		return ret;
+
+	return NO_ERR;
+}
+
 static int rc_calibrate_enter(void)
 {
 	int ret;
@@ -934,22 +1032,14 @@ static int rc_calibrate_enter(void)
 	if (g_rotary_crown_pdata == NULL)
 		return -ENOMEM;
 
-	g_rotary_crown_pdata->res_x_nv = PA_X_RES_VALUE;
-	ret = rotary_crown_set_res();
+	g_rotary_crown_pdata->is_calib_test = true;
+	ret = rotary_crown_set_res(PA_X_RES_VALUE);
 	if (ret) {
 		rc_err("%s: set chip resolution failed", __func__);
 		return ret;
 	}
 
-	ret = rotary_crown_run_mode_set(true);
-	if (ret) {
-		rc_err("%s: enter run mode failed", __func__);
-		return ret;
-	}
-
-	// disable interrupt
-	if (g_rotary_crown_pdata->irq_is_use)
-		disable_irq_nosync(g_rotary_crown_pdata->client->irq);
+	disable_irq_nosync(g_rotary_crown_pdata->client->irq);
 
 	// clear interrupt
 	rotary_crown_clear_interrupt();
@@ -957,45 +1047,42 @@ static int rc_calibrate_enter(void)
 	return NO_ERR;
 }
 
-// exit calibration
-static int rc_calibrate_exit(void)
+static int rc_calibrate_test_exit(void)
 {
-	int ret;
-
 	rc_debug("%s: enter\n", __func__);
-	ret = rotary_crown_run_mode_set(false);
-	if (ret) {
-		rc_err("%s: enter run mode failed", __func__);
-		return ret;
-	}
-
 	// clear interrupt
 	rotary_crown_clear_interrupt();
 
-	if (g_rotary_crown_pdata->irq_is_use)
-		enable_irq(g_rotary_crown_pdata->client->irq);
+	enable_irq(g_rotary_crown_pdata->client->irq);
+	g_rotary_crown_pdata->is_calib_test = false;
 
 	return NO_ERR;
 }
 
-// enter nv result test
-static int rc_nv_test_enter(void)
+static int rc_test_enter(void)
 {
 	int ret;
-
+	uint8_t res = 0;
 	rc_debug("%s: enter\n", __func__);
 	if (g_rotary_crown_pdata == NULL)
 		return -ENOMEM;
 
-	ret = rotary_crown_run_mode_set(true);
+	g_rotary_crown_pdata->is_calib_test = true;
+	disable_irq_nosync(g_rotary_crown_pdata->client->irq);
+
+	// read NV
+	ret = rotary_crown_read_res_from_nv(&res);
 	if (ret) {
-		rc_err("%s: enter run mode failed", __func__);
+		rc_err("%s: failed to read nv\n", __func__);
 		return ret;
 	}
 
-	// disable interrupt
-	if (g_rotary_crown_pdata->irq_is_use)
-		disable_irq_nosync(g_rotary_crown_pdata->client->irq);
+	// write to reg
+	ret = rotary_crown_set_res(res);
+	if (ret) {
+		rc_err("%s: set chip resolution failed", __func__);
+		return ret;
+	}
 
 	// clear interrupt
 	rotary_crown_clear_interrupt();
@@ -1025,10 +1112,10 @@ static ssize_t rotary_crown_calibrate_mode_store(
 	}
 
 	rc_debug("%s: val(%lu)\n", __func__, val);
-	if (val)
+	if (val == 0)
 		ret = rc_calibrate_enter();
 	else
-		ret = rc_calibrate_exit();
+		ret = rc_calibrate_test_exit();
 
 	if (ret) {
 		rc_err("%s: calibrate control failed :%d\n", __func__, ret);
@@ -1036,35 +1123,6 @@ static ssize_t rotary_crown_calibrate_mode_store(
 	}
 
 	return count;
-}
-
-static ssize_t rotary_crown_calibrate_mode_show(
-	struct device *dev,
-	struct device_attribute *attr,
-	char *buf)
-{
-	int ret;
-	uint8_t addr = PA_RESOLUTION_X_CONFIG;
-	uint8_t value = 0;
-	uint8_t offset = 0;
-
-	rc_debug("%s: called\n", __func__);
-	if ((dev == NULL) || (buf == NULL)) {
-		rc_err("%s: parameter is null\n", __func__);
-		return -EINVAL;
-	}
-
-	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN, &value,
-		ROTARY_REG_VALUE_LEN);
-	if (ret != NO_ERR)
-		rc_err("%s: read x resolution failed", __func__);
-
-	rc_debug("%s: x resoluttion(0x%02x)\n", __func__, value);
-	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
-		ROTARY_STR_LEN - offset - 1, "RES_X:%d, DELTA_X:%d\n",
-		value, ROTARY_STD_DELTA_VAL);
-
-	return offset;
 }
 
 static ssize_t rotary_crown_test_mode_store(
@@ -1089,10 +1147,10 @@ static ssize_t rotary_crown_test_mode_store(
 	}
 
 	rc_debug("%s: val(%lu)\n", __func__, val);
-	if (val)
-		ret = rc_nv_test_enter();
+	if (val == 0)
+		ret = rc_test_enter();
 	else
-		ret = rc_calibrate_exit();
+		ret = rc_calibrate_test_exit();
 
 	if (ret) {
 		rc_err("%s: nv test control failed :%d\n", __func__, ret);
@@ -1110,8 +1168,8 @@ static ssize_t rotary_crown_delta_motion_show(
 	int ret;
 	uint8_t addr;
 	uint8_t value = 0;
-	uint8_t offset = 0;
-	uint16_t delta_x = 0;
+	int offset = 0;
+	int16_t delta_x = 0;
 
 	rc_debug("%s: called\n", __func__);
 	if ((dev == NULL) || (buf == NULL)) {
@@ -1134,34 +1192,76 @@ static ssize_t rotary_crown_delta_motion_show(
 		return ret;
 	}
 	rc_debug("%s: delta x(0x%04x)\n", __func__, delta_x);
-	offset = snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
+	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
 		ROTARY_STR_LEN - offset - 1, "%d\n", delta_x);
+	if (offset < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
+
+	return offset;
+}
+
+static ssize_t rotary_crown_resolution_show(
+	struct device *dev,
+	struct device_attribute *attr,
+	char *buf)
+{
+	int ret;
+	uint8_t addr;
+	uint8_t res = 0;
+	const uint8_t res_default = PA_X_RES_VALUE;
+	int offset = 0;
+	uint16_t target_x = g_rotary_crown_pdata->target_x;
+
+	rc_debug("%s: called\n", __func__);
+	if ((dev == NULL) || (buf == NULL)) {
+		rc_err("%s: parameter is null\n", __func__);
+		return -EINVAL;
+	}
+
+	addr = PA_RESOLUTION_X_CONFIG;
+	ret = rc_i2c_read(&addr, ROTARY_REG_ADDR_LEN, &res, ROTARY_REG_VALUE_LEN);
+	if (ret != NO_ERR) {
+		rc_err("%s: read x resolution failed", __func__);
+		return ret;
+	}
+
+	offset += snprintf_s(buf + offset, ROTARY_STR_LEN - offset,
+		ROTARY_STR_LEN - offset - 1, "%u,%u,%u\n", res, res_default, target_x);
+	if (offset < 0)
+		rc_err("%s: snprintf_s err\n", __func__);
 
 	return offset;
 }
 #endif // RC_FACTORY_MODE
 
 // device file node create
-static DEVICE_ATTR(rotary_crown_self_test, 0444, rotary_crown_self_test, NULL);
-static DEVICE_ATTR(rotary_crown_calibrate, 0664, rotary_crown_calibrate_show,
-	rotary_crown_calibrate_store);
+static DEVICE_ATTR(rotary_crown_self_test, 0444, rotary_crown_self_test_show, NULL);
+static DEVICE_ATTR(rotary_crown_status_report, 0444, rotary_crown_status_report_show, NULL);
 #ifdef RC_FACTORY_MODE
-static DEVICE_ATTR(rotary_crown_calibrate_mode, 0664,
-	rotary_crown_calibrate_mode_show,
+static DEVICE_ATTR(rotary_crown_calibrate_nv, 0664, rotary_crown_calibrate_nv_show,
+	rotary_crown_calibrate_nv_store);
+static DEVICE_ATTR(rotary_crown_irq_cnt, 0664, rotary_crown_irq_cnt_show,
+	rotary_crown_irq_cnt_store);
+static DEVICE_ATTR(rotary_crown_calibrate_mode, 0664, NULL,
 	rotary_crown_calibrate_mode_store);
 static DEVICE_ATTR(rotary_crown_test_mode, 0664, NULL,
 	rotary_crown_test_mode_store);
 static DEVICE_ATTR(rotary_crown_delta_motion, 0444,
 	rotary_crown_delta_motion_show, NULL);
+static DEVICE_ATTR(rotary_crown_resolution, 0444,
+	rotary_crown_resolution_show, NULL);
 #endif // RC_FACTORY_MODE
 
 static struct attribute *rc_attributes[] = {
 	&dev_attr_rotary_crown_self_test.attr,
-	&dev_attr_rotary_crown_calibrate.attr,
+	&dev_attr_rotary_crown_status_report.attr,
 #ifdef RC_FACTORY_MODE
+	&dev_attr_rotary_crown_calibrate_nv.attr,
+	&dev_attr_rotary_crown_irq_cnt.attr,
 	&dev_attr_rotary_crown_calibrate_mode.attr,
 	&dev_attr_rotary_crown_test_mode.attr,
 	&dev_attr_rotary_crown_delta_motion.attr,
+	&dev_attr_rotary_crown_resolution.attr,
 #endif // RC_FACTORY_MODE
 	NULL
 };
@@ -1172,19 +1272,16 @@ static struct attribute_group g_rc_attr_group = {
 
 static int rotary_crown_remove(struct i2c_client *client)
 {
-	struct rotary_crown_data *rc = i2c_get_clientdata(client);
 	int ret;
+	struct rotary_crown_data *rc = i2c_get_clientdata(client);
+
+	if (!g_rotary_crown_pdata)
+		return -EFAULT;
 
 	ret = rotary_crown_run_mode_set(false);
 	if (ret)
 		rc_err("%s: enter sleep 2 mode failed", __func__);
-#if defined(CONFIG_FB)
-	if (fb_unregister_client(&rc->fb_notif))
-		rc_err("%s: unregistering fb_notifier failed", __func__);
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-	unregister_early_suspend(&rc->early_suspend);
-#endif
-
+	mutex_destroy(&g_work_lock);
 	if (!IS_ERR(g_rotary_crown_pdata->rc_pinctrl)) {
 		ret = pinctrl_select_state(g_rotary_crown_pdata->rc_pinctrl,
 			g_rotary_crown_pdata->pinctrl_state_suspend);
@@ -1194,8 +1291,7 @@ static int rotary_crown_remove(struct i2c_client *client)
 	}
 	g_rotary_crown_pdata->rc_pinctrl = NULL;
 	i2c_set_clientdata(client, NULL);
-	if (rc->irq_is_use)
-		free_irq(client->irq, rc);
+	free_irq(client->irq, rc);
 	if (rc->input_dev)
 		input_unregister_device(rc->input_dev);
 
@@ -1210,74 +1306,21 @@ static int rotary_crown_remove(struct i2c_client *client)
 	return 0;
 }
 
-static void rotary_crown_clear(struct i2c_client *client)
-{
-	int ret;
-
-	if (g_rotary_crown_pdata->input_dev) {
-		input_unregister_device(g_rotary_crown_pdata->input_dev);
-		input_free_device(g_rotary_crown_pdata->input_dev);
-		g_rotary_crown_pdata->input_dev = NULL;
-	}
-
-	if (gpio_is_valid(g_rotary_crown_pdata->irq_gpio)) {
-		gpio_free(g_rotary_crown_pdata->irq_gpio);
-		g_rotary_crown_pdata->irq_is_use = false;
-		free_irq(client->irq, g_rotary_crown_pdata);
-	}
-
-#if defined(CONFIG_FB)
-	if (g_rotary_crown_pdata->fb_notif.notifier_call)
-		if (fb_unregister_client(&g_rotary_crown_pdata->fb_notif))
-			rc_err("%s: unregister fb_notifier failed", __func__);
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-	if (g_rotary_crown_pdata->early_suspend.suspend)
-		unregister_early_suspend(&g_rotary_crown_pdata->early_suspend);
-#endif
-
-	i2c_set_clientdata(client, NULL);
-	if (!IS_ERR(g_rotary_crown_pdata->rc_pinctrl)) {
-		ret = pinctrl_select_state(g_rotary_crown_pdata->rc_pinctrl,
-			g_rotary_crown_pdata->pinctrl_state_suspend);
-		if (ret)
-			rc_err("failed to select release pinctrl state");
-		devm_pinctrl_put(g_rotary_crown_pdata->rc_pinctrl);
-		g_rotary_crown_pdata->rc_pinctrl = NULL;
-	}
-
-	if (g_rotary_crown_pdata->sys_file_ok)
-		sysfs_remove_group(&client->dev.kobj, &g_rc_attr_group);
-
-	if (g_rotary_crown_pdata != NULL) {
-		devm_kfree(&client->dev, g_rotary_crown_pdata);
-		g_rotary_crown_pdata = NULL;
-	}
-}
-
+#ifdef CONFIG_LCD_KIT_HYBRID
 static void rotary_crown_pm_init(void)
 {
 	int ret;
 
-	if (g_rotary_crown_pdata == NULL)
+	if (!g_rotary_crown_pdata)
 		return;
 
-#if defined(CONFIG_FB)
-	g_rotary_crown_pdata->fb_notif.notifier_call = fb_notifier_callback;
-		ret = fb_register_client(&g_rotary_crown_pdata->fb_notif);
-		if (ret)
-			rc_err("Unable to register fb_notifier: %d\n", ret);
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-	g_rotary_crown_pdata->early_suspend.level =
-		EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
-		g_rotary_crown_pdata->early_suspend.suspend =
-			rotary_crown_early_suspend;
-		g_rotary_crown_pdata->early_suspend.resume =
-			rotary_crown_late_resume;
-		register_early_suspend(&g_rotary_crown_pdata->early_suspend);
-#endif // CONFIG_HAS_EARLYSUSPEND
+	ret = ts_hybrid_ops_register(&ts_hybrid_crown_ops);
+	if (ret)
+		rc_err("Unable to register ts hybrid ops: %d\n", ret);
 }
+#endif
 
-static int rotary_crown_calibrate_init(void)
+static int rotary_crown_sysfs_init(void)
 {
 	int ret;
 
@@ -1298,61 +1341,115 @@ static int rotary_crown_calibrate_init(void)
 		if (ret < 0) {
 			pr_err("%s: Failed to sysfs_create_link, %d\n",
 				__func__, ret);
-			ret = -ENODEV;
-			break;
+			return -ENODEV;
 		}
-
-		g_rotary_crown_pdata->res_x_nv = PA_X_RES_VALUE;
-
-		return NO_ERR;
 	} while (0);
 
-	sysfs_remove_group(&g_rotary_crown_pdata->dev->kobj, &g_rc_attr_group);
-	return ret;
+	return NO_ERR;
 }
 
 static int rotary_crown_detect(void)
 {
 	int ret;
-
+#ifdef CONFIG_LCD_KIT_HYBRID
+	if (!hybrid_i2c_check()) {
+		rc_info("%s:i2c is not at AP, exit", __func__);
+		return -1;
+	}
+#endif
 	ret = rotary_crown_check_chip_id();
 	if (ret)
 		return ret;
 
-	// calibration init
-	ret = rotary_crown_calibrate_init();
+	if (g_rotary_crown_pdata->nv_status_count < MAX_READ_NV_TIMES) {
+		g_rotary_crown_pdata->nv_status_count++;
+		ret = rotary_crown_read_res_from_nv(&g_rotary_crown_pdata->res_x_nv);
+		if (ret) {
+			g_rotary_crown_pdata->res_x_nv = PA_X_RES_VALUE;
+			return ret;
+		} else {
+			if ((g_rotary_crown_pdata->res_x_nv <= ROTARY_MIN_RES_X) ||
+				(g_rotary_crown_pdata->res_x_nv >= ROTARY_MAX_RES_X)) {
+				rc_err("nv value is not invalid %d\n", g_rotary_crown_pdata->res_x_nv);
+				g_rotary_crown_pdata->res_x_nv = PA_X_RES_VALUE;
+			}
+		}
+	} else {
+		rc_err("%s: failed to read nv, use default\n", __func__);
+	}
+	rc_info("%s: nv value is %d 0x%08x\n", __func__,
+		g_rotary_crown_pdata->nv_status_count, g_rotary_crown_pdata->res_x_nv);
+	ret = rotary_crown_chip_init(g_rotary_crown_pdata->res_x_nv);
 	if (ret)
 		return ret;
 
-	ret = rotary_crown_chip_init();
-	if (ret)
-		return ret;
+#ifdef CONFIG_LCD_KIT_HYBRID
+	rotary_crown_pm_init();
+#endif
 
-	if (g_rotary_crown_pdata->irq_is_use)
-		enable_irq(g_rotary_crown_pdata->client->irq);
-
+	enable_irq(g_rotary_crown_pdata->client->irq);
+	rc_info("%s:crown irq enable", __func__);
 	g_rotary_crown_pdata->is_init_ok = true;
 	return 0;
 }
 
-static void crown_recovery_work_callback(struct work_struct *work)
+static void crown_check_work_func(struct work_struct *work)
 {
 	int ret;
+	uint check_time;
 	unsigned long expires;
 
-	pr_debug("[%s]time on, crown recovery\n", __func__);
-	ret = rotary_crown_detect();
-	if (!ret) {
-		del_timer(&crown_recovery_timer);
-		cancel_work_sync(&crown_recovery_work);
+	if (g_rotary_crown_pdata->is_init_ok) {
+		mutex_lock(&g_work_lock);
+		if (!g_rotary_crown_pdata->is_suspend && !g_rotary_crown_pdata->is_working &&
+			!g_rotary_crown_pdata->is_calib_test) {
+			ret = rotary_crown_check_chip_id();
+			if (ret)
+				rc_err("%s: failed to check chip id\n", __func__);
+
+			if (!gpio_get_value(g_rotary_crown_pdata->irq_gpio)) {
+				// clear interrupt
+				rotary_crown_clear_interrupt();
+				rc_warn("%s: irq abnormal clear", __func__);
+			}
+		}
+		check_time = CROWN_CHECK_TIME;
+		mutex_unlock(&g_work_lock);
+	} else {
+		ret = rotary_crown_detect();
+		if (ret)
+			rc_err("%s: failed to recovery\n", __func__);
+		check_time = CROWN_RECOVERY_TIME;
 	}
-	expires = jiffies + (CROWN_RECOVERY_TIME * HZ);
-	mod_timer(&crown_recovery_timer, expires);
+	expires = jiffies + (check_time * HZ);
+	mod_timer(&g_crown_check_timer, expires);
 }
 
-static void crown_recovery_func(unsigned long data)
+static void crown_check_timer_func(struct timer_list *timer)
 {
-	schedule_work(&crown_recovery_work);
+	if (!schedule_work(&g_crown_check_work))
+		rc_err("%s: failed to schedule work\n", __func__);
+}
+
+static void rotary_crown_check_timer_init(void)
+{
+	mutex_init(&g_work_lock);
+	INIT_WORK(&g_crown_check_work, crown_check_work_func);
+	timer_setup(&g_crown_check_timer, crown_check_timer_func, 0);
+}
+
+static void rotary_crown_recovery_start(void)
+{
+	rc_err("%s: init failed, need recovery", __func__);
+	g_crown_check_timer.expires = jiffies + (CROWN_RECOVERY_TIME * HZ);
+	add_timer(&g_crown_check_timer);
+}
+
+static void rotary_crown_check_start(void)
+{
+	rc_info("%s: init success, need check", __func__);
+	g_crown_check_timer.expires = jiffies + (CROWN_CHECK_TIME * HZ);
+	add_timer(&g_crown_check_timer);
 }
 
 static int rotary_crown_probe(
@@ -1391,19 +1488,18 @@ static int rotary_crown_probe(
 	if (ret)
 		goto err_free;
 
-	rotary_crown_pm_init();
+	// sysfs node init
+	ret = rotary_crown_sysfs_init();
+	if (ret)
+		goto err_free;
+
+	rotary_crown_check_timer_init();
 
 	ret = rotary_crown_detect();
-	if (!ret)
-		return 0;
-
-	rc_err("%s: init failed", __func__);
-	INIT_WORK(&crown_recovery_work, crown_recovery_work_callback);
-	init_timer(&crown_recovery_timer);
-	crown_recovery_timer.expires = jiffies + (CROWN_RECOVERY_TIME * HZ);
-	crown_recovery_timer.function = &crown_recovery_func;
-	crown_recovery_timer.data = 0;
-	add_timer(&crown_recovery_timer);
+	if (ret)
+		rotary_crown_recovery_start();
+	else
+		rotary_crown_check_start();
 
 	return 0;
 
@@ -1430,11 +1526,6 @@ static struct i2c_driver rotary_crown_driver = {
 		.name   = ROTARY_CROWN_DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = rotary_crown_match_table,
-#if (!defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND))
-		.suspend = NULL,
-		.resume = NULL,
-		.pm     = &rotary_crown_dev_pm_ops,
-#endif
 	},
 };
 

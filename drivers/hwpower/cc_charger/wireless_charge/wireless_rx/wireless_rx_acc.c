@@ -43,6 +43,7 @@ HWLOG_REGIST();
 #define WLRX_ACC_AUTH_MAX_KID          10
 #define WLRX_ACC_AUTH_FAC_KID          0 /* factory key id */
 #define WLRX_ACC_AUTH_DFLT_KID         1
+#define WLRX_ACC_QVAL_ERR_TX_NUM_DEF   2
 
 enum wlrx_acc_det_status {
 	WLRX_ACC_DET_DEFAULT,
@@ -64,6 +65,8 @@ struct wlrx_acc_dts {
 	int support_high_pwr_wltx;
 	int match_det_pmax_lth;
 	int eff_para[WLRX_SCN_END];
+	u8 *qval_err_tx;
+	int qval_err_tx_len;
 };
 
 struct wlrx_acc_dbg {
@@ -86,9 +89,6 @@ struct wlrx_acc_dev {
 };
 
 static struct wlrx_acc_dev *g_rx_acc_di[WLTRX_DRV_MAX];
-static const enum wlacc_tx_type g_qval_err_tx[] = {
-	WLACC_TX_CP39S, WLACC_TX_CP39S_HK
-};
 
 static struct wlrx_acc_dev *wlrx_acc_get_di(unsigned int drv_type)
 {
@@ -222,11 +222,11 @@ bool wlrx_is_qval_err_tx(unsigned int drv_type)
 	unsigned int i;
 	struct wlrx_acc_dev *di = wlrx_acc_get_di(drv_type);
 
-	if (!di)
+	if (!di || !di->dts)
 		return false;
 
-	for (i = 0; i < ARRAY_SIZE(g_qval_err_tx); i++) {
-		if (di->tx_type == g_qval_err_tx[i])
+	for (i = 0; i < di->dts->qval_err_tx_len; i++) {
+		if (di->tx_type == di->dts->qval_err_tx[i])
 			return true;
 	}
 
@@ -609,7 +609,7 @@ int wlrx_acc_detect_cap(unsigned int drv_type)
 
 int wlrx_acc_handshake(unsigned int drv_type)
 {
-	unsigned int tx_id;
+	int tx_id;
 	struct wlrx_acc_dev *di = wlrx_acc_get_di(drv_type);
 
 	if (!di)
@@ -621,7 +621,7 @@ int wlrx_acc_handshake(unsigned int drv_type)
 		return WLRX_ACC_HS_CNT_ERR;
 	}
 
-	tx_id = (unsigned int)wireless_get_tx_id(wlrx_acc_get_ic_type(drv_type),
+	tx_id = wireless_get_tx_id(wlrx_acc_get_ic_type(drv_type),
 		WIRELESS_PROTOCOL_QI);
 	if (tx_id < 0) {
 		++di->hs_cnt;
@@ -736,6 +736,41 @@ print:
 		hwlog_info("eff_para[%d]=%d\n", i, di->dts->eff_para[i]);
 }
 
+static void wlrx_fod_parse_qval_err_tx_dts(const struct device_node *np,
+	struct wlrx_acc_dts *dts)
+{
+	int i, len;
+
+	len = of_property_count_u8_elems(np, "qval_err_tx");
+	if ((len <= 0) || (len >= WLACC_TX_ERROR))
+		goto default_value;
+
+	dts->qval_err_tx = kzalloc(len * sizeof(*(dts->qval_err_tx)), GFP_KERNEL);
+	if (!dts->qval_err_tx)
+		return;
+
+	if (power_dts_read_u8_array(power_dts_tag(HWLOG_TAG), np,
+		"qval_err_tx", dts->qval_err_tx, len)) {
+		kfree(dts->qval_err_tx);
+		goto default_value;
+	}
+
+	dts->qval_err_tx_len = len;
+	goto print;
+
+default_value:
+	dts->qval_err_tx = kzalloc(WLRX_ACC_QVAL_ERR_TX_NUM_DEF *
+		sizeof(*(dts->qval_err_tx)), GFP_KERNEL);
+	if (!dts->qval_err_tx)
+		return;
+	dts->qval_err_tx[0] = WLACC_TX_CP39S; /* 0 : array subscript(0~1) */
+	dts->qval_err_tx[1] = WLACC_TX_CP39S_HK; /* 1 : array subscript(0~1) */
+	dts->qval_err_tx_len = WLRX_ACC_QVAL_ERR_TX_NUM_DEF;
+print:
+	for (i = 0; i < dts->qval_err_tx_len; i++)
+		hwlog_info("qval_err_tx[%d]=0x%x\n", i, dts->qval_err_tx[i]);
+}
+
 static int wlrx_acc_parse_dts(const struct device_node *np, struct wlrx_acc_dev *di)
 {
 	di->dts = kzalloc(sizeof(*di->dts), GFP_KERNEL);
@@ -748,7 +783,7 @@ static int wlrx_acc_parse_dts(const struct device_node *np, struct wlrx_acc_dev 
 		"support_high_pwr_wltx", &di->dts->support_high_pwr_wltx, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"acc_det_pwr", (u32 *)&di->dts->match_det_pmax_lth, 27000); /* default_lth:27w */
-
+	wlrx_fod_parse_qval_err_tx_dts(np, di->dts);
 	return 0;
 }
 
@@ -758,6 +793,8 @@ static void wlrx_acc_kfree_dev(struct wlrx_acc_dev *di)
 		return;
 
 	kfree(di->cap);
+	if (di->dts)
+		kfree(di->dts->qval_err_tx);
 	kfree(di->dts);
 	kfree(di->dbg);
 	kfree(di);

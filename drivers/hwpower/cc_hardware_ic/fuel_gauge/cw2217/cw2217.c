@@ -146,6 +146,8 @@ struct cw2217_dev {
 	u32 soc_mapping_len;
 	int ocv_idx;
 	u32 ic_role;
+	int ir_comp_en;
+	int compensation_r;
 	int rated_capacity;
 	int coefficient;
 	int resistance;
@@ -163,6 +165,7 @@ struct cw2217_dev {
 	bool print_error_flag;
 	int ground_loop_comp_en;
 	int en_soft_reset;
+	int en_profile_update;
 	int ibat_record[CW2217_RECORD_NUM];
 	int vbat_record[CW2217_RECORD_NUM];
 	int index;
@@ -462,6 +465,12 @@ static int cw2217_parse_dt(struct device *dev, struct cw2217_dev *di)
 		(u32 *)&di->glc_data.rpullup, 40000); /* default pull-up r 40 KOhm */
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ground_loop_comp_rcomp",
 		(u32 *)&di->glc_data.rcomp, 30); /* default compensate r 3.0 mOhm */
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ir_comp_en",
+		&di->ir_comp_en, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "compensation_r",
+		&di->compensation_r, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "en_profile_update",
+		&di->en_profile_update, 0);
 
 	return 0;
 }
@@ -887,7 +896,7 @@ static int cw2217_get_cycle_count(int *value, struct cw2217_dev *di)
 		return ret;
 	*value = cycle / CW2217_CYCLE_MAGIC;
 
-	if (di->en_soft_reset) {
+	if (di->en_soft_reset || di->en_profile_update) {
 		ret = cw2217_read_byte(di->client, CW2217_REG_CYCLE_BASE, &cycle_base);
 		if (ret < 0)
 			return ret;
@@ -1200,6 +1209,9 @@ static int cw2217_config(struct cw2217_dev *di)
 	int ret;
 	int i;
 	int idx;
+	int ret_cycle;
+	int update_cycle;
+	bool need_update = false;
 
 	idx = cw2217_read_reg_ocv_idx(di);
 	if ((idx >= 0) && (idx < (int)di->soc_mapping_len))
@@ -1217,8 +1229,21 @@ static int cw2217_config(struct cw2217_dev *di)
 		return ret;
 	}
 
+	if (di->en_profile_update && (ret == CW2217_PROFILE_NEED_UPDATE)) {
+		ret_cycle = cw2217_get_cycle_count(&update_cycle, di);
+		if (ret_cycle != 0)
+			return ret_cycle;
+		need_update = true;
+	}
+
 	if (ret != 0) {
 		ret = cw2217_config_start_ic(di);
+		if (ret < 0)
+			return ret;
+	}
+
+	if (need_update) {
+		ret = cw2217_write_byte(di->client, CW2217_REG_CYCLE_BASE, update_cycle / CW2217_CYCLE_BASE_CONVERT);
 		if (ret < 0)
 			return ret;
 	}
@@ -1441,6 +1466,7 @@ static int cw2217_read_battery_soc(void *dev_data)
 static int cw2217_read_battery_vol(void *dev_data)
 {
 	int ret;
+	int cur = 0;
 	int voltage = 0;
 	struct cw2217_dev *di = dev_data;
 
@@ -1450,6 +1476,15 @@ static int cw2217_read_battery_vol(void *dev_data)
 	ret = cw2217_get_voltage(&voltage, di);
 	if (ret < 0)
 		return ret;
+
+	if (di->ir_comp_en) {
+		ret = cw2217_get_current(&cur, di);
+		if (ret < 0)
+			return ret;
+		voltage -= cur * di->compensation_r / POWER_UV_PER_MV;
+		hwlog_info("vbatt_comp=%d, cur=%d, compr=%d\n",
+			voltage, cur, di->compensation_r);
+	}
 
 	return voltage;
 }
@@ -1750,8 +1785,8 @@ static int cw2217_enable_cali_mode(int enable, void *dev_data)
 
 static struct coul_cali_ops cw2217_cali_ops = {
 	.dev_name = "aux",
-	.get_current = cw2217_get_calibration_curr,
-	.get_voltage = cw2217_get_calibration_vol,
+	.get_cali_current = cw2217_get_calibration_curr,
+	.get_cali_voltage = cw2217_get_calibration_vol,
 	.set_current_gain = cw2217_set_current_gain,
 	.set_voltage_gain = cw2217_set_voltage_gain,
 	.set_cali_mode = cw2217_enable_cali_mode,
@@ -1760,8 +1795,8 @@ static struct coul_cali_ops cw2217_cali_ops = {
 /* main battery gauge use aux calibration data for compatible */
 static struct coul_cali_ops cw2217_aux_cali_ops = {
 	.dev_name = "main",
-	.get_current = cw2217_get_calibration_curr,
-	.get_voltage = cw2217_get_calibration_vol,
+	.get_cali_current = cw2217_get_calibration_curr,
+	.get_cali_voltage = cw2217_get_calibration_vol,
 	.set_current_gain = cw2217_set_current_gain,
 	.set_voltage_gain = cw2217_set_voltage_gain,
 	.set_cali_mode = cw2217_enable_cali_mode,

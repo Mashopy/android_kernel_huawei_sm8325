@@ -5,4 +5,5 @@ menuconfig HW_EMCOM_NSTACK
 
 if HW_EMCOM_NSTACK
 source "drivers/emcom/nstack/fi/Kconfig"
+source "drivers/emcom/nstack/mintp/Kconfig"
 endif # if HW_EMCOM_NSTACK

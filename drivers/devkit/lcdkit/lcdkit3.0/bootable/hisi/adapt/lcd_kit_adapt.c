@@ -800,7 +800,7 @@ static int lcd_kit_fwdtb_change_bl_dts_status(void)
 		LCD_KIT_ERR("fdt_open_into failed!\n");
 		return ret;
 	}
-	ret = fdt_ops->fdt_node_offset_by_compatible(fdt, 0, disp_info->bl_name);
+	ret = fdt_ops->fdt_node_offset_by_compatible(fdt, 0, DISP_INFO->bl_name);
 	if (ret < 0) {
 		LCD_KIT_ERR("can not find panel node, change fb dts failed\n");
 		return ret;
@@ -820,8 +820,8 @@ static int lcd_kit_fwdtb_change_bl_dts(const char *name)
 	unsigned int length = strlen(name) + 1;
 	int ret;
 
-	disp_info->bl_name = (char *)alloc_uncache(length);
-	ret = memcpy_s(disp_info->bl_name, length, name, length);
+	DISP_INFO->bl_name = (char *)alloc_uncache(length);
+	ret = memcpy_s(DISP_INFO->bl_name, length, name, length);
 	if (ret != LCD_KIT_OK) {
 		LCD_KIT_ERR("memcpy_s error\n");
 		return LCD_KIT_FAIL;
@@ -863,7 +863,7 @@ static int lcd_kit_fwdtb_change_bias_dts_status(void)
 		return ret;
 	}
 	ret = fdt_ops->fdt_node_offset_by_compatible(fdt, 0,
-		disp_info->bias_name);
+		DISP_INFO->bias_name);
 	if (ret < 0) {
 		LCD_KIT_ERR("can not find panel node, change fb dts failed\n");
 		return ret;
@@ -883,8 +883,8 @@ static int lcd_kit_fwdtb_change_bias_dts(const char *name)
 	int ret;
 
 	int length = strlen(name) + 1;
-	disp_info->bias_name = (char *)alloc_uncache(length);
-	ret = memcpy_s(disp_info->bias_name, length, name, length);
+	DISP_INFO->bias_name = (char *)alloc_uncache(length);
+	ret = memcpy_s(DISP_INFO->bias_name, length, name, length);
 	if (ret != LCD_KIT_OK) {
 		LCD_KIT_ERR("memcpy_s error\n");
 		return LCD_KIT_FAIL;

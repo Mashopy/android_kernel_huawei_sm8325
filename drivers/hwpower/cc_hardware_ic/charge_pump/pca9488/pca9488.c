@@ -321,6 +321,8 @@ static int pca9488_irq_init(struct pca9488_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, pca9488_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "pca9488_int", &di->gpio_int, &di->irq_int))
 		return 0;
@@ -335,7 +337,6 @@ static int pca9488_irq_init(struct pca9488_dev_info *di, struct device_node *np)
 	}
 
 	enable_irq_wake(di->irq_int);
-	INIT_WORK(&di->irq_work, pca9488_irq_work);
 	return 0;
 }
 

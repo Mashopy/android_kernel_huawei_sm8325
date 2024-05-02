@@ -25,16 +25,14 @@
 #include <chipset_common/hwpower/protocol/adapter_protocol.h>
 #include <chipset_common/hwpower/protocol/adapter_protocol_scp.h>
 #include <chipset_common/hwpower/protocol/adapter_protocol_fcp.h>
+#include <chipset_common/hwpower/common_module/power_delay.h>
 
 #define HWLOG_TAG hl7139_protocol
 HWLOG_REGIST();
 
-static u32 g_hl7139_scp_error_flag;
-
-static int hl7139_scp_wdt_reset_by_sw(void *dev_data)
+static int hl7139_scp_wdt_reset_by_sw(struct hl7139_device_info *di)
 {
 	int ret;
-	struct hl7139_device_info *di = dev_data;
 
 	ret = hl7139_write_byte(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_WDT_RESET);
 	ret += hl7139_write_byte(di, HL7139_SCP_STIMER_REG, HL7139_SCP_STIMER_WDT_RESET);
@@ -54,7 +52,7 @@ static int hl7139_scp_wdt_reset_by_sw(void *dev_data)
 }
 
 /* just for reset-DM when slave ping lossed */
-static int hl7139_reset_protocol_register(void *di)
+static int hl7139_reset_protocol_register(struct hl7139_device_info *di)
 {
 	int ret;
 
@@ -73,21 +71,91 @@ static int hl7139_reset_protocol_register(void *di)
 	return ret;
 }
 
-static int hl7139_scp_cmd_transfer_check(void *dev_data)
+static void hl7139_set_scp_fsw(int fsw, struct hl7139_device_info *di)
+{
+	int ref_fsw;
+	unsigned int new_fsw;
+	int shift;
+
+	if ((fsw > HL7139_SCP_MAX_FSW) || (fsw < HL7139_SCP_MIN_FSW)) {
+		hwlog_err("fsw error!\n");
+		return;
+	}
+
+	/* Adjusts the communication frequency of each chip based on the reference of each chip */
+	ref_fsw = di->back_regd8 & HL7139_SCP_MASK2;
+	shift = (HL7139_SCP_BASE_FSW - fsw) / HL7139_SCP_BASE_FSW_STEP;
+	if ((ref_fsw >= HL7139_FSW_ESCAPE_POINT) &&
+		((ref_fsw - shift) < HL7139_FSW_ESCAPE_POINT) && (fsw <= HL7139_SCP_FSW_920))
+		shift += 4;
+	else if ((ref_fsw >= HL7139_FSW_ESCAPE_POINT) &&
+		((ref_fsw - shift) < HL7139_FSW_ESCAPE_POINT) && (fsw > HL7139_SCP_FSW_920))
+		shift += 3;
+	else if ((ref_fsw < HL7139_FSW_ESCAPE_POINT) &&
+		((ref_fsw - shift) >= HL7139_FSW_ESCAPE_POINT) && (fsw > HL7139_SCP_BASE_FSW))
+		shift -= 3;
+
+	new_fsw = ref_fsw - shift;
+	new_fsw = (di->back_regd8 & HL7139_SCP_BASE_FSW_MASK) | (new_fsw & HL7139_SCP_MASK2);
+	/* enter test mode */
+	hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_PASS1);
+	hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_PASS2);
+	hl7139_write_byte(di, HL7139_SCP_BASE_FSW_REG, new_fsw);
+	/* exit test mode */
+	hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_EXIT);
+	hwlog_info("set scp fsw %d value: 0x%x backd8 0x%x\n", fsw, new_fsw, di->back_regd8);
+}
+
+/* check whether slave ping lossed */
+static int hl7139_scp_set_fsw_by_errack(u8 reg_val1, u8 reg_val2, struct hl7139_device_info *di)
+{
+	int slv_norep_freq[SLV_NOREP_FREQ_NUM] = { 0, 900, 880, 920, 1000 };
+	int crc_err_freq[CRC_ERR_FREQ_NUM] = { 0, 940, 1060, 920, 1080, 1000 };
+
+	/* slave no response error */
+	if ((reg_val2 & HL7139_SCP_ISR2_CMD_CPL_MASK) &&
+		!(reg_val2 & HL7139_SCP_ISR2_SLV_R_CPL_MASK)) {
+		if (slv_norep_freq[di->slv_norep_cnt % SLV_NOREP_FREQ_NUM] != 0)
+			hl7139_set_scp_fsw(slv_norep_freq[di->slv_norep_cnt % SLV_NOREP_FREQ_NUM], di);
+		di->slv_norep_cnt++;
+		if (di->slv_norep_cnt >= SLV_NOREP_FREQ_NUM)
+			di->slv_norep_cnt = 0;
+		(void)hl7139_reset_protocol_register(di);
+		hwlog_err("scp transfer fail, slave no response error: ISR1 = 0x%x, ISR2 = 0x%x\n",
+			reg_val1, reg_val2);
+		return -EPERM;
+	}
+	if ((reg_val1 & HL7139_SCP_ISR1_ACK_PARRX_MASK) &&
+		!(reg_val1 & HL7139_SCP_ISR1_ACK_CRCRX_MASK) &&
+		!(reg_val1 & HL7139_SCP_ISR1_ERR_ACK_L_MASK)) {
+		/* crc or par error */
+		if (crc_err_freq[di->crc_err_cnt % CRC_ERR_FREQ_NUM] != 0)
+			hl7139_set_scp_fsw(crc_err_freq[di->crc_err_cnt % CRC_ERR_FREQ_NUM], di);
+		di->crc_err_cnt++;
+		if (di->crc_err_cnt >= CRC_ERR_FREQ_NUM)
+			di->crc_err_cnt = 0;
+		(void)hl7139_reset_protocol_register(di);
+		hwlog_err("scp transfer fail, CRC or PAR error: ISR1 = 0x%x, ISR2 = 0x%x\n",
+			reg_val1, reg_val2);
+		return -EPERM;
+	}
+	return 0;
+}
+
+static int hl7139_scp_cmd_transfer_check(struct hl7139_device_info *di)
 {
 	u8 reg_val1 = 0;
 	u8 reg_val2 = 0;
 	int i = 0;
 	int ret0;
 	int ret1;
-	struct hl7139_device_info *di = dev_data;
 
 	do {
-		usleep_range(50000, 51000); /* wait 50ms for each cycle */
+		power_msleep(DT_MSLEEP_50MS, 0, NULL); /* wait 50ms for each cycle */
 		ret0 = hl7139_read_byte(di, HL7139_SCP_ISR1_REG, &reg_val1);
 		ret1 = hl7139_read_byte(di, HL7139_SCP_ISR2_REG, &reg_val2);
 		if (ret0 || ret1) {
-			hwlog_err("reg read failed\n");
+			hwlog_err("check reg read failed\n");
 			break;
 		}
 		hwlog_info("reg_val1(0x%x), reg_val2(0x%x), scp_isr_backup[0] = 0x%x, scp_isr_backup[1] = 0x%x\n",
@@ -108,26 +176,11 @@ static int hl7139_scp_cmd_transfer_check(void *dev_data)
 				(reg_val2 & HL7139_SCP_ISR2_CMD_CPL_MASK)) &&
 				!(reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
 				HL7139_SCP_ISR1_ACK_PARRX_MASK |
-				HL7139_SCP_ISR1_ERR_ACK_L_MASK))) {
+				HL7139_SCP_ISR1_ERR_ACK_L_MASK)))
 				return 0;
-			} else if (reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
-				HL7139_SCP_ISR1_ENABLE_HAND_NO_RESPOND_MASK)) {
-				hwlog_err("scp transfer fail, slave status changed: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			} else if (reg_val2 & HL7139_SCP_ISR2_NACK_MASK) {
-				hwlog_err("scp transfer fail, slave nack: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			} else if (reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
-				HL7139_SCP_ISR1_ACK_PARRX_MASK |
-				HL7139_SCP_ISR1_TRANS_HAND_NO_RESPOND_MASK)) {
-				hwlog_err("scp transfer fail, CRCRX_PARRX_ERROR: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			}
 			hwlog_err("scp transfer not complete, ISR1 = 0x%x, ISR2 = 0x%x, index = %d\n",
 				reg_val1, reg_val2, i);
+			return -EPERM;
 		}
 		i++;
 		if (di->dc_ibus_ucp_happened)
@@ -138,7 +191,7 @@ static int hl7139_scp_cmd_transfer_check(void *dev_data)
 	return -EPERM;
 }
 
-static int hl7139_scp_cmd_transfer_check_1(void *dev_data)
+static int hl7139_scp_cmd_transfer_check_1(struct hl7139_device_info *di)
 {
 	u8 reg_val1 = 0;
 	u8 reg_val2 = 0;
@@ -147,14 +200,13 @@ static int hl7139_scp_cmd_transfer_check_1(void *dev_data)
 	int i = 0;
 	int ret0;
 	int ret1;
-	struct hl7139_device_info *di = dev_data;
 
 	do {
-		usleep_range(50000, 51000); /* ic vendor requirements */
+		power_msleep(DT_MSLEEP_50MS, 0, NULL);
 		ret0 = hl7139_read_byte(di, HL7139_SCP_ISR1_REG, &pre_val1);
 		ret1 = hl7139_read_byte(di, HL7139_SCP_ISR2_REG, &pre_val2);
 		if (ret0 || ret1) {
-			hwlog_err("reg read failed\n");
+			hwlog_err("check_1 reg read failed\n");
 			break;
 		}
 		hwlog_info("pre_val1(0x%x), pre_val2(0x%x), scp_isr_backup[0](0x%x), scp_isr_backup[1](0x%x)\n",
@@ -162,59 +214,36 @@ static int hl7139_scp_cmd_transfer_check_1(void *dev_data)
 		/* save insterrupt value to reg_val1/2 from starting scp cmd to SLV_R_CPL interrupt */
 		reg_val1 |= pre_val1;
 		reg_val2 |= pre_val2;
-		/* interrupt work can hook the interrupt value first. so it is necessily to do backup via isr_backup */
-		reg_val1 |= di->scp_isr_backup[0];
-		reg_val2 |= di->scp_isr_backup[1];
 
-		/* check whether slave ping lossed */
-		if (((reg_val1 & HL7139_SCP_ISR1_ACK_CRCRX_MASK) ||
-			(reg_val1 & HL7139_SCP_ISR1_ACK_PARRX_MASK)) &&
-			!(reg_val2 & HL7139_SCP_ISR2_SLV_R_CPL_MASK)) {
-			ret0 = hl7139_reset_protocol_register(di);
-			hwlog_info("reset protocol, ret0 = %d\n", ret0);
+		/* solve old version bug via config fsw by isr ack err type */
+		if (di->rev_id == HL7139_OLD_VERSION &&
+			hl7139_scp_set_fsw_by_errack(reg_val1, reg_val2, di))
 			return -EPERM;
-		}
+
 		if (reg_val1 || reg_val2) {
 			if (((reg_val2 & HL7139_SCP_ISR2_ACK_MASK) &&
 				(reg_val2 & HL7139_SCP_ISR2_CMD_CPL_MASK) &&
 				(reg_val2 & HL7139_SCP_ISR2_SLV_R_CPL_MASK)) &&
 				!(reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
-				HL7139_SCP_ISR1_ACK_PARRX_MASK | HL7139_SCP_ISR1_ERR_ACK_L_MASK))) {
+				HL7139_SCP_ISR1_ACK_PARRX_MASK | HL7139_SCP_ISR1_ERR_ACK_L_MASK)))
 				return 0;
-			} else if (reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
-				HL7139_SCP_ISR1_ENABLE_HAND_NO_RESPOND_MASK)) {
-				hwlog_err("scp transfer fail, slave status changed: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			} else if (reg_val2 & HL7139_SCP_ISR2_NACK_MASK) {
-				hwlog_err("scp transfer fail, slave nack: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			} else if (reg_val1 & (HL7139_SCP_ISR1_ACK_CRCRX_MASK |
-				HL7139_SCP_ISR1_ACK_PARRX_MASK |
-				HL7139_SCP_ISR1_TRANS_HAND_NO_RESPOND_MASK)) {
-				hwlog_err("scp transfer fail, CRCRX_PARRX_ERROR: ISR1 = 0x%x, ISR2 = 0x%x\n",
-					reg_val1, reg_val2);
-				return -EPERM;
-			}
 			hwlog_err("scp transfer fail, ISR1 = 0x%x, ISR2 = 0x%x, index = %d\n",
 				reg_val1, reg_val2, i);
+			return -EPERM;
 		}
 		i++;
 		if (di->dc_ibus_ucp_happened)
 			i = HL7139_SCP_ACK_RETRY_CYCLE_1;
 	} while (i < HL7139_SCP_ACK_RETRY_CYCLE_1);
-
 	hwlog_err("scp adapter transfer time out\n");
 	return -EPERM;
 }
 
-static void hl7139_scp_protocol_restart(void *dev_data)
+static void hl7139_scp_protocol_restart(struct hl7139_device_info *di)
 {
 	u8 reg_val = 0;
 	int ret;
 	int i;
-	struct hl7139_device_info *di = dev_data;
 
 	mutex_lock(&di->scp_detect_lock);
 
@@ -246,11 +275,16 @@ static int hl7139_scp_adapter_reg_read(u8 *val, u8 reg, void *dev_data)
 	int i;
 	u8 reg_val1 = 0;
 	u8 reg_val2 = 0;
+	u8 retrycnt = HL7139A_SCP_RETRY_TIME;
 	struct hl7139_device_info *di = dev_data;
 
 	mutex_lock(&di->accp_adapter_reg_lock);
 	hwlog_info("CMD = 0x%x, REG = 0x%x\n", HL7139_SCP_CMD_SBRRD, reg);
-	for (i = 0; i < HL7139_SCP_RETRY_TIME; i++) {
+	if (di->rev_id == HL7139_OLD_VERSION)
+		retrycnt = HL7139_SCP_RETRY_TIME;
+	di->crc_err_cnt = 0;
+	di->slv_norep_cnt = 0;
+	for (i = 0; i < retrycnt; i++) {
 		/* init */
 		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
@@ -264,6 +298,7 @@ static int hl7139_scp_adapter_reg_read(u8 *val, u8 reg, void *dev_data)
 		/* initial scp_isr_backup[0],[1] due to catching the missing isr by interrupt_work */
 		di->scp_isr_backup[0] = 0;
 		di->scp_isr_backup[1] = 0;
+		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_UI_SYNC_MASK, HL7139_SCP_CTL_SCP_UI_SYNC_SHIFT, 0);
 		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_START);
 		if (ret) {
@@ -292,17 +327,12 @@ static int hl7139_scp_adapter_reg_read(u8 *val, u8 reg, void *dev_data)
 
 		hl7139_scp_protocol_restart(di);
 		if (di->dc_ibus_ucp_happened)
-			i = HL7139_SCP_RETRY_TIME;
+			i = retrycnt;
 	}
-	if (i >= HL7139_SCP_RETRY_TIME) {
+	if (i >= retrycnt) {
 		hwlog_err("ack error, retry %d times\n", i);
-		ret = -1;
+		ret = -EINVAL;
 	}
-	/* manual init */
-	hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
-		HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
-	usleep_range(10000, 11000); /* wait 10ms for operate effective */
-
 	mutex_unlock(&di->accp_adapter_reg_lock);
 
 	return ret;
@@ -315,6 +345,7 @@ static int hl7139_scp_adapter_reg_read_block(u8 reg, u8 *val, u8 num,
 	int i;
 	u8 reg_val1 = 0;
 	u8 reg_val2 = 0;
+	u8 retrycnt = HL7139A_SCP_RETRY_TIME;
 	u8 *p = val;
 	u8 data_len = (num < HL7139_SCP_DATA_LEN) ? num : HL7139_SCP_DATA_LEN;
 	struct hl7139_device_info *di = dev_data;
@@ -327,8 +358,11 @@ static int hl7139_scp_adapter_reg_read_block(u8 reg, u8 *val, u8 num,
 
 	hwlog_info("CMD = 0x%x, REG = 0x%x, Num = 0x%x\n",
 		HL7139_SCP_CMD_MBRRD, reg, data_len);
-
-	for (i = 0; i < HL7139_SCP_RETRY_TIME; i++) {
+	if (di->rev_id == HL7139_OLD_VERSION)
+		retrycnt = HL7139_SCP_RETRY_TIME;
+	di->crc_err_cnt = 0;
+	di->slv_norep_cnt = 0;
+	for (i = 0; i < retrycnt; i++) {
 		/* init */
 		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
@@ -342,6 +376,8 @@ static int hl7139_scp_adapter_reg_read_block(u8 reg, u8 *val, u8 num,
 		/* initial scp_isr_backup[0],[1] */
 		di->scp_isr_backup[0] = 0;
 		di->scp_isr_backup[1] = 0;
+		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_UI_SYNC_MASK,
+			HL7139_SCP_CTL_SCP_UI_SYNC_SHIFT, 0);
 		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_START);
 		if (ret) {
@@ -370,11 +406,11 @@ static int hl7139_scp_adapter_reg_read_block(u8 reg, u8 *val, u8 num,
 
 		hl7139_scp_protocol_restart(di);
 		if (di->dc_ibus_ucp_happened)
-			i = HL7139_SCP_RETRY_TIME;
+			i = retrycnt;
 	}
-	if (i >= HL7139_SCP_RETRY_TIME) {
+	if (i >= retrycnt) {
 		hwlog_err("ack error, retry %d times\n", i);
-		ret = -1;
+		ret = -EINVAL;
 	}
 	mutex_unlock(&di->accp_adapter_reg_lock);
 
@@ -399,11 +435,6 @@ static int hl7139_scp_adapter_reg_read_block(u8 reg, u8 *val, u8 num,
 			return -EPERM;
 		}
 	}
-	/* manual init */
-	hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
-		HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
-	usleep_range(10000, 11000); /* wait 10ms for operate effective */
-
 	return 0;
 }
 
@@ -413,12 +444,17 @@ static int hl7139_scp_adapter_reg_write(u8 val, u8 reg, void *dev_data)
 	int i;
 	u8 reg_val1 = 0;
 	u8 reg_val2 = 0;
+	u8 retrycnt = HL7139A_SCP_RETRY_TIME;
 	struct hl7139_device_info *di = dev_data;
 
 	mutex_lock(&di->accp_adapter_reg_lock);
 	hwlog_info("CMD = 0x%x, REG = 0x%x, val = 0x%x\n",
 		HL7139_SCP_CMD_SBRWR, reg, val);
-	for (i = 0; i < HL7139_SCP_RETRY_TIME; i++) {
+	if (di->rev_id == HL7139_OLD_VERSION)
+		retrycnt = HL7139_SCP_RETRY_TIME;
+	di->crc_err_cnt = 0;
+	di->slv_norep_cnt = 0;
+	for (i = 0; i < retrycnt; i++) {
 		/* init */
 		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
@@ -433,6 +469,8 @@ static int hl7139_scp_adapter_reg_write(u8 val, u8 reg, void *dev_data)
 		/* initial scp_isr_backup[0],[1] */
 		di->scp_isr_backup[0] = 0;
 		di->scp_isr_backup[1] = 0;
+		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_UI_SYNC_MASK,
+			HL7139_SCP_CTL_SCP_UI_SYNC_SHIFT, 0);
 		ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
 			HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_START);
 		if (ret) {
@@ -455,50 +493,15 @@ static int hl7139_scp_adapter_reg_write(u8 val, u8 reg, void *dev_data)
 
 		hl7139_scp_protocol_restart(di);
 		if (di->dc_ibus_ucp_happened)
-			i = HL7139_SCP_RETRY_TIME;
+			i = retrycnt;
 	}
-	if (i >= HL7139_SCP_RETRY_TIME) {
+	if (i >= retrycnt) {
 		hwlog_err("ack error, retry %d times\n", i);
-		ret = -1;
+		ret = -EINVAL;
 	}
-	/* manual init */
-	hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SNDCMD_MASK,
-		HL7139_SCP_CTL_SNDCMD_SHIFT, HL7139_SCP_CTL_SNDCMD_RESET);
-	usleep_range(10000, 11000); /* wait 10ms for operate effective */
 
 	mutex_unlock(&di->accp_adapter_reg_lock);
 	return ret;
-}
-
-static int hl7139_fcp_adapter_vol_check(int adapter_vol_mv, void *dev_data)
-{
-	int i;
-	int ret;
-	int adc_vol = 0;
-
-	if ((adapter_vol_mv < HL7139_FCP_ADAPTER_MIN_VOL) ||
-		(adapter_vol_mv > HL7139_FCP_ADAPTER_MAX_VOL)) {
-		hwlog_err("check vol out of range, input vol = %dmV\n", adapter_vol_mv);
-		return -EPERM;
-	}
-
-	for (i = 0; i < HL7139_FCP_ADAPTER_VOL_CHECK_TIMEOUT; i++) {
-		ret = hl7139_get_vbus_mv((unsigned int *)&adc_vol, dev_data);
-		if (ret)
-			continue;
-		if ((adc_vol > (adapter_vol_mv - HL7139_FCP_ADAPTER_VOL_CHECK_ERROR)) &&
-			(adc_vol < (adapter_vol_mv + HL7139_FCP_ADAPTER_VOL_CHECK_ERROR)))
-			break;
-		msleep(HL7139_FCP_ADAPTER_VOL_CHECK_POLLTIME);
-	}
-
-	if (i == HL7139_FCP_ADAPTER_VOL_CHECK_TIMEOUT) {
-		hwlog_err("check vol timeout, input vol = %dmV\n", adapter_vol_mv);
-		return -EPERM;
-	}
-	hwlog_info("check vol success, input vol = %dmV, spend %dms\n",
-		adapter_vol_mv, i * HL7139_FCP_ADAPTER_VOL_CHECK_POLLTIME);
-	return 0;
 }
 
 static int hl7139_fcp_master_reset(void *dev_data)
@@ -520,6 +523,26 @@ static int hl7139_fcp_master_reset(void *dev_data)
 	return 0;
 }
 
+static int hl7139_fcp_adapter_detect_enable(struct hl7139_device_info *di)
+{
+	int ret;
+	u8 reg_val = 0;
+
+	ret = hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
+		HL7139_SCP_CTL_EN_SCP_SHIFT, 0);
+	ret += hl7139_write_byte(di, HL7139_DP_MAN_CTL_REG, HL7139_MAN_MODE);
+	ret += hl7139_read_byte(di, HL7139_DP_MAN_CTL_REG, &reg_val);
+	if ((reg_val & HL7139_DP_DM_STAT_MASK) == HL7139_DP_DM_HIGH) {
+		hwlog_err("dpdm stat:0x%x\n", reg_val);
+		ret += hl7139_write_byte(di, HL7139_FORCE_DPDM_CTL_REG, HL7139_FORCE_PULL_DOWN_DP);
+		power_msleep(DT_MSLEEP_10MS, 0, NULL);
+		ret += hl7139_write_byte(di, HL7139_FORCE_DPDM_CTL_REG, 0);
+	}
+	ret += hl7139_write_byte(di, HL7139_DP_MAN_CTL_REG, 0);
+
+	return ret;
+}
+
 static int hl7139_fcp_adapter_reset(void *dev_data)
 {
 	int ret;
@@ -533,15 +556,22 @@ static int hl7139_fcp_adapter_reset(void *dev_data)
 	ret = hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_MSTR_RST_MASK,
 		HL7139_SCP_CTL_MSTR_RST_SHIFT, 1);
 	usleep_range(20000, 21000); /* wait 20ms for operate effective */
-	ret += hl7139_fcp_adapter_vol_check(HL7139_FCP_ADAPTER_RST_VOL, di); /* set 5V */
-	if (ret) {
-		hwlog_err("fcp adapter reset error\n");
-		return hl7139_scp_wdt_reset_by_sw(di);
-	}
-	ret = hl7139_config_vbuscon_ovp_ref_mv(HL7139_VGS_SEL_INIT, di);
+	ret += hl7139_scp_wdt_reset_by_sw(di);
+	ret += hl7139_config_vbuscon_ovp_ref_mv(HL7139_VGS_SEL_INIT, di);
 	ret += hl7139_config_vbus_ovp_ref_mv(HL7139_VBUS_OVP_INIT, di);
 
 	return ret;
+}
+
+static void hl7139_fcp_adapter_detect_reset(struct hl7139_device_info *di)
+{
+	hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
+		HL7139_SCP_CTL_EN_SCP_SHIFT, 0);
+	hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_DET_EN_MASK,
+		HL7139_SCP_CTL_SCP_DET_EN_SHIFT, 0);
+	/* reset scp registers when EN_SCP is changed to 0 */
+	hl7139_scp_wdt_reset_by_sw(di);
+	hl7139_fcp_adapter_reset(di);
 }
 
 static int hl7139_fcp_read_switch_status(void *dev_data)
@@ -580,26 +610,30 @@ static int hl7139_fcp_adapter_detect(struct hl7139_device_info *di)
 	int ret;
 
 	mutex_lock(&di->scp_detect_lock);
+	ret = hl7139_read_byte(di, HL7139_SCP_STATUS_REG, &reg_val);
+	if (ret) {
+		hwlog_err("read HL7139_SCP_STATUS_REG fail, ret:%d\n", ret);
+		mutex_unlock(&di->scp_detect_lock);
+		return ADAPTER_DETECT_OTHER;
+	}
 
 	/* confirm enable hand success status */
-	if (reg_val & HL7139_SCP_STATUS_ENABLE_HAND_SUCCESS_MASK) {
-		mutex_unlock(&di->scp_detect_lock);
-		hwlog_info("scp adapter detect ok\n");
-		return ADAPTER_DETECT_SUCC;
+	if (!(reg_val & HL7139_SCP_STATUS_ENABLE_HAND_SUCCESS_MASK)) {
+		ret += hl7139_fcp_adapter_detect_enable(di);
+		if (ret) {
+			hl7139_fcp_adapter_detect_reset(di);
+			mutex_unlock(&di->scp_detect_lock);
+			return ADAPTER_DETECT_OTHER;
+		}
 	}
-	ret = hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
+
+	ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
 		HL7139_SCP_CTL_EN_SCP_SHIFT, 1);
 	ret += hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_DET_EN_MASK,
 		HL7139_SCP_CTL_SCP_DET_EN_SHIFT, 1);
 	if (ret) {
 		hwlog_err("SCP enable detect fail, ret is %d\n", ret);
-		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
-			HL7139_SCP_CTL_EN_SCP_SHIFT, 0);
-		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_DET_EN_MASK,
-			HL7139_SCP_CTL_SCP_DET_EN_SHIFT, 0);
-		/* reset scp registers when EN_SCP is changed to 0 */
-		hl7139_scp_wdt_reset_by_sw(di);
-		hl7139_fcp_adapter_reset(di);
+		hl7139_fcp_adapter_detect_reset(di);
 		mutex_unlock(&di->scp_detect_lock);
 		return -EPERM;
 	}
@@ -621,13 +655,7 @@ static int hl7139_fcp_adapter_detect(struct hl7139_device_info *di)
 		msleep(HL7139_SCP_POLL_TIME);
 	}
 	if ((i == HL7139_SCP_DETECT_MAX_COUT) || vbus_uvp) {
-		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_EN_SCP_MASK,
-			HL7139_SCP_CTL_EN_SCP_SHIFT, 0);
-		hl7139_write_mask(di, HL7139_SCP_CTL_REG, HL7139_SCP_CTL_SCP_DET_EN_MASK,
-			HL7139_SCP_CTL_SCP_DET_EN_SHIFT, 0);
-		/* reset scp registers when EN_SCP is changed to 0 */
-		hl7139_scp_wdt_reset_by_sw(di);
-		hl7139_fcp_adapter_reset(di);
+		hl7139_fcp_adapter_detect_reset(di);
 		hwlog_err("CHG_SCP_ADAPTER_DETECT_OTHER return\n");
 		mutex_unlock(&di->scp_detect_lock);
 		return ADAPTER_DETECT_OTHER;
@@ -656,8 +684,9 @@ static int hl7139_fcp_stop_charge_config(void *dev_data)
 static int hl7139_scp_reg_read(u8 *val, u8 reg, void *dev_data)
 {
 	int ret;
+	struct hl7139_device_info *di = dev_data;
 
-	if (g_hl7139_scp_error_flag) {
+	if (di->scp_error_flag) {
 		hwlog_err("scp timeout happened, do not read reg = 0x%x\n", reg);
 		return -EPERM;
 	}
@@ -666,7 +695,7 @@ static int hl7139_scp_reg_read(u8 *val, u8 reg, void *dev_data)
 	if (ret) {
 		hwlog_err("error reg = 0x%x\n", reg);
 		if (reg != HWSCP_ADP_TYPE0)
-			g_hl7139_scp_error_flag = HL7139_SCP_IS_ERR;
+			di->scp_error_flag = HL7139_SCP_IS_ERR;
 
 		return -EPERM;
 	}
@@ -677,8 +706,9 @@ static int hl7139_scp_reg_read(u8 *val, u8 reg, void *dev_data)
 static int hl7139_scp_reg_write(u8 val, u8 reg, void *dev_data)
 {
 	int ret;
+	struct hl7139_device_info *di = dev_data;
 
-	if (g_hl7139_scp_error_flag) {
+	if (di->scp_error_flag) {
 		hwlog_err("scp timeout happened, do not write reg = 0x%x\n", reg);
 		return -EPERM;
 	}
@@ -686,7 +716,7 @@ static int hl7139_scp_reg_write(u8 val, u8 reg, void *dev_data)
 	ret = hl7139_scp_adapter_reg_write(val, reg, dev_data);
 	if (ret) {
 		hwlog_err("error reg = 0x%x\n", reg);
-		g_hl7139_scp_error_flag = HL7139_SCP_IS_ERR;
+		di->scp_error_flag = HL7139_SCP_IS_ERR;
 		return -EPERM;
 	}
 
@@ -709,13 +739,14 @@ static int hl7139_scp_reg_read_block(int reg, int *val, int num,
 	int ret;
 	int i;
 	u8 data = 0;
+	struct hl7139_device_info *di = dev_data;
 
 	if (!val || !dev_data) {
 		hwlog_err("val or dev_data is null\n");
 		return -EPERM;
 	}
 
-	g_hl7139_scp_error_flag = HL7139_SCP_NO_ERR;
+	di->scp_error_flag = HL7139_SCP_NO_ERR;
 
 	for (i = 0; i < num; i++) {
 		ret = hl7139_scp_reg_read(&data, reg + i, dev_data);
@@ -734,13 +765,14 @@ static int hl7139_scp_reg_write_block(int reg, const int *val, int num,
 {
 	int ret;
 	int i;
+	struct hl7139_device_info *di = dev_data;
 
 	if (!val || !dev_data) {
 		hwlog_err("val or dev_data is null\n");
 		return -EPERM;
 	}
 
-	g_hl7139_scp_error_flag = HL7139_SCP_NO_ERR;
+	di->scp_error_flag = HL7139_SCP_NO_ERR;
 
 	for (i = 0; i < num; i++) {
 		ret = hl7139_scp_reg_write(val[i], reg + i, dev_data);
@@ -770,13 +802,14 @@ static int hl7139_fcp_reg_read_block(int reg, int *val, int num,
 {
 	int ret, i;
 	u8 data = 0;
+	struct hl7139_device_info *di = dev_data;
 
 	if (!val || !dev_data) {
 		hwlog_err("val or dev_data is null\n");
 		return -EPERM;
 	}
 
-	g_hl7139_scp_error_flag = HL7139_SCP_NO_ERR;
+	di->scp_error_flag = HL7139_SCP_NO_ERR;
 
 	for (i = 0; i < num; i++) {
 		ret = hl7139_scp_reg_read(&data, reg + i, dev_data);
@@ -793,13 +826,14 @@ static int hl7139_fcp_reg_write_block(int reg, const int *val, int num,
 	void *dev_data)
 {
 	int ret, i;
+	struct hl7139_device_info *di = dev_data;
 
 	if (!val || !dev_data) {
 		hwlog_err("val or dev_data is null\n");
 		return -EPERM;
 	}
 
-	g_hl7139_scp_error_flag = HL7139_SCP_NO_ERR;
+	di->scp_error_flag = HL7139_SCP_NO_ERR;
 
 	for (i = 0; i < num; i++) {
 		ret = hl7139_scp_reg_write(val[i], reg + i, dev_data);

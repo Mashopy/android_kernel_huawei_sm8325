@@ -581,6 +581,9 @@ struct binder_thread {
 	atomic_t tmp_ref;
 	bool is_dead;
 	struct task_struct *task;
+#ifdef CONFIG_ACCESS_TOKENID
+	struct access_token tokens;
+#endif /* CONFIG_ACCESS_TOKENID */
 };
 
 /**
@@ -636,6 +639,10 @@ struct binder_transaction {
 	 */
 	spinlock_t lock;
 	ANDROID_VENDOR_DATA(1);
+#ifdef CONFIG_ACCESS_TOKENID
+	u64 sender_tokenid;
+	u64 first_tokenid;
+#endif /* CONFIG_ACCESS_TOKENID */
 };
 
 /**
@@ -660,4 +667,11 @@ struct binder_object {
 
 extern struct binder_transaction_log binder_transaction_log;
 extern struct binder_transaction_log binder_transaction_log_failed;
+
+#ifdef CONFIG_DFX_BINDER
+pid_t get_noticed_tgid(void);
+bool task_need_noticed(struct task_struct *p);
+void binder_print_related_task(pid_t pid);
+#endif
+
 #endif /* _LINUX_BINDER_INTERNAL_H */

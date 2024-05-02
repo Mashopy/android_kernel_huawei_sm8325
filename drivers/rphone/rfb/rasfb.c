@@ -1,11 +1,14 @@
 #include "../rasbase/rasbase.h"
 #include "../rasbase/rasproc.h"
-#include <linux/kernel.h>
+
 #include <linux/bio.h>
-#include <linux/genhd.h>
-#include <linux/module.h>
-#include <linux/fb.h>
 #include <linux/delay.h>
+#include <linux/fb.h>
+#include <linux/genhd.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/version.h>
+
 #ifdef CONFIG_FB_MSM
 #include <uapi/linux/msm_mdp.h>
 #else
@@ -16,9 +19,9 @@
 	#include <drivers/video/hisi/hi3650/hisi_dss.h>
 #else
 	#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 0, 0)
-		#include <drivers/video/hisi/dss/hisi_dss.h>
+		#include <drivers/video/dkmd/dpu/azalea/dpu.h>
 	#else
-		#include <drivers/video/fbdev/hisi/dss/hisi_dss.h>
+		#include <drivers/video/fbdev/dkmd/dpu/azalea/dpu.h>
 	#endif
 #endif
 #endif
@@ -91,10 +94,11 @@ static int fault_restore_all(void)
 			if (rfb_dbg)
 				pr_err("rfb_dbg:restore %p=>%p,i=%d\n",
 				       fault_injected.fbops[i]->fb_ioctl,
-				       fault_injected.fb_ioctl[fault_injected.
-							       res[i]], i);
+				       fault_injected.fb_ioctl[fault_injected.res[i]], i);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 			fault_injected.fbops[i]->fb_ioctl =
 			    fault_injected.fb_ioctl[fault_injected.res[i]];
+#endif
 		}
 	}
 	write_unlock(&fault_injected.rwk);
@@ -142,7 +146,7 @@ static int rasio_args_set(struct fault_impl *fault_args, char *prm)
 	rasbase_set(fault_args, display, prm);
 	rasbase_set(fault_args, lost, prm);
 	rasbase_set(fault_args, step, prm)
-	    return 0;
+	return 0;
 }
 
 static int rasio_args_parse(struct fault_impl *fault_args, int args,
@@ -218,11 +222,13 @@ void replace_ioctl(struct fault_impl *fault)
 				     i, index, rasfb_ioctl,
 				     registered_fb[i]->fbops->fb_ioctl,
 				     registered_fb[i]->node);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 			fault_injected.fb_ioctl[i] =
 			    registered_fb[i]->fbops->fb_ioctl;
 			fault_injected.fbops[index] = registered_fb[i]->fbops;
 			fault_injected.res[index] = i;
 			registered_fb[i]->fbops->fb_ioctl = rasfb_ioctl;
+#endif
 		}
 	}
 	write_unlock(&fault_injected.rwk);
@@ -321,8 +327,8 @@ static int should_delay_checkcmd(unsigned int cmd)
 	case MSMFB_DISPLAY_COMMIT:
 	case MSMFB_OVERLAY_SET:
 	#else
-	case HISIFB_OV_ONLINE_PLAY:
-	case HISIFB_OV_OFFLINE_PLAY:
+	case DPUFB_OV_ONLINE_PLAY:
+	case DPUFB_OV_OFFLINE_PLAY:
 	#endif
 		return 1;
 	default:

@@ -1,6 +1,7 @@
 #include "../rasbase/rasbase.h"
 #include "../rasbase/rasprobe.h"
 #include "../rasbase/rasproc.h"
+#include <linux/blkdev.h>
 #include <linux/kernel.h>
 #include <linux/kallsyms.h>
 #include <linux/proc_fs.h>
@@ -851,12 +852,12 @@ static int rasprobe_handler(security_sb_mount) (struct rasprobe_instance *ri,
 
 static long long fail_deplenish(void *data, const struct ChfilImpl *impl)
 {
-	return (CHFILETYPE_DEPLENISH == impl->ct) ? 1:0;
+	return (CHFILETYPE_DEPLENISH == impl->ct) ? 1 : 0;
 }
 
 static int fail_deplenish_check(void *data, struct ChfilImpl *impl)
 {
-	return (CHFILETYPE_DEPLENISH == impl->ct) ? 1:0;
+	return (CHFILETYPE_DEPLENISH == impl->ct) ? 1 : 0;
 }
 
 static long long chfil_unopen(void *data, const struct ChfilImpl *impl)
@@ -1172,3 +1173,6 @@ MODULE_LICENSE("GPL");
 #define RASFIRE_VERSION "V001R001C151-"
 #endif
 MODULE_VERSION(RASFIRE_VERSION "1.4");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

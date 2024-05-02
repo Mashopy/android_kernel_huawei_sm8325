@@ -27,6 +27,9 @@
 #include "quirks.h"
 #include "sd_ops.h"
 #include "pwrseq.h"
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#endif
 #ifdef CONFIG_SDSIM_MUX
 #include <linux/mmc/sdhci_mux_sdsim.h>
 #endif
@@ -2096,13 +2099,23 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 
 	if (!oldcard)
 		host->card = card;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	err = dsm_emmc_get_life_time(card);
+	if (err)
+		goto err;
+#endif
 	return 0;
 
 free_card:
 	if (!oldcard)
 		mmc_remove_card(card);
 err:
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if ((!strcmp(mmc_hostname(host), "mmc0")))
+		DSM_EMMC_LOG(host->card, DSM_EMMC_INIT_ERROR,
+			"%s:failed to initialize the mmc, return err is %d\n",
+			__func__, err);
+#endif
 	return err;
 }
 
@@ -2637,9 +2650,14 @@ int mmc_attach_mmc(struct mmc_host *host)
 		mmc_set_bus_mode(host, MMC_BUSMODE_OPENDRAIN);
 
 	err = mmc_send_op_cond(host, 0, &ocr);
-	if (err)
+	if (err) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		DSM_EMMC_LOG(host->card, DSM_EMMC_INIT_ERROR,
+			"%s:the eMMC fails to be powered on, return err is %d\n",
+			__func__, err);
+#endif
 		return err;
-
+	}
 	mmc_attach_bus(host, &mmc_ops);
 	if (host->ocr_avail_mmc)
 		host->ocr_avail = host->ocr_avail_mmc;
@@ -2667,9 +2685,15 @@ int mmc_attach_mmc(struct mmc_host *host)
 	 * Detect and init the card.
 	 */
 	err = mmc_init_card(host, rocr, NULL);
-	if (err)
+	if (err) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		if ((!strcmp(mmc_hostname(host), "mmc0")))
+			DSM_EMMC_LOG(host->card, DSM_EMMC_INIT_ERROR,
+				"%s:failed to initialize the mmc, return err is %d\n",
+				__func__, err);
+#endif
 		goto err;
-
+	}
 	mmc_release_host(host);
 	err = mmc_add_card(host->card);
 	if (err)

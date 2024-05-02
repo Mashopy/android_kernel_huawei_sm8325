@@ -27,6 +27,7 @@ HWLOG_REGIST();
 
 /* define adapter power curve */
 #define DC_ADP_PWR_CURVE_LEVEL              16
+#define POWER_TH_UFCS_ILIMIT_ANTIFAKE       30000
 
 static const char *g_prot_str[] = {
 	[ADAPTER_PROTOCOL_SCP]    = "scp",
@@ -76,14 +77,6 @@ void dc_adapter_protocol_power_supply(int enable)
 
 int dc_select_adapter_protocol_type(unsigned int prot_type)
 {
-	int type = 0;
-
-	if (dc_mmi_get_protocol_type(&type)) {
-		g_prot = type;
-		hwlog_info("dc mmi select protocol type=%d\n", type);
-		return 0;
-	}
-
 	if (prot_type & BIT(ADAPTER_PROTOCOL_UFCS)) {
 		g_prot = ADAPTER_PROTOCOL_UFCS;
 		hwlog_info("select ufcs protocol\n");
@@ -423,6 +416,42 @@ int dc_get_adapter_temp(int *value)
 	return 0;
 }
 
+int dc_get_adapter_source_info(unsigned int flag, struct adapter_source_info *data)
+{
+	int ret = 0;
+	struct adapter_source_info source_info = { 0 };
+
+	if (dc_get_stop_charging_flag())
+		return -EPERM;
+
+	if (!adapter_get_source_info(g_prot, &source_info)) {
+		data->output_volt = source_info.output_volt;
+		data->output_curr = source_info.output_curr;
+		data->port_temp = source_info.port_temp;
+		data->dev_temp = source_info.dev_temp;
+		return ret;
+	}
+
+	if (flag & BIT(ADAPTER_OUTPUT_VOLT))
+		ret = dc_get_adapter_voltage(&data->output_volt);
+
+	if (!ret && (flag & BIT(ADAPTER_OUTPUT_CURR)))
+		ret += dc_get_adapter_current(&data->output_curr);
+
+	if (!ret && (flag & BIT(ADAPTER_DEV_TEMP)))
+		ret += dc_get_adapter_temp(&data->dev_temp);
+
+	return ret;
+}
+
+int dc_get_adapter_cable_info(int *curr)
+{
+	if (!curr || dc_get_stop_charging_flag())
+		return -EPERM;
+
+	return adapter_get_cable_info(g_prot, curr);
+}
+
 int dc_get_protocol_register_state(void)
 {
 	if (adapter_get_protocol_register_state(g_prot)) {
@@ -567,7 +596,7 @@ int dc_update_adapter_info(void)
 
 unsigned int dc_update_adapter_support_mode(void)
 {
-	unsigned int adp_mode = ADAPTER_SUPPORT_LVC + ADAPTER_SUPPORT_SC;
+	unsigned int adp_mode = ADAPTER_SUPPORT_UNDEFINED;
 
 	adapter_update_adapter_support_mode(g_prot, &adp_mode);
 
@@ -605,10 +634,10 @@ int dc_get_adapter_ilimit(void)
 	if (!l_di || (l_di->dc_volt_ratio == 0))
 		return 0;
 
-	/* limit power to 22.5w when ufcs adapter antifake failed */
+	/* limit power to 30w when ufcs adapter antifake failed */
 	if ((g_prot == ADAPTER_PROTOCOL_UFCS) &&
 		(l_di->adp_antifake_result == ADAPTER_ANTIFAKE_FAIL)) {
-		ilimit = POWER_TH_IGNORE_ANTIFAKE * POWER_UW_PER_MW /
+		ilimit = POWER_TH_UFCS_ILIMIT_ANTIFAKE * POWER_UW_PER_MW /
 			(hw_battery_get_series_num() * BAT_RATED_VOLT) /
 			l_di->dc_volt_ratio;
 		return ilimit;
@@ -693,7 +722,8 @@ static void dc_report_antifake_result(struct direct_charge_device *di,
 
 	n_data.event_len = len;
 	n_data.event = auth_buf;
-	if (di->adp_antifake_execute_enable)
+	if (di->adp_antifake_execute_enable &&
+		!((g_prot == ADAPTER_PROTOCOL_UFCS) && (antifake_state == ADAPTER_ANTIFAKE_FAIL)))
 		power_event_report_uevent(&n_data);
 	else
 		hwlog_info("adapter antifake result:%s\n", auth_buf);
@@ -729,7 +759,8 @@ int dc_check_adapter_antifake(void)
 	max_pwr = max_cur * BAT_RATED_VOLT * l_di->dc_volt_ratio *
 		hw_battery_get_series_num() / POWER_UW_PER_MW; /* unit: mw */
 	hwlog_info("max_cur=%d, max_pwr=%d\n", max_cur, max_pwr);
-	if (max_pwr <= POWER_TH_IGNORE_ANTIFAKE)
+	if ((max_pwr <= POWER_TH_IGNORE_ANTIFAKE) ||
+		((g_prot == ADAPTER_PROTOCOL_UFCS) && (max_pwr <= POWER_TH_UFCS_ILIMIT_ANTIFAKE)))
 		return 0;
 
 	ret = adapter_auth_encrypt_start(g_prot, l_di->adp_antifake_key_index);
@@ -743,4 +774,9 @@ int dc_check_adapter_antifake(void)
 bool dc_is_undetach_cable(void)
 {
 	return adapter_is_undetach_cable(g_prot);
+}
+
+bool dc_is_scp_superior(void)
+{
+	return adapter_is_scp_superior(g_prot);
 }

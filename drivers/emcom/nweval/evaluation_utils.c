@@ -50,6 +50,27 @@ static int32_t cal_euclidiean_distance_square(point point1, point point2);
 static int8_t find_nearest_reference_point(int32_t* distance_squares,
 													int8_t number);
 
+static void get_signal_strength_interval(int8_t network_type, int32_t signal_strength,
+				int32_t* rtt_array, int8_t rtt_array_length, int32_t *signal_strength_interval)
+{
+	int index;
+	if (!validate_network_type(network_type) ||
+		(signal_strength >= 0) || (rtt_array == NULL) || (rtt_array_length <= 0)) {
+		emcom_loge(" : illegal parameter in cal_signal_index");
+		return;
+	}
+	/* pick reference points based on network type AND signal strength */
+	for (index = 0; index < TRAFFIC_SS_SEGMENTS; index++) {
+		if (signal_strength > traffic_ss_segment_ends[index] &&
+			signal_strength <= traffic_ss_segment_ends[index + 1]) {
+			*signal_strength_interval = index;
+			break;
+		}
+	}
+
+	if (*signal_strength_interval < 0)
+		emcom_loge(" : negative signal_strength_interval");
+}
 /* function implementations */
 /**
 	 * @Function: cal_traffic_index
@@ -64,27 +85,11 @@ int8_t cal_traffic_index(int8_t network_type, int32_t signal_strength,
 	point_set* reference_probability_set = NULL;
 	point_set reference_point_set;
 	point current_point;
-	int index;
-	if (!validate_network_type(network_type) ||
-		(signal_strength >= 0) || (rtt_array == NULL) || (rtt_array_length <= 0)) {
-		emcom_loge(" : illegal parameter in cal_signal_index");
+
+	get_signal_strength_interval(network_type, signal_strength, rtt_array,
+						rtt_array_length, &signal_strength_interval);
+	if (signal_strength_interval == INVALID_VALUE)
 		return INVALID_VALUE;
-	}
-
-	/* pick reference points based on network type AND signal strength */
-	for (index = 0; index < TRAFFIC_SS_SEGMENTS; index++) {
-		if (signal_strength > traffic_ss_segment_ends[index] &&
-			signal_strength <= traffic_ss_segment_ends[index + 1]) {
-			signal_strength_interval = index;
-			break;
-		}
-	}
-
-	if (signal_strength_interval < 0) {
-		emcom_loge(" : negative signal_strength_interval");
-		return INVALID_VALUE;
-	}
-
 	switch (network_type) {
 	case NETWORK_TYPE_WIFI:
 		reference_probability_set = (point_set*)

@@ -23,9 +23,17 @@
 #include <linux/time64.h>
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/tcpci_typec.h>
+#include <huawei_platform/usb/pd/richtek/tcpm.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
+#include <chipset_common/hwpower/charger/charger_event.h>
 
 #ifdef CONFIG_DUAL_ROLE_USB_INTF
 #include <linux/usb/class-dual-role.h>
+
+bool g_role_swap_flag = false;
+struct delayed_work try_src_work;
+static struct tcpc_device *g_tcpc = NULL;
+
 void tcpc_dual_role_instance_changed(struct dual_role_phy_instance *dual_role);
 static enum dual_role_property tcpc_dual_role_props[] = {
 	DUAL_ROLE_PROP_SUPPORTED_MODES,
@@ -86,6 +94,49 @@ static int tcpc_dual_role_prop_is_writeable(
 	return retval;
 }
 
+static void pd_dpm_usb_try_src_work(struct work_struct *work)
+{
+	struct tcpc_device *tcpc_dev = NULL;
+
+	TYPEC_INFO("%s enter\n", __func__);
+	if (g_tcpc == NULL)
+		return;
+
+	tcpc_dev = g_tcpc;
+	/* Restore the default value :try_src */
+	tcpc_typec_change_role(tcpc_dev, TYPEC_ROLE_TRY_SRC);
+}
+
+void stop_mcu_to_charge(bool flag, struct tcpc_device *tcpc, const unsigned int *val)
+{
+	pr_info("%s \n", __func__);
+
+	set_role_swap_flag(flag);
+	set_dummy_pullout_flag(flag);
+
+	if (*val == DUAL_ROLE_PROP_PR_SNK) {
+		/* only sink */
+		tcpc_typec_change_role(tcpc, TYPEC_ROLE_SNK);
+		pd_dpm_set_source_sink_state(STOP_SOURCE);
+	} else if (*val == DUAL_ROLE_PROP_PR_SRC) {
+		/* only src */
+		tcpc_typec_change_role(tcpc, TYPEC_ROLE_SRC);
+	}
+
+	/* Restore the default value in 2s :try_src */
+	schedule_delayed_work(&try_src_work, msecs_to_jiffies(2000));
+}
+
+bool get_role_swap_flag()
+{
+	return g_role_swap_flag;
+}
+
+void set_role_swap_flag(bool flag)
+{
+	g_role_swap_flag = flag;
+}
+
 #define CONFIG_USB_POWER_DELIVERY_DUAL_ROLE_SWAP
 static int tcpc_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
 	enum dual_role_property prop, const unsigned int *val)
@@ -97,6 +148,7 @@ static int tcpc_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
 
 	tcpc = dev_get_drvdata(dual_role->dev.parent);
 	pr_info("%s + %d\n", __func__, prop);
+	g_tcpc = tcpc;
 
 	switch (prop) {
 	#ifdef CONFIG_USB_POWER_DELIVERY_DUAL_ROLE_SWAP
@@ -104,7 +156,10 @@ static int tcpc_dual_role_set_prop(struct dual_role_phy_instance *dual_role,
 		if (*val != tcpc->dual_role_pr) {
 			pr_info("%s power role swap %d->%d\n",
 				__func__, tcpc->dual_role_pr, *val);
-			tcpm_power_role_swap(tcpc);
+			if (get_only_charger_stg())
+				stop_mcu_to_charge(true, tcpc, val);
+			else
+				tcpm_power_role_swap(tcpc);
 		} else {
 			pr_info("%s Same Power Role\n", __func__);
 		}
@@ -223,6 +278,7 @@ int tcpc_dual_role_phy_init(struct tcpc_device *tcpc)
 	tcpc->dual_role_dr = DUAL_ROLE_PROP_DR_NONE;
 	tcpc->dual_role_mode = DUAL_ROLE_PROP_MODE_NONE;
 	tcpc->dual_role_vconn = DUAL_ROLE_PROP_VCONN_SUPPLY_NO;
+	INIT_DELAYED_WORK(&try_src_work, pd_dpm_usb_try_src_work);
 	return 0;
 }
 EXPORT_SYMBOL(tcpc_dual_role_phy_init);

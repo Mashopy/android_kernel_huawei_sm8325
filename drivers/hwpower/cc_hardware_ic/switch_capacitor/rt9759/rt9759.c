@@ -493,7 +493,7 @@ static int rt9759_get_register_head(char *buffer, int size, void *dev_data)
 		return -EPERM;
 
 	snprintf(buffer, size,
-		"  dev        Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp");
+		"dev       Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp   ");
 
 	return 0;
 }
@@ -519,7 +519,7 @@ static int rt9759_value_dump(char *buffer, int size, void *dev_data)
 	(void)rt9759_get_device_temp(&temp, dev_data);
 
 	snprintf(buffer, size,
-		"%s    %-7d%-7d%-7d%-7d%-7d%-7d%-7d",
+		"%-10s%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
 		di->name, ibus, vbus, ibat, vusb, vout,
 		rt9759_get_vbat_mv(dev_data), temp);
 

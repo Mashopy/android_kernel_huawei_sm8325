@@ -31,9 +31,7 @@
 #include <chipset_common/hwpower/common_module/power_dsm.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <chipset_common/hwpower/common_module/power_icon.h>
-#include <chipset_common/hwpower/common_module/power_interface.h>
 #include <chipset_common/hwpower/common_module/power_supply_application.h>
-#include <chipset_common/hwpower/common_module/power_sysfs.h>
 #include <chipset_common/hwpower/common_module/power_time.h>
 #include <chipset_common/hwpower/common_module/power_ui_ne.h>
 #include <chipset_common/hwpower/common_module/power_wakeup.h>
@@ -46,6 +44,7 @@
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_acc_types.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_power_supply.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_sysfs.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_acc.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_alarm.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_dts.h>
@@ -83,7 +82,6 @@ static int g_fop_fixed_flag;
 static int g_rx_vrect_restore_cnt;
 static int g_rx_vout_err_cnt;
 static bool g_bst_rst_complete = true;
-static bool g_high_pwr_test_flag;
 static int g_plimit_time_num;
 static bool g_need_force_5v_vout;
 
@@ -105,7 +103,7 @@ int wlc_get_rx_support_mode(void)
 		return WLRX_SUPP_PMODE_BUCK;
 	}
 
-	return di->sysfs_data.rx_support_mode & di->qval_support_mode;
+	return wlrx_sysfs_get_support_mode(WLTRX_DRV_MAIN) & di->qval_support_mode;
 }
 
 bool wlc_is_pwr_good(void)
@@ -261,67 +259,6 @@ static void wireless_charge_count_avg_iout(struct wlrx_dev_info *di)
 		return;
 	}
 }
-
-static int  wireless_charge_check_fast_charge_succ(unsigned int drv_type)
-{
-	enum wlrx_ui_icon_type type = wlrx_ui_get_icon_type(drv_type);
-
-	if (((type == WLRX_UI_FAST_CHARGE) || (type == WLRX_UI_SUPER_CHARGE)) &&
-		(wlrx_get_charge_stage() >= WLRX_STAGE_CHARGING))
-		return WIRELESS_CHRG_SUCC;
-	else
-		return WIRELESS_CHRG_FAIL;
-}
-
-static int wireless_charge_check_normal_charge_succ(unsigned int drv_type)
-{
-	enum wlrx_ui_icon_type type = wlrx_ui_get_icon_type(drv_type);
-
-	if (!wlrx_is_err_tx(WLTRX_DRV_MAIN) && (type != WLRX_UI_FAST_CHARGE) &&
-		(wlrx_get_charge_stage() >= WLRX_STAGE_CHARGING))
-		return WIRELESS_CHRG_SUCC;
-
-	return WIRELESS_CHRG_FAIL;
-}
-
-static void wlc_update_thermal_control(u8 thermal_ctrl)
-{
-	u8 thermal_status;
-
-	thermal_status = thermal_ctrl & WLC_THERMAL_EXIT_SC_MODE;
-	if ((thermal_status == WLC_THERMAL_EXIT_SC_MODE) && !g_high_pwr_test_flag)
-		wlrx_plim_set_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_THERMAL);
-	else
-		wlrx_plim_clear_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_THERMAL);
-}
-
-static int wireless_set_thermal_ctrl(unsigned char value)
-{
-	struct wlrx_dev_info *di = g_wlrx_di;
-
-	if (!di || (value > 0xFF)) /* 0xFF: maximum of u8 */
-		return -EINVAL;
-	di->sysfs_data.thermal_ctrl = value;
-	wlc_update_thermal_control(di->sysfs_data.thermal_ctrl);
-	hwlog_info("thermal_ctrl = 0x%x", di->sysfs_data.thermal_ctrl);
-	return 0;
-}
-
-static int wireless_get_thermal_ctrl(unsigned char *value)
-{
-	struct wlrx_dev_info *di = g_wlrx_di;
-
-	if (!di || !value)
-		return -EINVAL;
-	*value = di->sysfs_data.thermal_ctrl;
-	return 0;
-}
-
-static struct power_if_ops wl_if_ops = {
-	.set_wl_thermal_ctrl = wireless_set_thermal_ctrl,
-	.get_wl_thermal_ctrl = wireless_get_thermal_ctrl,
-	.type_name = "wl",
-};
 
 bool wlc_pmode_final_judge(unsigned int drv_type, int pid, struct wlrx_pmode *pcfg)
 {
@@ -1150,28 +1087,13 @@ static void wlc_check_voltage(struct wlrx_dev_info *di)
 		wlrx_ic_send_ept(WLTRX_IC_MAIN, WIRELESS_EPT_ERR_VOUT);
 }
 
-void wlc_set_high_pwr_test_flag(bool flag)
+static bool wlc_is_night_time(unsigned int drv_type)
 {
-	g_high_pwr_test_flag = flag;
-
-	if (g_high_pwr_test_flag) {
-		wlrx_plim_clear_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_THERMAL);
-		wlrx_intfr_clear_settings(WLTRX_DRV_MAIN);
-	}
-}
-
-bool wlc_get_high_pwr_test_flag(void)
-{
-	return g_high_pwr_test_flag;
-}
-
-static bool wlc_is_night_time(struct wlrx_dev_info *di)
-{
-	if (di->sysfs_data.ignore_fan_ctrl)
+	if (wlrx_sysfs_ignore_fan_ctrl(drv_type))
 		return false;
-	if (g_high_pwr_test_flag)
+	if (wlrx_in_high_pwr_test(drv_type))
 		return false;
-	if (wlrx_is_car_tx(WLTRX_DRV_MAIN))
+	if (wlrx_is_car_tx(drv_type))
 		return false;
 
 	/* night time: 21:00-7:00 */
@@ -1233,19 +1155,19 @@ static void wlc_update_fan_control(struct wlrx_dev_info *di, bool force_flag)
 		return;
 	}
 
-	thermal_status = di->sysfs_data.thermal_ctrl &
-		WLC_THERMAL_FORCE_FAN_FULL_SPEED;
+	thermal_status = wlrx_sysfs_get_thermal_ctrl(WLTRX_DRV_MAIN) &
+		WLRX_SYSFS_THERMAL_FORCE_FAN_FULL_SPEED;
 	acc_cap = wlrx_acc_get_cap(WLTRX_DRV_MAIN);
 	if (!acc_cap)
 		return;
 	tx_pwr = acc_cap->vmax * acc_cap->imax;
-	if (wlc_is_night_time(di)) {
+	if (wlc_is_night_time(WLTRX_DRV_MAIN)) {
 		di->stat_rcd.fan_cur = WLC_FAN_HALF_SPEED_MAX;
 		wlrx_plim_set_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_FAN);
 	} else if (tx_pwr <= WLC_FAN_CTRL_PWR) {
 		di->stat_rcd.fan_cur = WLC_FAN_FULL_SPEED_MAX;
 		wlrx_plim_clear_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_FAN);
-	} else if (thermal_status == WLC_THERMAL_FORCE_FAN_FULL_SPEED) {
+	} else if (thermal_status == WLRX_SYSFS_THERMAL_FORCE_FAN_FULL_SPEED) {
 		di->stat_rcd.fan_cur = WLC_FAN_FULL_SPEED;
 		wlrx_plim_clear_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_FAN);
 	} else {
@@ -1648,7 +1570,7 @@ static void wireless_charge_para_init(struct wlrx_dev_info *di)
 	di->rx_iout_limit = dts->rx_imin;
 	di->certi_comm_err_cnt = 0;
 	di->boost_err_cnt = 0;
-	di->sysfs_data.en_enable = 0;
+	wlrx_sysfs_charge_para_init(WLTRX_DRV_MAIN);
 	di->iout_high_cnt = 0;
 	di->iout_low_cnt = 0;
 	di->cable_detect_succ_flag = 0;
@@ -2248,195 +2170,6 @@ static int wireless_charge_chrg_event_notifier_call(struct notifier_block *chrg_
 	return NOTIFY_OK;
 }
 
-/*
- * There are a numerous options that are configurable on the wireless receiver
- * that go well beyond what the power_supply properties provide access to.
- * Provide sysfs access to them so they can be examined and possibly modified
- * on the fly.
- */
-#ifdef CONFIG_SYSFS
-static ssize_t wireless_charge_sysfs_show(struct device *dev,
-	struct device_attribute *attr, char *buf);
-
-static ssize_t wireless_charge_sysfs_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count);
-
-static struct power_sysfs_attr_info wireless_charge_sysfs_field_tbl[] = {
-	power_sysfs_attr_ro(wireless_charge, 0444, WIRELESS_CHARGE_SYSFS_CHIP_INFO, chip_info),
-	power_sysfs_attr_ro(wireless_charge, 0444,
-		WIRELESS_CHARGE_SYSFS_TX_ADAPTOR_TYPE, tx_adaptor_type),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_RX_TEMP, rx_temp),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_VOUT, vout),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_IOUT, iout),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_VRECT, vrect),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_EN_ENABLE, en_enable),
-	power_sysfs_attr_ro(wireless_charge, 0444,
-		WIRELESS_CHARGE_SYSFS_NORMAL_CHRG_SUCC, normal_chrg_succ),
-	power_sysfs_attr_ro(wireless_charge, 0444,
-		WIRELESS_CHARGE_SYSFS_FAST_CHRG_SUCC, fast_chrg_succ),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_FOD_COEF, fod_coef),
-	power_sysfs_attr_rw(wireless_charge, 0644,
-		WIRELESS_CHARGE_SYSFS_INTERFERENCE_SETTING, interference_setting),
-	power_sysfs_attr_rw(wireless_charge, 0644,
-		WIRELESS_CHARGE_SYSFS_RX_SUPPORT_MODE, rx_support_mode),
-	power_sysfs_attr_rw(wireless_charge, 0644,
-		WIRELESS_CHARGE_SYSFS_THERMAL_CTRL, thermal_ctrl),
-	power_sysfs_attr_rw(wireless_charge, 0644, WIRELESS_CHARGE_SYSFS_NVM_DATA, nvm_data),
-	power_sysfs_attr_rw(wireless_charge, 0644,
-		WIRELESS_CHARGE_SYSFS_IGNORE_FAN_CTRL, ignore_fan_ctrl),
-};
-static struct attribute *wireless_charge_sysfs_attrs[ARRAY_SIZE(wireless_charge_sysfs_field_tbl) + 1];
-static const struct attribute_group wireless_charge_sysfs_attr_group = {
-	.attrs = wireless_charge_sysfs_attrs,
-};
-
-static void wireless_charge_sysfs_create_group(struct device *dev)
-{
-	power_sysfs_init_attrs(wireless_charge_sysfs_attrs,
-		wireless_charge_sysfs_field_tbl, ARRAY_SIZE(wireless_charge_sysfs_field_tbl));
-	power_sysfs_create_link_group("hw_power", "charger", "wireless_charger",
-		dev, &wireless_charge_sysfs_attr_group);
-}
-
-static void wireless_charge_sysfs_remove_group(struct device *dev)
-{
-	power_sysfs_remove_link_group("hw_power", "charger", "wireless_charger",
-		dev, &wireless_charge_sysfs_attr_group);
-}
-#else
-static inline void wireless_charge_sysfs_create_group(struct device *dev)
-{
-}
-
-static inline void wireless_charge_sysfs_remove_group(struct device *dev)
-{
-}
-#endif
-
-static ssize_t wireless_charge_sysfs_show(struct device *dev,
-	struct device_attribute *attr, char *buf)
-{
-	int chrg_succ;
-	int vrect = 0;
-	int vout = 0;
-	int iout = 0;
-	int temp = 0;
-	struct wlrx_pmode *curr_pcfg = wlrx_pmode_get_curr_pcfg(WLTRX_DRV_MAIN);
-	struct wlprot_acc_cap *acc_cap = wlrx_acc_get_cap(WLTRX_DRV_MAIN);
-	struct wlrx_dev_info *di = dev_get_drvdata(dev);
-	struct power_sysfs_attr_info *info = power_sysfs_lookup_attr(
-		attr->attr.name, wireless_charge_sysfs_field_tbl,
-		ARRAY_SIZE(wireless_charge_sysfs_field_tbl));
-
-	if (!di || !curr_pcfg || !acc_cap || !info)
-		return -EINVAL;
-
-	switch (info->name) {
-	case WIRELESS_CHARGE_SYSFS_CHIP_INFO:
-		return wlrx_ic_get_chip_info(WLTRX_IC_MAIN, buf, PAGE_SIZE);
-	case WIRELESS_CHARGE_SYSFS_TX_ADAPTOR_TYPE:
-		return snprintf(buf, PAGE_SIZE, "%d\n", acc_cap->adp_type);
-	case WIRELESS_CHARGE_SYSFS_RX_TEMP:
-		(void)wlrx_ic_get_temp(WLTRX_IC_MAIN, &temp);
-		return snprintf(buf, PAGE_SIZE, "%d\n", temp);
-	case WIRELESS_CHARGE_SYSFS_VOUT:
-		(void)wlrx_ic_get_vout(WLTRX_IC_MAIN, &vout);
-		return snprintf(buf, PAGE_SIZE, "%d\n", vout);
-	case WIRELESS_CHARGE_SYSFS_IOUT:
-		(void)wlrx_ic_get_iout(WLTRX_IC_MAIN, &iout);
-		return snprintf(buf, PAGE_SIZE, "%d\n", iout);
-	case WIRELESS_CHARGE_SYSFS_VRECT:
-		(void)wlrx_ic_get_vrect(WLTRX_IC_MAIN, &vrect);
-		return snprintf(buf, PAGE_SIZE, "%d\n", vrect);
-	case WIRELESS_CHARGE_SYSFS_EN_ENABLE:
-		return snprintf(buf, PAGE_SIZE, "%d\n",
-			di->sysfs_data.en_enable);
-	case WIRELESS_CHARGE_SYSFS_NORMAL_CHRG_SUCC:
-		chrg_succ = wireless_charge_check_normal_charge_succ(WLTRX_DRV_MAIN);
-		return snprintf(buf, PAGE_SIZE, "%d\n", chrg_succ);
-	case WIRELESS_CHARGE_SYSFS_FAST_CHRG_SUCC:
-		chrg_succ = wireless_charge_check_fast_charge_succ(WLTRX_DRV_MAIN);
-		return snprintf(buf, PAGE_SIZE, "%d\n", chrg_succ);
-	case WIRELESS_CHARGE_SYSFS_FOD_COEF:
-		return wlrx_ic_get_fod_coef(WLTRX_IC_MAIN, buf, PAGE_SIZE);
-	case WIRELESS_CHARGE_SYSFS_INTERFERENCE_SETTING:
-		return snprintf(buf, PAGE_SIZE, "%u\n", wlrx_intfr_get_src(WLTRX_DRV_MAIN));
-	case WIRELESS_CHARGE_SYSFS_RX_SUPPORT_MODE:
-		return snprintf(buf, PAGE_SIZE, "mode[support|current]:[0x%x|%s]\n",
-			di->sysfs_data.rx_support_mode, curr_pcfg->name);
-	case WIRELESS_CHARGE_SYSFS_THERMAL_CTRL:
-		return snprintf(buf, PAGE_SIZE, "%u\n", di->sysfs_data.thermal_ctrl);
-	case WIRELESS_CHARGE_SYSFS_IGNORE_FAN_CTRL:
-		return snprintf(buf, PAGE_SIZE, "%d\n",
-			di->sysfs_data.ignore_fan_ctrl);
-	default:
-		break;
-	}
-	return 0;
-}
-
-static ssize_t wireless_charge_sysfs_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	long val = 0;
-	struct wlrx_dev_info *di = dev_get_drvdata(dev);
-	struct power_sysfs_attr_info *info = power_sysfs_lookup_attr(
-		attr->attr.name, wireless_charge_sysfs_field_tbl,
-		ARRAY_SIZE(wireless_charge_sysfs_field_tbl));
-
-	if (!di || !info)
-		return -EINVAL;
-
-	switch (info->name) {
-	case WIRELESS_CHARGE_SYSFS_EN_ENABLE:
-		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) ||
-			(val < 0) || (val > 1))
-			return -EINVAL;
-		di->sysfs_data.en_enable = val;
-		hwlog_info("set rx en_enable = %d\n", di->sysfs_data.en_enable);
-		wlrx_ic_sleep_enable(WLTRX_IC_MAIN, val);
-		wlps_control(WLTRX_IC_MAIN, WLPS_SYSFS_EN_PWR,
-			di->sysfs_data.en_enable ? true : false);
-		break;
-	case WIRELESS_CHARGE_SYSFS_FOD_COEF:
-		hwlog_info("[%s] set fod_coef: %s\n", __func__, buf);
-		(void)wlrx_ic_set_fod_coef(WLTRX_IC_MAIN, buf);
-		break;
-	case WIRELESS_CHARGE_SYSFS_INTERFERENCE_SETTING:
-		if (kstrtol(buf, POWER_BASE_DEC, &val) < 0)
-			return -EINVAL;
-		hwlog_info("[sysfs_store] interference_settings: 0x%x\n", val);
-		wlrx_intfr_handle_settings(WLTRX_DRV_MAIN, (u8)val);
-		break;
-	case WIRELESS_CHARGE_SYSFS_RX_SUPPORT_MODE:
-		if ((kstrtol(buf, POWER_BASE_HEX, &val) < 0) ||
-			(val < 0) || (val > WLRX_SUPP_PMODE_ALL))
-			return -EINVAL;
-		if (!val)
-			di->sysfs_data.rx_support_mode = WLRX_SUPP_PMODE_ALL;
-		else
-			di->sysfs_data.rx_support_mode = val;
-		hwlog_info("[%s] rx_support_mode = 0x%x", __func__, val);
-		break;
-	case WIRELESS_CHARGE_SYSFS_THERMAL_CTRL:
-		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) ||
-			(val < 0) || (val > 0xFF)) /* 0xFF: maximum of u8 */
-			return -EINVAL;
-		wireless_set_thermal_ctrl((unsigned char)val);
-		break;
-	case WIRELESS_CHARGE_SYSFS_IGNORE_FAN_CTRL:
-		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) ||
-			(val < 0) || (val > 1)) /* 1: ignore 0:otherwise */
-			return -EINVAL;
-		hwlog_info("[%s] ignore_fan_ctrl=0x%x", __func__, val);
-		di->sysfs_data.ignore_fan_ctrl = val;
-		break;
-	default:
-		break;
-	}
-	return count;
-}
-
 static struct wlrx_dev_info *wlrx_dev_info_alloc(void)
 {
 	struct wlrx_dev_info *di = NULL;
@@ -2472,10 +2205,7 @@ static void wlrx_dev_info_free(struct wlrx_dev_info *di)
 
 static void wlrx_init_probe_para(struct wlrx_dev_info *di)
 {
-	di->sysfs_data.rx_support_mode = WLRX_SUPP_PMODE_ALL;
 	di->qval_support_mode = WLRX_SUPP_PMODE_ALL;
-	if (power_cmdline_is_factory_mode())
-		di->sysfs_data.rx_support_mode &= ~WLRX_SUPP_PMODE_SC2;
 	di->discon_delay_time = WL_DISCONN_DELAY_MS;
 	wlrx_acc_reset_para(WLTRX_DRV_MAIN);
 	wlc_reset_icon_pmode(di);
@@ -2522,7 +2252,6 @@ static int wireless_charge_remove(struct platform_device *pdev)
 
 	power_event_bnc_unregister(POWER_BNT_CHG, &di->chrg_event_nb);
 	power_event_bnc_unregister(POWER_BNT_WLRX, &di->rx_event_nb);
-	wireless_charge_sysfs_remove_group(di->dev);
 	wlrx_kfree_dts();
 	power_wakeup_source_unregister(g_rx_evt_wakelock);
 	power_wakeup_source_unregister(g_rx_chg_wakelock);
@@ -2535,6 +2264,7 @@ static int wireless_charge_remove(struct platform_device *pdev)
 static void wlrx_module_deinit(unsigned int drv_type)
 {
 	wlrx_common_deinit(drv_type);
+	wlrx_sysfs_deinit(drv_type);
 	wlrx_evt_deinit(drv_type);
 	wlrx_acc_deinit(drv_type);
 	wlrx_fod_deinit(drv_type);
@@ -2549,6 +2279,9 @@ static int wlrx_module_init(unsigned int drv_type, struct device *dev)
 	int ret;
 
 	ret = wlrx_common_init(drv_type, dev);
+	if (ret)
+		goto exit;
+	ret = wlrx_sysfs_init(drv_type, dev);
 	if (ret)
 		goto exit;
 	ret = wlrx_evt_init(drv_type, dev);
@@ -2585,6 +2318,12 @@ static int wireless_charge_probe(struct platform_device *pdev)
 	int ret;
 	struct wlrx_dev_info *di = NULL;
 	struct device_node *np = NULL;
+
+	ret = wlrx_power_supply_register(pdev);
+	if (ret) {
+		hwlog_err("register power supply failed\n");
+		return -ENODEV;
+	}
 
 	if (!wlrx_ic_is_ops_registered(WLTRX_IC_MAIN))
 		return -EPROBE_DEFER;
@@ -2637,11 +2376,7 @@ static int wireless_charge_probe(struct platform_device *pdev)
 		hwlog_err("register charger_event notifier failed\n");
 		goto  wireless_charge_fail_2;
 	}
-	ret = wlrx_power_supply_register(pdev);
-	if (ret) {
-		hwlog_err("register power supply failed\n");
-		goto  wireless_charge_fail_ps;
-	}
+
 	if (wlrx_ic_is_tx_exist(WLTRX_IC_MAIN)) {
 		wireless_charge_para_init(di);
 		wlrx_handle_sink_event(true);
@@ -2656,13 +2391,9 @@ static int wireless_charge_probe(struct platform_device *pdev)
 		wireless_charge_switch_off();
 		wlrx_wls_disconnect_set_wired_channel();
 	}
-	wireless_charge_sysfs_create_group(di->dev);
-	power_if_ops_register(&wl_if_ops);
 	hwlog_info("wireless_charger probe ok\n");
 	return 0;
 
-wireless_charge_fail_ps:
-	power_event_bnc_unregister(POWER_BNT_CHG, &di->chrg_event_nb);
 wireless_charge_fail_2:
 	power_event_bnc_unregister(POWER_BNT_WLRX, &di->rx_event_nb);
 wireless_charge_fail_1:
@@ -2674,6 +2405,7 @@ wireless_charge_fail_0:
 	power_wakeup_source_unregister(g_rx_chg_wakelock);
 	wlrx_dev_info_free(di);
 	platform_set_drvdata(pdev, NULL);
+	wlrx_power_supply_unregister();
 	return ret;
 }
 

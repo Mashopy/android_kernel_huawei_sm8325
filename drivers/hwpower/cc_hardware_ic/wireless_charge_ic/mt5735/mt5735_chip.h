@@ -576,4 +576,7 @@
 #define MT5735_MTP_CRC_ERR                   0x0080
 #define MT5735_MTP_CRC_OK                    0x0100
 
+/* vrect_value_in_backpower_mode register */
+#define MT5735_MTP_GET_VRECT                 0x001C
+
 #endif /* _MT5735_CHIP_H_ */

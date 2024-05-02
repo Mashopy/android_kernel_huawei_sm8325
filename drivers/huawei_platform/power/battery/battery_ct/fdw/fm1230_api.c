@@ -235,12 +235,16 @@ static int fm1230_read_raw_romid(struct fm1230_dev *di, char *buf)
 	hwlog_err("[%s] uid_crc = %x\n", __func__, uid_crc);
 #endif
 	if (is_all_zero(romid, READ_UID_SIZE)) {
-		hwlog_err("[%s] read uid error\n", __func__);
+		hwlog_err("[%s] uid all zero\n", __func__);
 		return -EINVAL;
 	}
-	if (!uid_crc)
-		memcpy(buf, romid, READ_UID_SIZE);
-	return uid_crc; /* 0:normal; not 0:error */
+	if (uid_crc) {
+		hwlog_err("[%s] read uid error, crc: %d\n", __func__, uid_crc);
+		return -EINVAL;
+	}
+
+	memcpy(buf, romid, READ_UID_SIZE);
+	return 0;
 }
 
 int fm1230_ic_ck(struct fm1230_dev *di)

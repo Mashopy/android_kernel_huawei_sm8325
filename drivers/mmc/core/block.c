@@ -58,6 +58,10 @@
 #include "quirks.h"
 #include "sd_ops.h"
 
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#endif
+
 #ifdef CONFIG_HW_SD_HEALTH_DETECT
 #include "mmc_health_diag.h"
 #endif
@@ -67,6 +71,10 @@ MODULE_ALIAS("mmc:block");
 #undef MODULE_PARAM_PREFIX
 #endif
 #define MODULE_PARAM_PREFIX "mmcblk."
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/disk_mago_info.h>
+#include <linux/disk_mago/disk_mago_latency.h>
+#endif
 
 /*
  * Set a 10 second timeout for polling write request busy state. Note, mmc core
@@ -783,8 +791,18 @@ static int mmc_blk_check_blkdev(struct block_device *bdev)
 	 * whole block device, not on a partition.  This prevents overspray
 	 * between sibling partitions.
 	 */
+#ifdef CONFIG_DISK_MAGO
+	if (is_disk_mago()) {
+		if (bdev != bdev->bd_contains)
+			return -EPERM;
+	} else {
+		if ((!capable(CAP_SYS_RAWIO)) || (bdev != bdev->bd_contains))
+			return -EPERM;
+	}
+#else
 	if ((!capable(CAP_SYS_RAWIO)) || (bdev != bdev->bd_contains))
 		return -EPERM;
+#endif
 	return 0;
 }
 
@@ -823,6 +841,71 @@ static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 		return -EINVAL;
 	}
 }
+
+#ifdef CONFIG_DISK_MAGO
+static int mmc_blk_cmd(struct mmc_blk_data *md,
+			     struct mmc_blk_ioc_data *idata)
+{
+	struct mmc_blk_ioc_data **idatas = NULL;
+	struct mmc_queue *mq = NULL;
+	struct mmc_card *card = NULL;
+	int err = 0;
+	int ioc_err = 0;
+	struct request *req = NULL;
+
+	card = md->queue.card;
+	if (IS_ERR(card)) {
+		err = PTR_ERR(card);
+		goto cmd_done;
+	}
+
+	mq = &md->queue;
+	req = blk_get_request(mq->queue,
+		idata->ic.write_flag ? REQ_OP_DRV_OUT : REQ_OP_DRV_IN, 0);
+	if (IS_ERR(req)) {
+		pr_info("block get request failed\n");
+		err = PTR_ERR(req);
+		goto cmd_done;
+	}
+	idatas = &idata;
+	req_to_mmc_queue_req(req)->drv_op = MMC_DRV_OP_IOCTL;
+	req_to_mmc_queue_req(req)->drv_op_data = idatas;
+	req_to_mmc_queue_req(req)->ioc_count = 1;
+	blk_execute_rq(mq->queue, NULL, req, 0);
+	ioc_err = req_to_mmc_queue_req(req)->drv_op_result;
+	blk_put_request(req);
+cmd_done:
+	return ioc_err ? ioc_err : err;
+}
+
+int mmc_blk_get_health_info(struct block_device *bdev, unsigned char *data)
+{
+	struct mmc_blk_data *md = NULL;
+	int ret = 0;
+	struct mmc_blk_ioc_data idata;
+
+	memset(&idata, 0, sizeof(struct mmc_blk_ioc_data));
+	idata.ic.write_flag = 0;
+	idata.ic.opcode = MMC_SEND_EXT_CSD;
+	idata.ic.arg = 0;
+	idata.ic.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
+	idata.ic.blksz = CARD_BLOCK_SIZE;
+	idata.ic.blocks = NUM_1;
+	idata.ic.data_ptr = (__u64)data;
+	idata.buf_bytes = CARD_BLOCK_SIZE * NUM_1;
+	idata.buf = data;
+	idata.rpmb = NULL;
+
+	md = mmc_blk_get(bdev->bd_disk);
+	if (!md) {
+		pr_info("mmc get md failed\n");
+		return -EINVAL;
+	}
+	ret = mmc_blk_cmd(md, &idata);
+	mmc_blk_put(md);
+	return ret;
+}
+#endif
 
 #ifdef CONFIG_COMPAT
 static int mmc_blk_compat_ioctl(struct block_device *bdev, fmode_t mode,
@@ -1006,6 +1089,11 @@ static int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host,
 		return -EEXIST;
 
 	md->reset_done |= type;
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if (mmc_card_mmc(host->card) && (!strcmp(mmc_hostname(host), "mmc0")))
+		DSM_EMMC_LOG(host->card, DSM_EMMC_RW_TIMEOUT_ERR, "%s: eMMC enter reset, type=%d, partition=%d\n",
+			__FUNCTION__, type, md->part_type);
+#endif
 	err = mmc_hw_reset(host);
 	/* Ensure we switch back to the correct partition */
 	if (err != -EOPNOTSUPP) {
@@ -1519,6 +1607,9 @@ static void mmc_blk_cqe_req_done(struct mmc_request *mrq)
 	 * Block layer timeouts race with completions which means the normal
 	 * completion path cannot be used during recovery.
 	 */
+#ifdef CONFIG_DISK_MAGO
+	atomic_dec(&q->inflt_disk);
+#endif
 	if (mq->in_recovery)
 		mmc_blk_cqe_complete_rq(mq, req);
 	else
@@ -2022,6 +2113,9 @@ static void mmc_blk_hsq_req_done(struct mmc_request *mrq)
 	 * Block layer timeouts race with completions which means the normal
 	 * completion path cannot be used during recovery.
 	 */
+#ifdef CONFIG_DISK_MAGO
+	atomic_dec(&q->inflt_disk);
+#endif
 	if (mq->in_recovery)
 		mmc_blk_cqe_complete_rq(mq, req);
 	else
@@ -2089,6 +2183,9 @@ static void mmc_blk_mq_post_req(struct mmc_queue *mq, struct request *req)
 	 * Block layer timeouts race with completions which means the normal
 	 * completion path cannot be used during recovery.
 	 */
+#ifdef CONFIG_DISK_MAGO
+	atomic_dec(&req->q->inflt_disk);
+#endif
 	if (mq->in_recovery)
 		mmc_blk_mq_complete_rq(mq, req);
 	else
@@ -3176,7 +3273,9 @@ static int __init mmc_blk_init(void)
 	res = mmc_register_driver(&mmc_driver);
 	if (res)
 		goto out_blkdev_unreg;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	dsm_emmc_init();
+#endif
 	return 0;
 
 out_blkdev_unreg:

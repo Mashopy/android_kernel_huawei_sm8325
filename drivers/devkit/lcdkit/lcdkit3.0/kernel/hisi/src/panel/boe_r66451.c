@@ -64,10 +64,10 @@ static void lcd_kit_timerout_function(unsigned long arg)
 	struct timer_list *timer;
 
 	timer = (struct timer_list *)(uintptr_t)arg;
-	if (disp_info->bl_is_shield_backlight == true)
-		disp_info->bl_is_shield_backlight = false;
+	if (DISP_INFO->bl_is_shield_backlight == true)
+		DISP_INFO->bl_is_shield_backlight = false;
 	del_timer(timer);
-	disp_info->bl_is_start_second_timer = false;
+	DISP_INFO->bl_is_start_second_timer = false;
 	LCD_KIT_INFO("Sheild bl 1.2s timeout, remove the backlight sheild\n");
 }
 
@@ -123,14 +123,14 @@ static int bl_high_level_process(struct timer_list *backlight_timer,
 	else
 		LCD_KIT_INFO("bl level is invalid when fingerprint\n");
 
-	disp_info->bl_is_shield_backlight = true;
-	if (disp_info->bl_is_start_second_timer == false) {
+	DISP_INFO->bl_is_shield_backlight = true;
+	if (DISP_INFO->bl_is_start_second_timer == false) {
 		init_timer(backlight_timer);
 		backlight_timer->expires = TIMER_EXPIRES_SECONDS;
 		backlight_timer->data = (unsigned long)(uintptr_t)backlight_timer;
 		backlight_timer->function = lcd_kit_timerout_function;
 		add_timer(backlight_timer);
-		disp_info->bl_is_start_second_timer = true;
+		DISP_INFO->bl_is_start_second_timer = true;
 	} else {
 		// if timer is not timeout, restart timer
 		mod_timer(backlight_timer, TIMER_EXPIRES_SECONDS);
@@ -144,11 +144,11 @@ static int bl_low_level_process(struct timer_list *backlight_timer,
 {
 	int ret = LCD_KIT_OK;
 
-	if (disp_info->bl_is_start_second_timer == true) {
+	if (DISP_INFO->bl_is_start_second_timer == true) {
 		del_timer(backlight_timer);
-		disp_info->bl_is_start_second_timer = false;
+		DISP_INFO->bl_is_start_second_timer = false;
 	}
-	disp_info->bl_is_shield_backlight = false;
+	DISP_INFO->bl_is_shield_backlight = false;
 	if (!(common_info->hbm.exit_cmds_fir.cmds) ||
 		!(common_info->hbm.exit_cmds_sec.cmds) ||
 		!(common_info->hbm.exit_cmds_thi.cmds) ||

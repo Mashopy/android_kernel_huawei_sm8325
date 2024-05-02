@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2022-2022. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2022-2023. All rights reserved.
  * Description: mpflow for vlan module implemention
  * Author: wkang.wang@huawei.com
  * Create: 2022-01-25
@@ -79,6 +79,8 @@ void mpflow_vlan_config_start(const char *pdata, uint16_t len)
 	errno_t err;
 	uint32_t i;
 
+	emcom_logd(" emcom netlink mpf vlan start");
+
 	/* input param check */
 	if (!pdata || (len <= sizeof(mpflow_vlan_parse_start_info))) {
 		emcom_loge("mpflow_vlan start data or length: %hu is error", len);
@@ -128,7 +130,9 @@ void mpflow_vlan_config_stop(const char *pdata, uint16_t len)
 {
 	errno_t err;
 	mpflow_vlan_all_app_info mpvlan_all_app_info;
+	emcom_logd("emcom netlink receive vlan config stop");
 	emcom_logd("mpflow_vlan stop");
+
 	spin_lock_bh(&g_mpvlan_all_app_info_lock);
 	g_mpvlan_all_app_info.all_bind_mode = MPVLAN_BINDMODE_WIFI;
 	mpvlan_all_app_info = g_mpvlan_all_app_info;
@@ -139,22 +143,32 @@ void mpflow_vlan_config_stop(const char *pdata, uint16_t len)
 	mpflow_vlan_reset_all_flow(&mpvlan_all_app_info);
 }
 
+static bool mpflow_vlan_check_app_info_valid(const char *pdata, uint16_t len,
+				mpflow_vlan_parse_update_app_info **update_app_info)
+{
+	if (!pdata || (len != sizeof(mpflow_vlan_parse_update_app_info))) {
+		emcom_loge("mpflow_vlan_update_app_info data or length: %hu is error", len);
+		return false;
+	}
+	*update_app_info = (mpflow_vlan_parse_update_app_info *)pdata;
+	emcom_logd("uid: %u operation: %u", (*update_app_info)->uid, (*update_app_info)->operation);
+	if (invalid_uid((*update_app_info)->uid)) {
+		emcom_loge("invalid_uid: %u", (*update_app_info)->uid);
+		return false;
+	}
+	return true;
+}
+
 void mpflow_vlan_update_app_info(const char *pdata, uint16_t len)
 {
 	mpflow_vlan_parse_update_app_info *update_app_info = NULL;
 	uint32_t i;
 
+	emcom_logd("emcom netlink receive update app info");
+
 	/* input param check */
-	if (!pdata || (len != sizeof(mpflow_vlan_parse_update_app_info))) {
-		emcom_loge("mpflow_vlan_update_app_info data or length: %hu is error", len);
+	if (!mpflow_vlan_check_app_info_valid(pdata, len, &update_app_info))
 		return;
-	}
-	update_app_info = (mpflow_vlan_parse_update_app_info *)pdata;
-	emcom_logd("uid: %u operation: %u", update_app_info->uid, update_app_info->operation);
-	if (invalid_uid(update_app_info->uid)) {
-		emcom_loge("invalid_uid: %u", update_app_info->uid);
-		return;
-	}
 
 	spin_lock_bh(&g_mpvlan_all_app_info_lock);
 	if (!g_mpvlan_all_app_info.is_started) {
@@ -200,6 +214,8 @@ void mpflow_vlan_network_status_update(const char *pdata, uint16_t len)
 	mpflow_vlan_parse_network_status_info *net_satus = NULL;
 	mpflow_vlan_all_app_info mpvlan_all_app_info;
 	uint32_t i;
+
+	emcom_logd("emcom netlink receive vlan nw status info");
 
 	/* input param check */
 	if (!pdata || (len != sizeof(mpflow_vlan_parse_network_status_info))) {
@@ -366,10 +382,10 @@ static int mpflow_vlan_get_bind_device(uint32_t index)
 
 static int mpflow_vlan_get_bind_iface_name(char *ifname, unsigned int len, int bind_device)
 {
-	if (bind_device == MPVLAN_BINDMODE_VLAN) {
+	if (bind_device == MPVLAN_BINDMODE_VLAN)
 		return memcpy_s(ifname, len, g_mpvlan_all_app_info.vlan_iface_name,
 			(strlen(g_mpvlan_all_app_info.vlan_iface_name) + 1));
-	}
+
 	return EOK;
 }
 

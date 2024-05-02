@@ -1,6 +1,7 @@
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= tps65132.o
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= rt4801h.o
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= icn68116.o
+obj-$(CONFIG_LCD_KIT_QCOM) 	+= isl98608.o
 
 EXTRA_CFLAGS +=-I$(srctree)/drivers/staging/android \
 		-I$(srctree)/drivers/atfdriver \

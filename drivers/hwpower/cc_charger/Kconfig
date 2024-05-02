@@ -4,5 +4,3 @@ config CHARGE_MANAGER
 	default n
 
 
-
-

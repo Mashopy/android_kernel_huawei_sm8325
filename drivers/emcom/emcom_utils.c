@@ -16,10 +16,10 @@ MODULE_LICENSE("GPL");
 
 emcom_support_enum g_modem_emcom_support = MODEM_NOT_SUPPORT_EMCOM;
 
-void Emcom_Ind_Modem_Support(uint8_t enSupport)
+void emcom_ind_modem_support(uint8_t en_support)
 {
 	emcom_logd("g_modem_emcom_support:%d\n", g_modem_emcom_support);
-	g_modem_emcom_support = (emcom_support_enum)enSupport;
+	g_modem_emcom_support = (emcom_support_enum)en_support;
 }
 
 bool emcom_is_modem_support(void)

@@ -1291,17 +1291,26 @@ static ssize_t tp_ud_lowpower_ctrl_store(struct device *dev,
 		thp_log_err("%s: illegal input, ret = %d\n", __func__, ret);
 		return -EINVAL;
 	}
+	mutex_lock(&cd->thp_tp_lowpower_cmd_lock);
 	cd->tp_ud_lowpower_status = status;
 	thp_log_info("%s: update lowpower_status: %u\n", __func__, status);
+	thp_log_info("%s : aod_state_flag value %u\n", __func__, cd->aod_state_flag);
+	if (cd->aod_state_flag && cd->work_status != SUSPEND_DONE) {
+		mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
+		return count;
+	}
 	if (!cd->thp_dev->ops->tp_lowpower_ctrl) {
 		thp_log_err("%s: ops is NULL\n", __func__);
+		mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
 		return -EINVAL;
 	}
 	ret = cd->thp_dev->ops->tp_lowpower_ctrl(cd->thp_dev, status);
 	if (ret < 0) {
 		thp_log_err("%s: lowpower ctrl error, %d\n", __func__, ret);
+		mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
 		return -EINVAL;
 	}
+	mutex_unlock(&cd->thp_tp_lowpower_cmd_lock);
 	return count;
 }
 

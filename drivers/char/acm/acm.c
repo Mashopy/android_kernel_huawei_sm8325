@@ -835,15 +835,16 @@ static char *remain_first_dname(char *path)
 	return path;
 }
 
+// inputparam path can ensure from struct acm_lnode, the actual len is ACM_PATH_MAX=1024
 static void asterisk_path(char *path)
 {
+	const unsigned int asterisk_fixed_length = 6;
 	unsigned long i;
-	size_t len;
 
-	len = get_valid_strlen(path, ACM_DNAME_MAX);
-
-	for (i = 0; i < len; i++)
+	for (i = 0; i < asterisk_fixed_length; i++)
 		*(path + i) = '*';
+
+	path[asterisk_fixed_length] = '\0';
 }
 
 void remove_user_dir(struct acm_lnode *node)

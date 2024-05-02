@@ -53,10 +53,12 @@ static const struct dc_device_name_info g_dc_device_name[DC_DEVICE_ID_END] = {
 	{ SWITCHCAP_SC8545, "sc_sc8545", "sc8545" },
 	{ SWITCHCAP_SC8546, "sc_sc8546", "sc8546" },
 	{ SWITCHCAP_CPS2021, "sc_cps2021", "cps2021" },
+	{ SWITCHCAP_HL7136, "sc_hl7136", "hl7136" },
 	{ SWITCHCAP_HL7139, "sc_hl7139", "hl7139" },
 	{ SWITCHCAP_NU2105, "sc_nu2105", "nu2105" },
 	{ SWITCHCAP_AW32280, "sc_aw32280", "aw32280" },
 	{ SWITCHCAP_SC8562, "sc_sc8562", "sc8562" },
+	{ SWITCHCAP_SC8565, "sc_sc8565", "sc8565" },
 	{ SWITCHCAP_SGM41600,"sc_sgm41600","sgm41600" },
 };
 

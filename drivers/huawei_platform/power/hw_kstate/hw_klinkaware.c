@@ -41,6 +41,7 @@ static unsigned int key_data_len = DEFAULT_KEY_DATA_LEN;
 static uint8_t key_word[KEY_WORD_MAX] = {0x17, 0xf1, 0x04, 0x00};
 
 static void process_dl_data(struct sock *sk, uint8_t *user_data, unsigned int len);
+static int process_dl_proxy_data(struct sock *sk);
 
 void pg_hook_dl_stub(struct sock *sk, struct sk_buff *skb, unsigned int len)
 {
@@ -55,6 +56,9 @@ void pg_hook_dl_stub(struct sock *sk, struct sk_buff *skb, unsigned int len)
 		pr_err("invalid parameter");
 		return;
 	}
+
+	if (process_dl_proxy_data(sk) == 0)
+		return;
 
 	if (skb->len < len + KEY_WORD_MAX) {
 		pr_err("len is too short");
@@ -126,4 +130,15 @@ static void process_dl_data(struct sock *sk, uint8_t *user_data, unsigned int le
 		type = MESSAGE_CALL;
 		report_link_info(type, uid);
 	}
+}
+
+static int process_dl_proxy_data(struct sock *sk)
+{
+	uid_t uid;
+
+	uid = sock_i_uid(sk).val;
+	if (!is_match_key_uid(uid))
+		return -1 ;
+
+	return hw_packet_cb(uid, -1);
 }

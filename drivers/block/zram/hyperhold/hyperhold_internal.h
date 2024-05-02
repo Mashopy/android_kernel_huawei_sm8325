@@ -21,7 +21,7 @@
 
 #ifndef HYPERHOLD_INTERNAL_H
 #define HYPERHOLD_INTERNAL_H
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #include <linux/bio.h>
 #include <linux/kref.h>
 #endif
@@ -34,7 +34,7 @@
 #define EXTENT_SECTOR_SIZE	(EXTENT_PG_CNT << 3)
 
 #define MAX_FAIL_RECORD_NUM	10
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #define BLOCK_SECTOR_SHIFT	3
 #endif
 
@@ -56,6 +56,10 @@ static inline void pr_none(void) {}
 
 #define hh_print(l, f, ...) \
 	(l <= cur_lvl() ? pt(f, ##__VA_ARGS__) : pr_none())
+
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+struct block_device *hyperhold_bdev(void);
+#endif
 
 int hyperhold_loglevel(void);
 
@@ -102,7 +106,7 @@ enum hyperhold_fail_point {
 	HYPERHOLD_FAULT_OUT_IO_FAIL,
 	HYPERHOLD_FAIL_POINT_BUTT
 };
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 enum hp_sapce_type {
 	HP_PATTION_SPACE = 0,
 	HP_FILE_SPACE,
@@ -176,7 +180,7 @@ struct hyperhold_stat {
 	atomic64_t reout_bytes;
 	atomic64_t zram_stored_pages;
 	atomic64_t zram_stored_size;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	atomic64_t parfile_stored_pages;
 	atomic64_t parfile_stored_size;
 #endif
@@ -216,7 +220,7 @@ struct hyperhold_entry {
 };
 
 struct hyperhold_io {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	struct zram *zram;
 #else
 	struct block_device *bdev;
@@ -227,7 +231,7 @@ struct hyperhold_io {
 	void *private;
 	struct hyperhold_key_point_record *record;
 };
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 struct hyperhold_io_req {
 	struct hyperhold_io io_para;
 	struct kref refcount;
@@ -260,7 +264,9 @@ struct hyperhold_segment {
 	u32 bio_result;
 	bool to_par_file;
 };
+#endif
 
+#ifdef CONFIG_RAMTURBO
 struct space_para_cfg {
 	unsigned long space_type;
 	unsigned long space_size;
@@ -282,6 +288,9 @@ struct space_info_para {
 	unsigned long file_inited_num;
 	unsigned long par_file_num;
 	bool enable_par_file;
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	struct block_device *userdata_bdev;
+#endif
 };
 
 struct hyperhold_file_ops {
@@ -325,7 +334,7 @@ struct page *hyperhold_alloc_page(
 
 void hyperhold_page_recycle(struct page *page,
 		struct hyperhold_page_pool *pool);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 int hyperhold_health_check(struct block_device *bdev);
 #endif
 
@@ -461,7 +470,7 @@ void memcg_idle_dec(struct zram *zram, u32 index);
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
 struct blk_crypto_key *hyperhold_get_crypto_key_base(void);
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 sector_t hyperhold_get_sector(int ext_id);
 bool hyperhold_is_file_space(void);
 struct hyperhold_file_ops *hyperhold_get_file_ops(void);
@@ -469,7 +478,12 @@ struct space_para_cfg *hyperhold_space_para(void);
 struct space_info_para *hyperhold_space_info(void);
 void hyperhold_set_cfg(void);
 bool hyperhold_get_cfg(void);
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+int hyperhold_expend_space(bool en);
+int hyperhold_space_sector_init(void);
+#else
 void hyperhold_expend_space(bool en);
+#endif
 int hyperhold_alloc_space(struct zram *zram);
 int hyperhold_free_filespace(void);
 void hyperhold_space_sector_deinit(void);
@@ -479,10 +493,12 @@ int hyperhold_set_space(struct blk_hp_set_space *space_setting);
 unsigned long hperhold_get_max_ext_num(void);
 unsigned long hyperhold_file_bit2id(unsigned long bit);
 unsigned long hyperhold_file_id2bit(unsigned long ext_id);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 bool hyperhold_get_par_file_enable(void);
 int hyperhold_space_file_sector_init(void);
 bool io_spacetype_different(struct hyperhold_segment *segment,
 	struct hyperhold_entry *io_entry);
 bool ext_to_par_file(int ext_id);
+#endif
 #endif
 #endif

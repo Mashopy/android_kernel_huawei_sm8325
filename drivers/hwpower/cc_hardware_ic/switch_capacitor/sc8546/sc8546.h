@@ -34,18 +34,37 @@
 #include <linux/irq.h>
 #include <linux/raid/pq.h>
 #include <linux/bitops.h>
+#include <linux/completion.h>
 #include <chipset_common/hwpower/common_module/power_log.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_error_handle.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_ic.h>
 
 #define SCP_MAX_DATA_LEN           32
 #define UFCS_MAX_IRQ_LEN           2
+#define SC8546_UFCS_RX_BUF_SIZE    125
+
+#define SC8546_COMP_MAX_NUM        2
+
+enum sc8546_info {
+	SC8546_INFO_IC_NAME = 0,
+	SC8546_INFO_MAX_IBAT,
+	SC8546_INFO_IBUS_OCP,
+	SC8546_INFO_TOTAL,
+};
+
+struct sc8546_mode_para {
+	char ic_name[CHIP_DEV_NAME_LEN];
+	int max_ibat;
+	int ibus_ocp;
+};
 
 struct sc8546_device_info {
 	struct i2c_client *client;
 	struct device *dev;
 	struct work_struct irq_work;
 	struct work_struct charge_work;
+	struct delayed_work ufcs_msg_update_work;
+	struct workqueue_struct *msg_update_wq;
 	struct notifier_block event_nb;
 	struct nty_data notify_data;
 	struct mutex scp_detect_lock;
@@ -56,6 +75,10 @@ struct sc8546_device_info {
 	struct dc_ic_ops lvc_ops;
 	struct dc_batinfo_ops batinfo_ops;
 	struct power_log_ops log_ops;
+	struct sc8546_mode_para sc8546_sc_para;
+	struct completion sc8546_add_msg_completion;
+	struct completion sc8546_ufcs_read_msg_completion;
+	struct completion sc8546_ufcs_msg_update_completion;
 	char name[CHIP_DEV_NAME_LEN];
 	int gpio_int;
 	int irq_int;
@@ -80,9 +103,13 @@ struct sc8546_device_info {
 	u8 scp_data[SCP_MAX_DATA_LEN];
 	u8 scp_op;
 	u8 scp_op_num;
+	bool plugged_state;
 	bool scp_trans_done;
 	bool fcp_support;
 	bool ufcs_communicating_flag;
+	bool ufcs_msg_ready_flag;
+	u8 ufcs_pending_msg[SC8546_UFCS_RX_BUF_SIZE];
+	int ufcs_pending_msg_len;
 };
 
 struct sc8646_dump_value {
@@ -548,6 +575,10 @@ struct sc8646_dump_value {
 #define SC8546_SCP_ENABLE                      1
 #define SC8546_SCP_DISABLE                     0
 #define SC8546_SCP_TRANS_RESET                 1
+
+#define SC8546_OTG_EN_REG                      0x3B
+#define SC8546_OTG_EN_MASK                     BIT(2)
+#define SC8546_OTG_EN_SHIFT                    2
 
 /* COMPATY_PROTOCOL reg=0x3D */
 #define SC8546_COMPATY_PROTOCOL_REG            0x3D

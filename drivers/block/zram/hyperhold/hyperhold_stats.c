@@ -112,7 +112,7 @@ static void hyperhold_area_info_show(struct seq_file *m,
 	seq_printf(m, "hyperhold_store_ori_size:%lld\n",
 		atomic64_read(&stat->stored_pages) >>
 			(MBYTE_SHIFT - PAGE_SHIFT));
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	seq_printf(m, "hyperhold_parfile_store_comp_size:%lld\n",
 		atomic64_read(&stat->parfile_stored_size) >> MBYTE_SHIFT);
 	seq_printf(m, "hyperhold_parfile_store_ori_size:%lld\n",
@@ -254,7 +254,7 @@ unsigned long long hyperhold_read_mcg_stats(struct mem_cgroup *mcg,
 	case MCG_DISK_STORED_PG_SZ:
 		val = atomic64_read(&mcg->hyperhold_stored_pages);
 		break;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	case MCG_DISK_FILE_STORED_SZ:
 		val = atomic64_read(&mcg->hyperhold_parfile_stored_size);
 		break;

@@ -2454,8 +2454,8 @@ static int bk_enable_cali_mode(int enable, void *dev_data)
 
 static struct coul_cali_ops bk_cali_ops = {
 	.dev_name = "aux",
-	.get_current = bk_get_calibration_curr,
-	.get_voltage = bk_get_calibration_vol,
+	.get_cali_current = bk_get_calibration_curr,
+	.get_cali_voltage = bk_get_calibration_vol,
 	.set_current_gain = bk_set_current_gain,
 	.set_voltage_gain = bk_set_voltage_gain,
 	.set_cali_mode = bk_enable_cali_mode,

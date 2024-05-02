@@ -241,6 +241,7 @@ struct himax_thp_private_data {
 	u32 himax_gesture_need_lcd_rst;
 	u32 himax_gesture_need_msleep_for_qcom;
 	u32 himax_ic_83102_no_flash;
+	u32 himax_retry_read_projectid_from_lcd;
 };
 struct himax_thp_private_data thp_private_data;
 static struct spi_device *hx_spi_dev;
@@ -831,6 +832,10 @@ static int thp_parse_ic_feature_config(struct thp_device *tdev,
 	thp_of_property_read_u32(hx83112_node,
 		"himax_gesture_need_msleep_for_qcom",
 		&himax_p->himax_gesture_need_msleep_for_qcom);
+
+	thp_of_property_read_u32(hx83112_node,
+		"allow_retry_read_projectid_from_lcd",
+		&himax_p->himax_retry_read_projectid_from_lcd);
 
 	return 0;
 }
@@ -1556,10 +1561,12 @@ int touch_driver_83102_chip_detect(struct thp_device *tdev)
 #ifdef CONFIG_VMAP_STACK
 	size_t size_xfer;
 #endif
+	struct thp_core_data *cd = NULL;
 	if (!tdev) {
 		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
+	cd = tdev->thp_core;
 #ifdef CONFIG_VMAP_STACK
 	g_dma_rx_buf = (uint8_t *)(tdev->rx_buff);
 	if (!g_dma_rx_buf) {
@@ -1595,7 +1602,22 @@ int touch_driver_83102_chip_detect(struct thp_device *tdev)
 		ret =  touch_driver_read_panel_info(tdev);
 		if (ret) {
 			thp_log_err("%s: read panel info  fail\n", __func__);
-			return -EINVAL;
+			if (himax_p->himax_retry_read_projectid_from_lcd) {
+				thp_log_err("%s: try read tp info from lcd\n", __func__);
+				if (g_huawei_project_id)
+					kfree(g_huawei_project_id);
+				g_huawei_project_id = kcalloc((THP_PROJECT_ID_LEN),
+					sizeof(*g_huawei_project_id), GFP_KERNEL);
+				if (!g_huawei_project_id) {
+					thp_log_err("%s: Fail kcalloc memory for project id\n",
+						__func__);
+					return -EINVAL;
+				}
+				memcpy(g_huawei_project_id, cd->project_id, THP_PROJECT_ID_LEN);
+				return NO_ERR;
+			} else {
+				return -EINVAL;
+			}
 		}
 	}
 	/* Get tp_color */

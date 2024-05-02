@@ -15,6 +15,7 @@
  * GNU General Public License for more details.
  *
  */
+#define RESET_SPI_IDLE_CHECK    0
 
 void check_cx_idle_state(const __le64 cur_acc_duration, const s64 now);
 void check_spi_idle_state(const s64 now);

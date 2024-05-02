@@ -123,6 +123,30 @@ config WIRELESS_MT5785
 	  and also supports various proprietary fast charging
 	  protocols used by major smart phone OEM.
 
+config WIRELESS_CPS8601
+	bool "wireless cps8601"
+	depends on WIRELESS_CHARGER
+	default n
+	help
+	  Say Y here to enable cps8601 driver.
+	  The cps8601 is an soc for magnetic induction
+	  based wireless power receiver. it is fully compliant
+	  with latest WPC Qi specification of BPP and EPP
+	  and also supports various proprietary fast charging
+	  protocols used by major smart phone OEM.
+
+config WIRELESS_MT5806
+	bool "wireless MT5806"
+	depends on WIRELESS_CHARGER
+	default n
+	help
+	  Say Y here to enable MT5806 driver.
+	  The MT5806 is an soc for magnetic induction
+	  based wireless power receiver. it is fully compliant
+	  with latest WPC Qi specification of BPP and EPP
+	  and also supports various proprietary fast charging
+	  protocols used by major smart phone OEM.
+
 config WIRELESS_IDTP9415
 	bool "wireless idt9415"
 	depends on WIRELESS_CHARGER

@@ -169,6 +169,7 @@ struct smartpakit_i2c_priv {
 	int probe_completed;
 
 	bool sync_irq_debounce_time;
+	bool reset_gpio_requested;
 
 	/* reset */
 	unsigned int reset_debounce_wait_time;
@@ -208,6 +209,7 @@ struct smartpakit_i2c_priv {
 	void *priv_data;
 	struct device *dev;
 	struct i2c_client *i2c;
+	struct wakeup_source *wake_lock;
 };
 
 /* param node from hal_driver XXX.xml */
@@ -261,7 +263,7 @@ struct simple_pa_id_match_check {
 struct simple_pa_id_info {
 	int pa_id_enable;
 	unsigned int pa_id_status;
-	int gpio_id_num;
+	unsigned int gpio_id_num;
 	bool support_id_pinctrl;
 	struct smartpakit_switch_node *pa_id_ctl;
 	int id_match_check_num;

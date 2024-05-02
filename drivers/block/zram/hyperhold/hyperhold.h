@@ -77,7 +77,7 @@ extern bool ramturbo_enable(void);
 #endif
 
 extern void hyperhold_get_page_stat(u64 *orig, u64 *compr);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 extern int hyperhold_ioctl(struct block_device *bdev, fmode_t mode,
 				unsigned int cmd, unsigned long arg);
 #endif

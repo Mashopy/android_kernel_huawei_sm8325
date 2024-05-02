@@ -61,6 +61,7 @@ struct stm32g031_device_info {
 	int fw_ver_id;
 	int fw_size;
 	u8 *fw_data;
+	bool plugged_state;
 	bool is_low_power_mode;
 	bool ufcs_communicating_flag;
 	struct mutex scp_detect_lock;

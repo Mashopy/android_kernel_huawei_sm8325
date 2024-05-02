@@ -75,10 +75,10 @@
 #define MT5735_PINCTRL_LEN                   2
 
 /* for coil test */
-#define MT5735_COIL_TEST_PING_INTERVAL       0
+#define MT5735_COIL_TEST_PING_INTERVAL       1
 #define MT5735_COIL_TEST_PING_FREQ           115
 /* for battery heating */
-#define MT5735_BAT_HEATING_PING_INTERVAL     0
+#define MT5735_BAT_HEATING_PING_INTERVAL     1
 #define MT5735_BAT_HEATING_PING_FREQ         100
 
 struct mt5735_chip_info {

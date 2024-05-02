@@ -407,8 +407,8 @@ static void lcd_kit_power_regulate_vsp_set(struct regulate_bias_desc *cmds)
 		LCD_KIT_ERR("cmds is null point!\n");
 		return;
 	}
-	cmds->min_uV = power_hdl->lcd_vsp.buf[POWER_VOLTAGE];
-	cmds->max_uV = power_hdl->lcd_vsp.buf[POWER_VOLTAGE];
+	cmds->min_uv = power_hdl->lcd_vsp.buf[POWER_VOLTAGE];
+	cmds->max_uv = power_hdl->lcd_vsp.buf[POWER_VOLTAGE];
 	cmds->wait = power_hdl->lcd_vsp.buf[POWER_NUMBER];
 }
 
@@ -418,8 +418,8 @@ static void lcd_kit_power_regulate_vsn_set(struct regulate_bias_desc *cmds)
 		LCD_KIT_ERR("cmds is null point!\n");
 		return;
 	}
-	cmds->min_uV = power_hdl->lcd_vsn.buf[POWER_VOLTAGE];
-	cmds->max_uV = power_hdl->lcd_vsn.buf[POWER_VOLTAGE];
+	cmds->min_uv = power_hdl->lcd_vsn.buf[POWER_VOLTAGE];
+	cmds->max_uv = power_hdl->lcd_vsn.buf[POWER_VOLTAGE];
 	cmds->wait = power_hdl->lcd_vsn.buf[POWER_NUMBER];
 }
 #if  defined(MTK_RT5081_PMU_CHARGER_SUPPORT) || defined(MTK_MT6370_PMU)

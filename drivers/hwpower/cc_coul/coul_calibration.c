@@ -165,13 +165,13 @@ static int coul_cali_get_data(unsigned int offset, int *value, void *dev_data)
 		*value = g_coul_cali_data[mode][offset];
 		return 0;
 	case COUL_CALI_PARA_CUR:
-		if (!l_ops || !l_ops->get_current)
+		if (!l_ops || !l_ops->get_cali_current)
 			return 0;
-		return l_ops->get_current(value, l_ops->dev_data);
+		return l_ops->get_cali_current(value, l_ops->dev_data);
 	case COUL_CALI_PARA_VOL:
-		if (!l_ops || !l_ops->get_voltage)
+		if (!l_ops || !l_ops->get_cali_voltage)
 			return 0;
-		return l_ops->get_voltage(value, l_ops->dev_data);
+		return l_ops->get_cali_voltage(value, l_ops->dev_data);
 	default:
 		return -EPERM;
 	}

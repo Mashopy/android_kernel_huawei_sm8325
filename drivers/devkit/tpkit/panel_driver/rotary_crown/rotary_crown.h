@@ -1,7 +1,8 @@
 /*
- * head file for rotary crown driver
+ * rotary_crown.h
+ * Rotary Crown driver
  *
- * Copyright (c) 2020-2020 Huawei Technologies Co., Ltd.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2023-2023. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -30,13 +31,20 @@
 #include <linux/fb.h>
 #include <linux/pm.h>
 #include <linux/ctype.h>
+
 #include <huawei_platform/log/hw_log.h>
+#ifdef CONFIG_LCD_KIT_HYBRID
+#include "huawei_ts_kit_hybrid_core.h"
+#endif
 
 #ifndef NULL
 #define NULL 0
 #endif
 
 // hw log define
+#ifdef HWLOG_TAG
+#undef HWLOG_TAG
+#endif
 #define HWLOG_TAG   ROTARY_CROWN
 
 HWLOG_REGIST();
@@ -61,6 +69,8 @@ HWLOG_REGIST();
 #define ROTARY_CROWN_DRV_NAME       "rotary_crown"
 #define ROTARY_IRQ_GPIO             "irq_gpio"
 #define ROTARY_CROWN_INPUT_DEV_NAME "rotary_crown"
+#define ROTARY_CROWN_TARGET_X       "target_x"
+#define ROTARY_CROWN_NV_NUMBER      "nv_number"
 
 // chip define
 #define ROTARY_REG_ADDR_LEN         1
@@ -69,6 +79,7 @@ HWLOG_REGIST();
 #define ROTARY_DELAY_1_MS           1
 #define ROTARY_READ_DELTA_DELAY     10
 #define ROTARY_READ_MOTION_TIMES    3
+#define ROTARY_SMOOTH_DATA_NUM      5
 #define ROTARY_MOTION_VALID_MASK    0x80
 #define ROTARY_HIGH_DELTA_SHIFT     4
 #define ROTARY_HIGH_DELTA_SIGH_MASK 0x0800
@@ -95,13 +106,20 @@ HWLOG_REGIST();
 #define PA_ENTER_SLEEP1_MODE  0xB2 // enter sleep 1 mode
 
 // nv define
-#define RC_RES_NV_DATA_SIZE 12
+#define RC_RES_NV_DATA_SIZE 4
 #define NV_READ_TIMEOUT 30
-#define NV_NUMBER_VALUE 435
+#define NV_WRITE_OPERATION 0
 #define NV_READ_OPERATION 1
 #define RC_NV_NAME_LEN 6
 #define ROTARY_MIN_RES_X    ((PA_X_RES_VALUE * 9) / 10)
 #define ROTARY_MAX_RES_X    ((PA_X_RES_VALUE * 11) / 10)
+
+// timer call back recovery duration
+#define CROWN_RECOVERY_TIME 5
+// timer call back check duration
+#define CROWN_CHECK_TIME 1
+// startup read times
+#define MAX_READ_NV_TIMES 10
 
 /* reg address map */
 enum {
@@ -134,19 +152,18 @@ struct rotary_crown_data {
 	struct device *dev;
 	struct input_dev *input_dev;
 	struct work_struct work;
-#if defined(CONFIG_FB)
-	struct notifier_block fb_notif;
-#elif defined(CONFIG_HAS_EARLYSUSPEND)
-	struct early_suspend early_suspend;
-#endif // CONFIG_HAS_EARLYSUSPEND
-	uint16_t chip_id;
+	uint16_t target_x;
+	uint16_t nv_number;
 	uint8_t is_suspend;
-	uint8_t irq_is_use;
 	uint8_t is_one_byte;
 	uint8_t is_init_ok;
 	uint8_t sys_file_ok;
 	uint8_t res_x_nv;
+	uint8_t is_working;
+	uint8_t is_calib_test;
 	int irq_gpio;
+	uint irq_cnt;
+	uint nv_status_count;
 	struct pinctrl *rc_pinctrl;
 	struct pinctrl_state *pinctrl_state_active;
 	struct pinctrl_state *pinctrl_state_suspend;

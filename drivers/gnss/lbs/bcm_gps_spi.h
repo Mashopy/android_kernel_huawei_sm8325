@@ -223,6 +223,8 @@ struct bcm_spi_priv {
 	/* Overrun counter */
 	unsigned long skip_count;
 	unsigned long last_tick;
+
+	struct wakeup_source *bcmspi_wakelock;
 };
 
 /*

@@ -21,7 +21,7 @@
 #include <linux/usb/ch9.h>
 
 #ifdef CONFIG_USB_CONFIGFS_F_ACC
-extern int acc_ctrlrequest(struct usb_composite_dev *cdev,
+extern int acc_ctrlrequest_composite(struct usb_composite_dev *cdev,
 				const struct usb_ctrlrequest *ctrl);
 void acc_disconnect(void);
 #endif
@@ -1626,7 +1626,7 @@ static int android_setup(struct usb_gadget *gadget,
 
 #ifdef CONFIG_USB_CONFIGFS_F_ACC
 	if (value < 0)
-		value = acc_ctrlrequest(cdev, c);
+		value = acc_ctrlrequest_composite(cdev, c);
 #endif
 
 	if (value < 0)
@@ -1695,6 +1695,13 @@ static void configfs_composite_disconnect(struct usb_gadget *gadget)
 	spin_lock_irqsave(&gi->spinlock, flags);
 	cdev = get_gadget_data(gadget);
 	if (!cdev || gi->unbind) {
+#ifdef CONFIG_HW_GADGET
+#ifdef CONFIG_USB_CONFIGFS_UEVENT
+		gi->connected = false;
+		if (cdev && !gi->unbinding)
+			schedule_work(&gi->work);
+#endif
+#endif
 		spin_unlock_irqrestore(&gi->spinlock, flags);
 		WARN(1, "%s: gadget driver already disconnected\n", __func__);
 		return;

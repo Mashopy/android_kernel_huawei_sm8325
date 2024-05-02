@@ -140,6 +140,8 @@ struct batt_ct_ops {
 		const unsigned char **type, unsigned int *type_len);
 	int (*get_batt_sn)(struct platform_device *pdev, struct power_genl_attr *res,
 		const unsigned char **sn, unsigned int *sn_len_bits);
+	int (*get_batt_code)(struct platform_device *pdev, struct power_genl_attr *res,
+		const unsigned char **code, unsigned int *code_len_bits);
 	int (*prepare)(struct platform_device *pdev, enum res_type type,
 		struct power_genl_attr *res);
 	int (*certification)(struct platform_device *pdev, struct power_genl_attr *res,
@@ -241,6 +243,8 @@ struct batt_ct_wrapper_ops {
 		const unsigned char **type, unsigned int *type_len);
 	int (*get_batt_sn)(struct batt_chk_data *data, struct power_genl_attr *res,
 		const unsigned char **sn, unsigned int *sn_len_bits);
+	int (*get_batt_code)(struct batt_chk_data *data, struct power_genl_attr *res,
+		const unsigned char **code, unsigned int *code_len_bits);
 	int (*prepare)(struct batt_chk_data *data, enum res_type type,
 		struct power_genl_attr *res);
 	int (*certification)(struct batt_chk_data *data, struct power_genl_attr *res,

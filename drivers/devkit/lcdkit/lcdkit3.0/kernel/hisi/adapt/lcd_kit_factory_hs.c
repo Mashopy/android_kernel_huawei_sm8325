@@ -301,7 +301,7 @@ static int lcd_hor_line_test(struct hisi_fb_data_type *hisifd)
 	/* disable esd check */
 	lcd_esd_enable(hisifd, 0);
 	/* disable elvdd detect */
-	disp_info->elvdd_detect.support = 0;
+	DISP_INFO->elvdd_detect.support = 0;
 	while (count--) {
 		/* hardware reset */
 		if (!FACT_INFO->hor_line.hl_no_reset)
@@ -668,7 +668,7 @@ int poweric_set_elvdd(struct hisi_fb_data_type *hisifd,
 			hisifd->panel_info.poweric_status[i] = POWERIC_ERR;
 			break;
 		}
-		LCD_KIT_INFO("disp_info->poweric_detect.gpio_list.buf[j] = %d\n",
+		LCD_KIT_INFO("DISP_INFO->poweric_detect.gpio_list.buf[j] = %d\n",
 			FACT_INFO->poweric_detect.gpio_list.buf[j]);
 		/* enable gpio */
 		poweric_gpio_ctl(j, PULL_TYPE_NOR);
@@ -800,8 +800,8 @@ static ssize_t lcd_amoled_cmds_pcd_errflag(struct device *dev,
 		return LCD_KIT_FAIL;
 	}
 	if (hisifd->panel_power_on) {
-		if (disp_info->pcd_errflag.pcd_support ||
-			disp_info->pcd_errflag.errflag_support) {
+		if (DISP_INFO->pcd_errflag.pcd_support ||
+			DISP_INFO->pcd_errflag.errflag_support) {
 			check_result = lcd_kit_check_pcd_errflag_check(hisifd);
 			ret = snprintf(buf, PAGE_SIZE, "%d\n", check_result);
 			LCD_KIT_INFO("pcd_errflag, the check_result = %d\n",
@@ -851,8 +851,8 @@ static ssize_t lcd_amoled_pcd_errflag_show(struct device *dev,
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->pcd_errflag.pcd_support ||
-		disp_info->pcd_errflag.errflag_support)
+	if (DISP_INFO->pcd_errflag.pcd_support ||
+		DISP_INFO->pcd_errflag.errflag_support)
 		ret = lcd_amoled_cmds_pcd_errflag(dev, attr, buf);
 	else
 		ret = lcd_amoled_gpio_pcd_errflag(dev, attr, buf);
@@ -1129,7 +1129,7 @@ static int lcd_vtc_line_test(struct hisi_fb_data_type *hisifd,
 		/* disable esd */
 		lcd_esd_enable(hisifd, 0);
 		/* disable elvdd detect */
-		disp_info->elvdd_detect.support = 0;
+		DISP_INFO->elvdd_detect.support = 0;
 		/* lcd panel set bias */
 		lcd_vtc_line_set_bias_voltage(hisifd);
 		/* hardware reset */

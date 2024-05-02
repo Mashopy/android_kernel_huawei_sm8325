@@ -221,7 +221,6 @@ static int sle95250_get_batt_type(struct platform_device *pdev,
 	return 0;
 }
 
-#ifdef BATTBD_FORCE_MATCH
 static void sle95250_bin2prt(uint8_t *sn_print,
 	uint8_t *sn_bin, int sn_print_size)
 {
@@ -257,7 +256,6 @@ static void sle95250_bin2prt(uint8_t *sn_print,
 		}
 	}
 }
-#endif
 
 static int sle95250_get_batt_sn(struct platform_device *pdev,
 	struct power_genl_attr *res, const unsigned char **sn, unsigned int *sn_size)
@@ -331,6 +329,59 @@ get_sn_fail:
 	batt_turn_on_all_cpu_cores();
 	return -EINVAL;
 #endif /* BATTBD_FORCE_MATCH */
+}
+
+static int sle95250_get_batt_code(struct platform_device *pdev,
+	struct power_genl_attr *res, const unsigned char **code, unsigned int *code_size)
+{
+	int ret;
+	uint8_t rty;
+	uint8_t code_bin[SLE95250_SN_BIN_LEN] = { 0 };
+	char code_print[SLE95250_SN_ASC_LEN + 1] = { 0 };
+	struct sle95250_dev *di = NULL;
+
+	if (!pdev || !code || !code_size) {
+		hwlog_err("[%s] pointer NULL\n", __func__);
+		return 0;
+	}
+
+	(void)res;
+	di = platform_get_drvdata(pdev);
+	if (!di)
+		return 0;
+
+	for (rty = 0; rty < SLE95250_CODE_RTY; rty++) {
+		ret = optiga_nvm_read_with_check(di, SLE95250_RO_AREA,
+			SLE95250_SN_PG_OFFSET, SLE95250_SN_BYT_OFFSET,
+			SLE95250_SN_BIN_LEN - BYT_P_PG_NVM, code_bin);
+		if (ret)
+			continue;
+
+		ret = optiga_nvm_read_with_check(di, SLE95250_RO_AREA,
+			SLE95250_SN_PG_OFFSET + 1, BYT_OFFSET0, BYT_P_PG_NVM,
+			&code_bin[SLE95250_SN_BIN_LEN - BYT_P_PG_NVM]);
+		if (ret)
+			continue;
+
+		break;
+	}
+
+	hwlog_info("[%s] ret:%d, read times:%u\n", __func__, ret, rty);
+
+	if (ret) {
+		hwlog_err("[%s] fail\n", __func__);
+		return -EINVAL;
+	}
+
+	sle95250_bin2prt(code_print, code_bin, SLE95250_SN_ASC_LEN + 1);
+
+	memcpy(di->mem.code, code_print, SLE95250_SN_ASC_LEN);
+	*code = di->mem.code;
+	*code_size = SLE95250_SN_ASC_LEN;
+
+	hwlog_info("[%s] succ\n", __func__);
+
+	return 0;
 }
 
 static int sle95250_certification(struct platform_device *pdev,
@@ -955,6 +1006,7 @@ static int sle95250_ct_ops_register(struct platform_device *pdev,
 	bco->get_ic_uuid = sle95250_get_uid;
 	bco->get_batt_type = sle95250_get_batt_type;
 	bco->get_batt_sn = sle95250_get_batt_sn;
+	bco->get_batt_code = sle95250_get_batt_code;
 	bco->certification = sle95250_certification;
 	bco->set_act_signature = sle95250_set_act_signature;
 	bco->prepare = sle95250_prepare;

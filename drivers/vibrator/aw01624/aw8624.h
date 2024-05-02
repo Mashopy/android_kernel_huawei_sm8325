@@ -81,6 +81,7 @@
 #define AW8624_LONG_WAV_8_CYL       15
 #define AW8624_LONG_SEQ_MAX_TIME    90 // 6 seqs * 15 times
 #define AW8624_MAX_PLAY_TIME        14
+#define HAPTIC_WAKE_LOCK_GAP        400
 
 enum seq_long_cycle_type_t {
 	SEQ_LONG_ONE_CYCLE = 1,
@@ -222,7 +223,6 @@ struct aw8624 {
 	struct mutex lock;
 	struct mutex rtp_lock;
 	struct wakeup_source *ws;
-	unsigned char wk_lock_flag;
 	struct hrtimer timer;
 	struct work_struct vibrator_work;
 	struct work_struct irq_work;

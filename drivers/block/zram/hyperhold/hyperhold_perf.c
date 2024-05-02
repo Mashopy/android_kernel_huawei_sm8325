@@ -28,7 +28,7 @@
 #include <linux/spinlock.h>
 #include <linux/sched/task.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #include <linux/fs.h>
 #endif
 #include "hyperhold_internal.h"

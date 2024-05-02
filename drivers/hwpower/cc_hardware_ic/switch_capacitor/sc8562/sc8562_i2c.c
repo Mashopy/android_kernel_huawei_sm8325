@@ -36,7 +36,7 @@ int sc8562_write_byte(struct sc8562_device_info *di, u8 reg, u8 value)
 
 int sc8562_read_byte(struct sc8562_device_info *di, u8 reg, u8 *value)
 {
-	if (!di || (di->chip_already_init == 0)) {
+	if (!di || !value || (di->chip_already_init == 0)) {
 		hwlog_err("chip not init\n");
 		return -ENODEV;
 	}
@@ -48,7 +48,7 @@ int sc8562_read_word(struct sc8562_device_info *di, u8 reg, s16 *value)
 {
 	u16 data = 0;
 
-	if (!di || (di->chip_already_init == 0)) {
+	if (!di || !value || (di->chip_already_init == 0)) {
 		hwlog_err("chip not init\n");
 		return -ENODEV;
 	}
@@ -60,17 +60,50 @@ int sc8562_read_word(struct sc8562_device_info *di, u8 reg, s16 *value)
 	return 0;
 }
 
+int sc8562_read_block(struct sc8562_device_info *di, u8 reg, u8 *value, u8 len)
+{
+	if (!di || !value || (di->chip_already_init == 0)) {
+		hwlog_err("chip not init\n");
+		return -ENODEV;
+	}
+
+	return power_i2c_read_block(di->client, &reg, 1, value, len);
+}
+
 int sc8562_write_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 shift, u8 value)
 {
-	int ret;
-	u8 val = 0;
+	if (!di || (di->chip_already_init == 0)) {
+		hwlog_err("chip not init\n");
+		return -ENODEV;
+	}
 
-	ret = sc8562_read_byte(di, reg, &val);
-	if (ret < 0)
+	return power_i2c_u8_write_byte_mask(di->client, reg, value, mask, shift);
+}
+
+int sc8562_read_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 shift, u8 *value)
+{
+	if (!di || !value || (di->chip_already_init == 0)) {
+		hwlog_err("chip not init\n");
+		return -ENODEV;
+	}
+
+	return power_i2c_u8_read_byte_mask(di->client, reg, value, mask, shift);
+}
+
+int sc8562_write_multi_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 value)
+{
+	u8 data = 0;
+	int ret;
+
+	if (!di || (di->chip_already_init == 0)) {
+		hwlog_err("chip not init\n");
+		return -ENODEV;
+	}
+
+	ret = power_i2c_u8_read_byte(di->client, reg, &data);
+	if (ret)
 		return ret;
 
-	val &= ~mask;
-	val |= ((value << shift) & mask);
-
-	return sc8562_write_byte(di, reg, val);
+	value = (data & ~mask) | (value & mask);
+	return power_i2c_u8_write_byte(di->client, reg, value);
 }

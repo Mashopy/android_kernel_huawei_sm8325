@@ -437,6 +437,20 @@ int sm5450_get_vbus_mv(int *vbus, void *dev_data)
 	return 0;
 }
 
+int sm5450_get_vbus_uvp_status(void *dev_data)
+{
+	u8 reg = 0;
+	int ret;
+	struct sm5450_device_info *di = dev_data;
+
+	ret = sm5450_read_byte(di, SM5450_FLAG3_REG, &reg);
+	if (ret)
+		return -EIO;
+	hwlog_info("FLAG3 [%x]=0x%x\n", SM5450_FLAG3_REG, reg);
+
+	return (reg & SM5450_FLAG3_VBUSPOK_FLAG_MASK) ? 0 : SM5450_FLAG3_UVP_MODE;
+}
+
 static int sm5450_get_device_temp(int *temp, void *dev_data)
 {
 	u8 reg = 0;
@@ -1231,7 +1245,9 @@ static int sm5450_db_value_dump(struct sm5450_device_info *di,
 	(void)sm5450_get_device_temp(&temp, di);
 	(void)sm5450_read_byte(di, SM5450_CONTROL1_REG, &reg);
 
-	if (((reg & SM5450_CONTROL1_OPMODE_MASK) >> SM5450_CONTROL1_OPMODE_SHIFT) ==
+	if (sm5450_is_device_close(di))
+		snprintf(buff, sizeof(buff), "%s", "OFF    ");
+	else if (((reg & SM5450_CONTROL1_OPMODE_MASK) >> SM5450_CONTROL1_OPMODE_SHIFT) ==
 		SM5450_CONTROL1_FBYPASSMODE)
 		snprintf(buff, sizeof(buff), "%s", "LVC    ");
 	else if (((reg & SM5450_CONTROL1_OPMODE_MASK) >> SM5450_CONTROL1_OPMODE_SHIFT) ==
@@ -1265,7 +1281,7 @@ static int sm5450_dump_reg_value(char *reg_value, int size, void *dev_data)
 		return -EPERM;
 	}
 
-	len = snprintf(reg_value, size, "%s ", di->name);
+	len = snprintf(reg_value, size, "%-10s", di->name);
 	len += sm5450_db_value_dump(di, buff, BUF_LEN);
 	if (len < size)
 		strncat(reg_value, buff, strlen(buff));
@@ -1302,7 +1318,7 @@ static int sm5450_reg_head(char *reg_head, int size, void *dev_data)
 	int tmp;
 	int len = 0;
 	char buff[BUF_LEN] = {0};
-	const char *half_head = "     dev     mode   Ibus   Vbus   Ibat   Vbat   Temp   ";
+	const char *half_head = "dev       mode   Ibus   Vbus   Ibat   Vbat   Temp   ";
 	struct sm5450_device_info *di = dev_data;
 
 	if (!di || !reg_head) {
@@ -1578,8 +1594,8 @@ static int sm5450_notifier_call(struct notifier_block *nb,
 
 	switch (event) {
 	case POWER_NE_USB_DISCONNECT:
-		di->vbat_complete_flag = false;
 		cancel_delayed_work_sync(&di->vbat_work);
+		di->vbat_complete_flag = false;
 		break;
 	case POWER_NE_USB_CONNECT:
 		schedule_delayed_work(&di->vbat_work, msecs_to_jiffies(0));
@@ -1821,6 +1837,10 @@ static void sm5450_shutdown(struct i2c_client *client)
 
 	if (!di)
 		return;
+
+	if (di->irq_int)
+		free_irq(di->irq_int, di);
+	sm5450_enable_adc(0, (void *)di);
 
 	sm5450_reg_reset(di);
 }

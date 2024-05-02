@@ -382,6 +382,9 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	shost->iomt_host_info = NULL;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	shost->mago_latency = NULL;
+#endif
 	shost->host_lock = &shost->default_lock;
 	spin_lock_init(shost->host_lock);
 	shost->shost_state = SHOST_CREATED;

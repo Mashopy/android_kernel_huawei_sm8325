@@ -19,6 +19,7 @@
 
 #include <linux/device.h>
 #include <chipset_common/hwpower/charger/charger_common_interface.h>
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 #include <chipset_common/hwpower/common_module/power_supply_interface.h>
 #include <huawei_platform/hwpower/common_module/power_glink.h>
@@ -32,6 +33,25 @@ HWLOG_REGIST();
 
 static unsigned int g_final_chg_type;
 static bool g_dcp_ever_detected;
+static unsigned int g_qbg_event;
+
+static void qbg_event_work_func(struct work_struct *work);
+static DECLARE_WORK(g_qbg_event_work, qbg_event_work_func);
+
+static void qbg_event_work_func(struct work_struct *work)
+{
+	switch (g_qbg_event) {
+	case POWER_GLINK_NOTIFY_QBG_CHARGE_DONE:
+		power_event_bnc_notify(POWER_BNT_CHG, POWER_NE_CHG_CHARGING_DONE, NULL);
+		huawei_battery_handle_charge_done();
+		break;
+	case POWER_GLINK_NOTIFY_QBG_CHARGE_RECHARGE:
+		power_event_bnc_notify(POWER_BNT_CHG, POWER_NE_CHG_CHARGING_RECHARGE, NULL);
+		break;
+	default:
+		break;
+	}
+}
 
 static void power_glink_handle_stop_charging(void)
 {
@@ -121,14 +141,16 @@ bool is_dcp_ever_detected(void)
 static void power_glink_handle_qbg_message(u32 msg)
 {
 	hwlog_info("%s msg=%u\n", __func__, msg);
+	g_qbg_event = msg;
 	switch (msg) {
 	case POWER_GLINK_NOTIFY_QBG_CHARGE_DONE:
 		charge_set_done_status(CHARGE_DONE);
-		huawei_battery_handle_charge_done();
+		schedule_work(&g_qbg_event_work);
 		hwlog_info("enter into buck charge done\n");
 		break;
 	case POWER_GLINK_NOTIFY_QBG_CHARGE_RECHARGE:
 		charge_set_done_status(CHARGE_DONE_NON);
+		schedule_work(&g_qbg_event_work);
 		hwlog_info("enter into recharge\n");
 		break;
 	default:

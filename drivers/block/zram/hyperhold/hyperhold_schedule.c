@@ -33,13 +33,13 @@
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
 #include <linux/blk-crypto.h>
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #include "zram_drv.h"
 #endif
 #include "hyperhold_internal.h"
 #include <linux/hyperhold_inf.h>
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 /* default key index is zero */
 #define HYPERHOLD_KEY_INDEX 0
 #define HYPERHOLD_KEY_SIZE 64
@@ -67,7 +67,7 @@ union hyperhold_crypt_iv {
 		/* per-file nonce; only set in DIRECT_KEY mode */
 		u8 nonce[HYPERHOLD_KEY_DERIVATION_NONCE_SIZE];
 	};
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	u8 raw[BLK_CRYPTO_MAX_IV_SIZE];
 	__le64 dun[BLK_CRYPTO_DUN_ARRAY_SIZE];
 #else
@@ -75,7 +75,7 @@ union hyperhold_crypt_iv {
 	__le64 dun[BLK_CRYPTO_DUN_ARRAY_SIZE / sizeof(__le64)];
 #endif
 };
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 #ifdef CONFIG_SCSI_UFS_INLINE_CRYPTO
 static u8 hyperhold_io_key[HYPERHOLD_KEY_SIZE];
 static u8 hyperhold_io_metadata[METADATA_BYTE_IN_KDF];
@@ -352,7 +352,7 @@ static void hyperhold_io_end_work(struct work_struct *work)
 	int old_nice = task_nice(current);
 	ktime_t work_start;
 	unsigned long long work_start_ravg_sum;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (unlikely(segment->bio_result)) {
 		hyperhold_io_err_proc(req, segment);
 		return;
@@ -379,41 +379,62 @@ static void hyperhold_io_end_work(struct work_struct *work)
 
 	set_user_nice(current, old_nice);
 #else
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	int preempt_cnt[HYPERHOLD_IO_END_WORK_POINTS]; // log points
 	preempt_cnt[1] = 0; // init point in if-cond
 
 	preempt_cnt[0] = preempt_count();
+#endif
 	if (unlikely(segment->bio_result)) {
 		hyperhold_io_err_proc(req, segment);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 		preempt_cnt[1] = preempt_count();
 		if (preempt_cnt[0] != preempt_cnt[1]) {
 			pr_info("hp-points:hyperhold_io_end_work,"
 				"%d,%d", preempt_cnt[0], preempt_cnt[1]);
 			show_stack(current, NULL);
 		}
+#endif
 		return;
 	}
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[2] = preempt_count();
+#endif
 	set_user_nice(current, req->nice);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[3] = preempt_count();
+#endif
 	hyperhold_perf_async_perf(record, HYPERHOLD_SCHED_WORK,
 		segment->time.end_io, 0);
 	work_start = ktime_get();
 	work_start_ravg_sum = hyperhold_get_ravg_sum();
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[4] = preempt_count();
+#endif
 	hyperhold_io_entry_proc(segment);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[5] = preempt_count();
+#endif
 	hyperhold_perf_async_perf(record, HYPERHOLD_END_WORK, work_start,
 		work_start_ravg_sum);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[6] = preempt_count();
+#endif
 	hyperhold_io_end_wake_up(req);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[7] = preempt_count();
+#endif
 	kref_put_mutex(&req->refcount, hyperhold_io_req_release,
 		&req->refmutex);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[8] = preempt_count();
+#endif
 	kfree(segment);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[9] = preempt_count();
+#endif
 	set_user_nice(current, old_nice);
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	preempt_cnt[10] = preempt_count();
 	if (preempt_cnt[0] != preempt_cnt[10]) {
 		int i;
@@ -422,6 +443,7 @@ static void hyperhold_io_end_work(struct work_struct *work)
 			pr_info("[%d]:%d\n", i, preempt_cnt[i]);
 		show_stack(current, NULL);
 	}
+#endif
 #endif
 }
 
@@ -490,7 +512,7 @@ static bool hyperhold_ext_merge(struct hyperhold_io_req *req,
 
 	if ((segment->page_cnt + io_entry->pages_sz) > BIO_MAX_PAGES)
 		return false;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (io_spacetype_different(segment, io_entry)) {
 		hh_print(HHLOG_DEBUG,
 			"different spacetype between segment and io_entry, \
@@ -527,7 +549,7 @@ static struct bio *hyperhold_bio_alloc(enum hyperhold_scenario scenario)
 
 	return bio;
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 #ifdef CONFIG_HYPERHOLD_CRYPTO_DEBUG
 /* write constant 5A to the dest_pages */
 void hyperhold_crypto_debug(struct hyperhold_entry *io_entry, int i)
@@ -558,7 +580,7 @@ static int hyperhold_bio_add_page(struct bio *bio,
 		for (i = 0; i < io_entry->pages_sz; i++) {
 			io_entry->dest_pages[i]->index =
 				bio->bi_iter.bi_sector + k;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 #ifdef CONFIG_HYPERHOLD_CRYPTO_DEBUG
 			hyperhold_crypto_debug(io_entry, i);
 #endif
@@ -602,12 +624,33 @@ static void hyperhold_set_bio_opf(struct bio *bio,
 #endif
 #endif
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static int hyperhold_bio_set_bdev(struct bio *bio, struct block_device *bdev)
+{
+	struct space_info_para *space_info = hyperhold_space_info();
+
+	if (bdev) {
+		bio_set_dev(bio, bdev);
+		return 0;
+	}
+
+	if (space_info->userdata_bdev) {
+		bio_set_dev(bio, space_info->userdata_bdev);
+		return 0;
+	}
+
+	hh_print(HHLOG_ERR, "bdev is NULL\n");
+	return -EIO;
+}
+#endif
+
 static int hyperhold_bio_set_dev(struct bio *bio, struct hyperhold_segment *segment,
 	bool to_par_file)
 {
 	struct block_device *bdev = NULL;
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	if (!segment->req->io_para.zram) {
 		hh_print(HHLOG_ERR, "null zram\n");
 		return -EIO;
@@ -617,7 +660,6 @@ static int hyperhold_bio_set_dev(struct bio *bio, struct hyperhold_segment *segm
 		bdev = segment->req->io_para.zram->par_bdev;
 	else
 		bdev = segment->req->io_para.zram->bdev;
-
 	if (!bdev) {
 		hh_print(HHLOG_ERR, "null bdev\n");
 		return -EIO;
@@ -631,8 +673,13 @@ static int hyperhold_bio_set_dev(struct bio *bio, struct hyperhold_segment *segm
 	hh_print(HHLOG_DEBUG, "to par file : %d\n", to_par_file);
 
 	return 0;
+#else
+	bdev = segment->req->io_para.bdev;
+	return hyperhold_bio_set_bdev(bio, bdev);
+#endif
 }
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 static int hyperhold_crypto_switch = 1;
 
 void set_hyperhold_crypto_switch(int val)
@@ -644,6 +691,7 @@ int get_hyperhold_crypto_switch(void)
 {
 	return hyperhold_crypto_switch;
 }
+#endif
 #endif
 static int hyperhold_submit_bio(struct hyperhold_segment *segment)
 {
@@ -667,21 +715,25 @@ static int hyperhold_submit_bio(struct hyperhold_segment *segment)
 
 		return -ENOMEM;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	if (unlikely(hyperhold_bio_set_dev(bio, segment, segment->to_par_file))) {
+#else
+	if (unlikely(hyperhold_bio_set_dev(bio, segment, false))) {
+#endif
 		hh_print(HHLOG_ERR, "bio set failed.\n");
 		return -EIO;
 	}
 #endif
 	bio->bi_iter.bi_sector = segment->segment_sector;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE) || !defined(CONFIG_RAMTURBO)
 	bio_set_dev(bio, segment->req->io_para.bdev);
 #endif
 	bio->bi_private = segment;
 	bio_set_op_attrs(bio, op, 0);
 	bio->bi_end_io = hyperhold_end_io;
 	hyperhold_set_bio_opf(bio, segment);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (get_hyperhold_crypto_switch() != 0)
 		hyperhold_bio_encryption_proc(bio);
 #else
@@ -742,7 +794,7 @@ static int hyperhold_new_segment_init(struct hyperhold_io_req *req,
 	segment->page_cnt = io_entry->pages_sz;
 	INIT_WORK(&segment->endio_work, hyperhold_io_end_work);
 	segment->segment_sector = io_entry->addr;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (hyperhold_get_par_file_enable() && ext_to_par_file(io_entry->ext_id)) {
 		segment->to_par_file = true;
 		hh_print(HHLOG_DEBUG,
@@ -781,7 +833,7 @@ static bool hyperhold_check_io_para_err(struct hyperhold_io *io_para)
 
 		return true;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (unlikely(!io_para->zram ||
 		(io_para->scenario >= HYPERHOLD_SCENARIO_BUTT))) {
 #else
@@ -810,16 +862,22 @@ static bool hyperhold_check_entry_err(
 
 	if (unlikely(!io_entry)) {
 		hh_print(HHLOG_ERR, "io_entry null\n");
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 		return true;
 	}
-
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (unlikely((hyperhold_is_file_space() && !io_entry->addr) &&
 		(!hyperhold_get_par_file_enable() || io_entry->ext_id))) {
 		hh_print(HHLOG_ERR, "addr null\n");
-#endif
+
 		return true;
 	}
+#endif
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	if (unlikely(hyperhold_is_file_space() && !io_entry->addr)) {
+		hh_print(HHLOG_ERR, "addr null\n");
+		return true;
+	}
+#endif
 
 	if (unlikely((!io_entry->dest_pages) ||
 		(io_entry->ext_id < 0) ||
@@ -929,7 +987,7 @@ void *hyperhold_plug_start(struct hyperhold_io *io_para)
 	mutex_init(&req->refmutex);
 	atomic_set(&req->extent_inflight, 0);
 	init_waitqueue_head(&req->io_wait);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	req->io_para.zram = io_para->zram;
 #else
 	req->io_para.bdev = io_para->bdev;

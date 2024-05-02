@@ -24,7 +24,7 @@
 #include <linux/blkdev.h>
 #include <linux/atomic.h>
 #include <linux/memcontrol.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 #include <linux/module.h>
 #include <linux/init.h>
 #endif
@@ -45,6 +45,9 @@
 #ifdef CONFIG_BLK_INLINE_ENCRYPTION
 #define HYPERHOLD_DUN_SIZE 8
 #endif
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+#define HYPERHOLD_CREATE_FILE_3G_NUM 1
+#endif
 
 struct zs_ext_para {
 	struct hyperhold_page_pool *pool;
@@ -54,7 +57,7 @@ struct zs_ext_para {
 };
 
 struct hyperhold_cfg {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	bool cfg_flag;
 #endif
 	atomic_t enable;
@@ -66,7 +69,7 @@ struct hyperhold_cfg {
 	struct hyperhold_stat *stat;
 	struct workqueue_struct *reclaim_wq;
 	struct zram *zram;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	sector_t start_sector;
 	struct space_para_cfg space_para;
 	struct space_info_para space_info;
@@ -215,7 +218,7 @@ void hyperhold_page_recycle(struct page *page,
 		__free_page(page);
 	}
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 struct space_para_cfg *hyperhold_space_para(void)
 {
 	return &global_settings.space_para;
@@ -226,6 +229,7 @@ struct space_info_para *hyperhold_space_info(void)
 	return &global_settings.space_info;
 }
 #endif
+
 int hyperhold_loglevel(void)
 {
 	return global_settings.log_level;
@@ -276,12 +280,13 @@ bool ramturbo_enable(void)
 	return !!atomic_read(&is_ramturbo_enable);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 bool hyperhold_is_file_space(void)
 {
 	return (global_settings.space_para.space_type == HP_FILE_SPACE);
 }
 #endif
+
 static void hyperhold_set_enable(bool en)
 {
 	hyperhold_set_reclaim_in_enable(en);
@@ -296,7 +301,7 @@ static void ramturbo_set_enable(bool en)
 		atomic_set(&is_ramturbo_enable, en ? 1 : 0);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 void hyperhold_set_cfg(void)
 {
 	global_settings.cfg_flag = true;
@@ -307,6 +312,7 @@ bool hyperhold_get_cfg(void)
 	return global_settings.cfg_flag;
 }
 #endif
+
 bool hyperhold_crypto_enable(void)
 {
 	return !!atomic_read(&global_settings.crypto_enable);
@@ -373,7 +379,7 @@ static void hyperhold_wdt_timeout(unsigned long data)
 		"hyperhold wdt is triggered! Hyperhold is disabled!\n");
 	hyperhold_set_reclaim_in_disable();
 }
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+#ifndef CONFIG_RAMTURBO
 static void hyperhold_close_bdev(struct block_device *bdev,
 					struct file *backing_dev)
 {
@@ -477,7 +483,7 @@ static void hyperhold_stat_init(struct hyperhold_stat *stat)
 	atomic64_set(&stat->zram_stored_size, 0);
 	atomic64_set(&stat->stored_pages, 0);
 	atomic64_set(&stat->stored_size, 0);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	atomic64_set(&stat->parfile_stored_pages, 0);
 	atomic64_set(&stat->parfile_stored_size, 0);
 #endif
@@ -545,13 +551,17 @@ static void hyperhold_global_setting_deinit(void)
 	hyperhold_free(global_settings.stat);
 	global_settings.stat = NULL;
 	global_settings.zram = NULL;
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	global_settings.space_info.allocated_file_num = 0;
+	global_settings.space_info.file_inited_num = 0;
+#endif
 }
 
 struct workqueue_struct *hyperhold_get_reclaim_workqueue(void)
 {
 	return global_settings.reclaim_wq;
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 int hyperhold_health_check(struct block_device *bdev)
 #else
 /*
@@ -634,7 +644,7 @@ static int hyperhold_health_check(void)
 
 		return -EFAULT;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	ret = blk_lld_health_query(bdev, &pre_eol_info,
 		&life_time_est_a, &life_time_est_b);
 #else
@@ -663,19 +673,41 @@ static int hyperhold_health_check(void)
 	return 0;
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static void hyperhold_set_diable()
+{
+	atomic_set(&global_settings.enable, 0);
+}
+#endif
+
 /*
  * This interface will be called when user set the ZRAM size.
  * Hyperhold init here.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 void hyperhold_init(struct zram *zram)
 {
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	int ret;
+#endif
 	if (!hyperhold_global_setting_init(zram))
 		return;
-
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	ret = hyperhold_alloc_space(zram);
+	if (!!ret) {
+		hh_print(HHLOG_ERR, "alloc space failed!\n");
+		hyperhold_set_diable();
+		hyperhold_set_reclaim_in_disable();
+		hyperhold_global_setting_deinit();
+		if (ret == -ERANGE) {
+			global_settings.space_info.allocated_file_num = HYPERHOLD_CREATE_FILE_3G_NUM;
+			global_settings.space_info.file_inited_num = HYPERHOLD_CREATE_FILE_3G_NUM;
+		}
+#else
 	if (!!hyperhold_alloc_space(zram)) {
 		hh_print(HHLOG_ERR, "alloc space failed! %d\n");
 		hyperhold_global_setting_deinit();
+#endif
 		return;
 	}
 
@@ -697,13 +729,18 @@ static int hyperhold_set_enable_init(bool en)
 
 		return -EINVAL;
 	}
-
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	ret = hyperhold_space_sector_init();
+#else
 	if (hyperhold_is_file_space()) {
 		ret = hyperhold_space_file_sector_init();
+#endif
 		if (unlikely(ret)) {
 			hh_print(HHLOG_ERR, "init space_sector failed! %d\n", ret);
 			return -EINVAL;
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 		}
+#endif
 	}
 
 	ret = hyperhold_manager_init(global_settings.zram);
@@ -739,7 +776,7 @@ ssize_t hyperhold_enable_store(struct device *dev,
 {
 	int ret;
 	unsigned long val;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	bool en;
 #endif
 
@@ -749,7 +786,7 @@ ssize_t hyperhold_enable_store(struct device *dev,
 
 		return -EINVAL;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (!global_settings.zram || !global_settings.zram->bdev) {
 		hh_print(HHLOG_ERR, "bedv is null\n");
 		return -EFAULT;
@@ -765,8 +802,15 @@ ssize_t hyperhold_enable_store(struct device *dev,
 		return -EINVAL;
 
 	hyperhold_set_enable(en);
-
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	ret = hyperhold_expend_space(en);
+	if (ret) {
+		hh_print(HHLOG_ERR, "bind storage device failed %d\n", ret);
+		hyperhold_global_setting_deinit();
+	}
+#else
 	hyperhold_expend_space(en);
+#endif
 #else
 	/* hyperhold must be close when over 70% life time uesd */
 	if (hyperhold_health_check())
@@ -783,7 +827,7 @@ ssize_t hyperhold_enable_store(struct device *dev,
 ssize_t hyperhold_enable_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	int len;
 
 	len = snprintf(buf, PAGE_SIZE, "hyperhold %s reclaim_in %s\n",
@@ -807,7 +851,12 @@ ssize_t hyperhold_enable_show(struct device *dev,
 		global_settings.space_info.nr_pages,
 		global_settings.space_info.nr_exts,
 		global_settings.space_info.nr_exts_per_file);
-
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	len += snprintf(buf + len, PAGE_SIZE - len,
+		"max_ext_num %llu, used_exts_num %llu\n",
+		atomic64_read(&global_settings.space_info.max_ext_num),
+		atomic64_read(&global_settings.space_info.used_exts_num));
+#else
 	len += snprintf(buf + len, PAGE_SIZE - len,
 		"max_ext_num %llu, used_exts_num %llu\n"
 		"enable_par_file %d, par_file_num %llu\n",
@@ -815,7 +864,7 @@ ssize_t hyperhold_enable_show(struct device *dev,
 		atomic64_read(&global_settings.space_info.used_exts_num),
 		global_settings.space_info.enable_par_file,
 		global_settings.space_info.par_file_num);
-
+#endif
 	return len;
 #else
 	return snprintf(buf, PAGE_SIZE, "hyperhold %s reclaim_in %s\n",
@@ -937,7 +986,7 @@ ssize_t hyperhold_key_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "crypto %s\n",
 		hyperhold_crypto_enable() ? "enable" : "disable");
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 static int hyperhold_get_hp_cmd(struct block_device *bdev,
 	unsigned long arg, struct blk_hp_cmd *cmd)
 {
@@ -1087,7 +1136,7 @@ ssize_t hyperhold_ft_show(struct device *dev,
 	return size;
 }
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 static int __init hyperhold_module_init(void)
 {
 	atomic_set(&global_settings.enable, 0);

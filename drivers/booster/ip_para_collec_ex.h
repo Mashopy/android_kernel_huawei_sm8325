@@ -23,9 +23,12 @@ void udp6_in_hook(struct sk_buff *skb, struct sock *sk);
 void dec_sk_num_for_qoe(struct sock *sk, int new_state);
 void update_ofo_rtt_for_qoe(struct sock *sk);
 void update_ofo_tstamp_for_qoe(struct sock *sk);
+void update_should_enter_recover(struct sock *sk, u32 seq);
+void tcp_recover_hiview_report(struct sock *sk, u32 estimate_time);
 void update_tcp_para_without_skb(struct sock *sk,
 	unsigned int hook);
 void update_dupack_num(struct sock *sk,
 	bool is_dupack, unsigned int hook);
 void update_stats_srtt(struct tcp_sock *tp, u32 *rtt);
+bool is_v6_sock(struct sock *sk);
 #endif // _IP_PARA_COLLEC_EX_H

@@ -168,6 +168,13 @@ config SERIAL_NONSTANDARD
 
 	  Most people can say N here.
 
+config HANDSET_SYSRQ_RESET
+	bool "Sysrq reset trigger by handset key pressing"
+	default n
+	help
+	 This enables sysrq reset when volume down, up and power key are
+	 pressed simultaneously.
+
 config ROCKETPORT
 	tristate "Comtrol RocketPort support"
 	depends on SERIAL_NONSTANDARD && (ISA || EISA || PCI)

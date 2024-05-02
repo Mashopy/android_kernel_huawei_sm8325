@@ -16,17 +16,24 @@
  *
  */
 
+#include <linux/cma.h>
 #include <linux/debugfs.h>
-#include <linux/module.h>
-#include <linux/kthread.h>
 #include <linux/delay.h>
-#include <linux/slab.h>
-#include <linux/vmalloc.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+#include <linux/dma-contiguous.h>
+#else
+#include <linux/dma-map-ops.h>
+#endif
 #include <linux/ion.h>
-#include <linux/skbuff.h>
-#include <linux/zsmalloc.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/radix-tree.h>
+#include <linux/skbuff.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
+#include <linux/zsmalloc.h>
 
 #define	memcheck_err(format, ...)	\
 	pr_err("MemLeak[%s %d] " format, __func__, __LINE__, ##__VA_ARGS__)
@@ -340,6 +347,24 @@ static void memcheck_inject_radix_leak(void)
 		      memcheck_leak_size_val, num);
 }
 
+static void memcheck_inject_cma_leak(void)
+{
+	int i;
+	struct page *page = NULL;
+	int num = memcheck_leak_size_val / PAGE_SIZE + 1;
+
+	for (i = 0; i < num; i++) {
+		page  = cma_alloc(dev_get_cma_area(NULL), 1, 0, false);
+		if (!page) {
+			memcheck_err("alloc default cma failed, i=%d, num=%d\n",
+				     i, num);
+			return;
+		}
+	}
+	memcheck_info("%s success, size=%zu, num=%d\n", __func__,
+		      memcheck_leak_size_val, num);
+}
+
 DEBUGFS_LEAK_TYPE(buddy);
 DEBUGFS_LEAK_TYPE(slub);
 DEBUGFS_LEAK_TYPE(lslub);
@@ -347,6 +372,7 @@ DEBUGFS_LEAK_TYPE(vmalloc);
 DEBUGFS_LEAK_TYPE(skb);
 DEBUGFS_LEAK_TYPE(zsmalloc);
 DEBUGFS_LEAK_TYPE(radix);
+DEBUGFS_LEAK_TYPE(cma);
 
 static int __init memcheck_init(void)
 {
@@ -363,6 +389,7 @@ static int __init memcheck_init(void)
 	debugfs_create_file("zsmalloc", 0444, leak_root, NULL, &fs_zsmalloc_fops);
 	debugfs_create_file("radix_tree_node", 0444, leak_root, NULL,
 			    &fs_radix_fops);
+	debugfs_create_file("cma", 0444, leak_root, NULL, &fs_cma_fops);
 
 	debugfs_create_file("size", 0444, leak_root, NULL, &fs_size_fops);
 	debugfs_create_file("interval", 0444, leak_root, NULL, &fs_interval_fops);
@@ -382,4 +409,6 @@ module_exit(memcheck_exit);
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Huawei Memory Leak Inject debugfs");
 MODULE_AUTHOR("Huawei Technologies Co., Ltd.");
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

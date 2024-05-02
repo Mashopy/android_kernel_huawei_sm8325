@@ -291,9 +291,9 @@ struct mtk_panel_info {
 	u8 sre_support;
 	u8 color_temperature_support;
 	u8 color_temp_rectify_support;
-	u32 color_temp_rectify_R;
-	u32 color_temp_rectify_G;
-	u32 color_temp_rectify_B;
+	u32 color_temp_rectify_r;
+	u32 color_temp_rectify_g;
+	u32 color_temp_rectify_b;
 	u8 comform_mode_support;
 	u8 cinema_mode_support;
 	u8 frc_enable;

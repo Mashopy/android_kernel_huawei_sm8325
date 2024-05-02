@@ -1006,7 +1006,6 @@ static int __init ashmem_init(void)
 		goto out_demisc;
 	}
 
-	mm_ashmem_process_info();
 	pr_info("initialized\n");
 
 	return 0;

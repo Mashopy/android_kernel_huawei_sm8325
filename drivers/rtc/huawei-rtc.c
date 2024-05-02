@@ -17,7 +17,9 @@
 #include <linux/syscalls.h>
 #include <linux/vmalloc.h>
 #include <linux/soc/qcom/smem.h>
-
+#ifdef RTC_SYNC_MCU_TIME
+#include "time_sync.h"
+#endif
 /* use to clear the offset when the rtc is outage */
 #define RTC_MIN_VALUE_TO_RESET_OFFSET 60
 #define BSPINFO_RAW_PART_PATH "/dev/block/bootdevice/by-name/bsp_info"
@@ -208,7 +210,11 @@ huawei_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	}
 
 	rtc_tm_to_time(tm, (unsigned long *)&secs);
-
+#ifdef RTC_SYNC_MCU_TIME
+	ret = send_time_to_mcu((unsigned long)secs);
+	if (ret < 0)
+		dev_err(dev, "func %s: send time to mcu failed\n", __func__);
+#endif
 	dev_info(dev, "func %s: the setting time is h:m:s == %d:%d:%d, d/m/y = %d/%d/%d\n",
 			__func__,
 			tm->tm_hour,

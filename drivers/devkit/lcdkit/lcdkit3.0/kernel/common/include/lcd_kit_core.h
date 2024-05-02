@@ -86,6 +86,8 @@ struct ts_kit_ops {
 	int (*ts_multi_power_notify)(enum lcd_kit_ts_pm_type type,
 		int sync, int panel_index);
 	bool (*get_afe_status)(struct timeval *record_tv);
+	int (*ts_aod_screen_off_notify)(u32 val);
+	int (*ts_aod_state_notify)(u32 val);
 };
 
 /* Function declare */

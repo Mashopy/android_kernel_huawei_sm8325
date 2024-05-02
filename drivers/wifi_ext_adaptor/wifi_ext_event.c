@@ -101,6 +101,11 @@ static void kernel_ntl_receive(struct sk_buff *__skb)
 				(skb->len >= nlh->nlmsg_len)) {
 			if (nlh->nlmsg_type == NETLINK_HID2D_TYPE) {
 				hid2d_msg = (hid2d_msg2knl *)nlh;
+				if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(hid2d_info))) {
+					pr_info("NLINK: Received NL Msg with invalid len = %u",
+						nlh->nlmsg_len);
+					return;
+				}
 				hinfo = (hid2d_info *)&(hid2d_msg->data[0]);
 				g_hid2d_ip = hinfo->ip_addr;
 

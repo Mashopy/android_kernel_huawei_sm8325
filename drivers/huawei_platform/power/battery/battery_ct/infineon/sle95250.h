@@ -55,6 +55,7 @@
 #define SLE95250_ACT_RTY               5  /* activation signature read retry */
 #define SLE95250_PGLK_RTY              3  /* set/read page lock retry */
 #define SLE95250_SN_RTY                5  /* sn read retry */
+#define SLE95250_CODE_RTY              10 /* code read retry */
 #define SLE95250_UIDR_RTY              3  /* uid read big loop retry */
 
 /* length */
@@ -109,6 +110,7 @@ struct sle95250_memory {
 	uint8_t batt_type[SLE95250_BATTTYP_LEN];
 	bool batttp_ready;
 	uint8_t sn[SLE95250_SN_ASC_LEN];
+	uint8_t code[SLE95250_SN_ASC_LEN];
 	bool sn_ready;
 	uint8_t res_ct[SLE95250_ODC_LEN];
 	bool res_ct_ready;

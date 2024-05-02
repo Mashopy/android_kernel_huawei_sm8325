@@ -92,13 +92,13 @@ int lcd_kit_panel_init(void)
 	int ret;
 	int i;
 
-	if (!disp_info->compatible) {
+	if (!DISP_INFO->compatible) {
 		LCD_KIT_ERR("compatible is null\n");
 		return LCD_KIT_FAIL;
 	}
 	for (i = 0; i < ARRAY_SIZE(panel_map); i++) {
-		if (!strncmp(disp_info->compatible, panel_map[i].compatible,
-			strlen(disp_info->compatible))) {
+		if (!strncmp(DISP_INFO->compatible, panel_map[i].compatible,
+			strlen(DISP_INFO->compatible))) {
 			ret = panel_map[i].callback();
 			if (ret) {
 				LCD_KIT_ERR("ops init fail\n");

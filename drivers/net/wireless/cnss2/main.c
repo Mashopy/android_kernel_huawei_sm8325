@@ -23,6 +23,7 @@
 #include "bus.h"
 #include "debug.h"
 #include "genl.h"
+#include <platform/linux/rainbow.h>
 
 #define CNSS_DUMP_FORMAT_VER		0x11
 #define CNSS_DUMP_FORMAT_VER_V2		0x22
@@ -2399,6 +2400,12 @@ static void cnss_unregister_ramdump_v2(struct cnss_plat_data *plat_priv)
 int cnss_register_ramdump(struct cnss_plat_data *plat_priv)
 {
 	int ret = 0;
+	bool bootdump_switch  = false;
+
+	cmd_himntn_item_switch(HIMNTN_ID_BOOTDUMP_SWITCH, &bootdump_switch);
+	pr_err("%s bootdump_switch is %d\n", __func__, bootdump_switch);
+	if (!bootdump_switch)
+		return ret;
 
 	switch (plat_priv->device_id) {
 	case QCA6174_DEVICE_ID:
@@ -2421,6 +2428,12 @@ int cnss_register_ramdump(struct cnss_plat_data *plat_priv)
 
 void cnss_unregister_ramdump(struct cnss_plat_data *plat_priv)
 {
+	bool bootdump_switch  = false;
+	cmd_himntn_item_switch(HIMNTN_ID_BOOTDUMP_SWITCH, &bootdump_switch);
+	pr_err("%s bootdump_switch is %d\n", __func__, bootdump_switch);
+	if (!bootdump_switch)
+		return;
+
 	switch (plat_priv->device_id) {
 	case QCA6174_DEVICE_ID:
 		cnss_unregister_ramdump_v1(plat_priv);

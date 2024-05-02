@@ -16,15 +16,18 @@
  *
  */
 
+#include <chipset_common/hwpower/adapter/adapter_detect.h>
 #include <chipset_common/hwpower/battery/battery_temp.h>
 #include <chipset_common/hwpower/charger/charger_common_interface.h>
 #include <chipset_common/hwpower/common_module/power_cmdline.h>
+#include <chipset_common/hwpower/common_module/power_interface.h>
 #include <chipset_common/hwpower/common_module/power_supply_application.h>
 #include <chipset_common/hwpower/hardware_monitor/btb_check.h>
 #include <chipset_common/hwpower/hardware_monitor/uscp.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_tx_pwr_ctrl.h>
 #include <huawei_platform/power/battery_voltage.h>
 #include <huawei_platform/power/direct_charger/direct_charger.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_turbo.h>
 #ifdef CONFIG_HUAWEI_SPEAKER_CHARGER
 #include <huawei_platform/power/speaker_charger/series_batt_speaker_charger_check.h>
 #endif
@@ -136,7 +139,8 @@ static int direct_charge_check_adapter_voltage_accuracy(
 	int error_flag = 0;
 
 	di->adaptor_vset = di->init_adapter_vset;
-	dc_set_adapter_voltage(di->adaptor_vset);
+	if (dc_set_adapter_voltage(di->adaptor_vset))
+		return -1;
 
 	/* delay 500ms */
 	usleep_range(500000, 501000);
@@ -221,7 +225,7 @@ static int direct_charge_check_charging_path_leakage_current(
 	}
 
 	/* process error report */
-	if (di->cc_cable_detect_ok == 1) {
+	if (dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_OK) {
 		dc_fill_eh_buf(di->dsm_buff, sizeof(di->dsm_buff),
 			DC_EH_USB_PORT_LEAGAGE_CURR, tmp_buf);
 
@@ -235,8 +239,8 @@ static int direct_charge_check_charging_path_leakage_current(
 
 static int direct_charge_skip_check_resistance(struct direct_charge_device *di)
 {
-	if (power_cmdline_is_factory_mode() && di->ignore_full_path_res) {
-		di->ignore_full_path_res = false;
+	if (power_cmdline_is_factory_mode() && di->cable_info.ignore_full_path_res) {
+		di->cable_info.ignore_full_path_res = false;
 		di->full_path_resistance = 0;
 		hwlog_info("skip check full path resist\n");
 		return 1;
@@ -250,7 +254,7 @@ static int direct_charge_check_full_path_resistance(
 	int vadapt = 0;
 	int rpath = 0;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
-	int rpath_th = di->full_path_res_thld;
+	int rpath_th = di->cable_info.full_path_res_thld;
 	int resist_cur_max;
 
 	if (direct_charge_skip_check_resistance(di))
@@ -281,7 +285,8 @@ static int direct_charge_check_full_path_resistance(
 	if (rpath <= rpath_th) {
 		resist_cur_max = dc_resist_handler(di->working_mode, rpath);
 		hwlog_err("resist_cur_max=%d\n", resist_cur_max);
-		if ((di->cc_cable_detect_ok == 0) && (resist_cur_max != 0)) {
+		if ((dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_NOK) &&
+			(resist_cur_max != 0)) {
 			if (pd_dpm_get_ctc_cable_flag())
 				di->max_current_for_ctc_cable =
 					resist_cur_max;
@@ -289,7 +294,7 @@ static int direct_charge_check_full_path_resistance(
 				di->max_current_for_nonstd_cable =
 					resist_cur_max;
 		}
-		if (di->cc_cable_detect_ok == 0)
+		if (dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_NOK)
 			dc_send_icon_uevent();
 
 		hwlog_err("full path resistance check succ\n");
@@ -299,7 +304,7 @@ static int direct_charge_check_full_path_resistance(
 	dc_set_err_type_cnt(di->err_type_cnt, DC_EH_FULL_PATH_RESISTANCE);
 
 	/* process error report */
-	if (di->cc_cable_detect_ok == 1) {
+	if (dc_get_cable_type_info(DC_CABLE_DETECT_OK)  == CABLE_DETECT_OK) {
 		snprintf(tmp_buf, sizeof(tmp_buf),
 			"full_res %d is out of[%d, %d]\n",
 			rpath, -rpath_th, rpath_th);
@@ -457,6 +462,29 @@ static void direct_charge_rt_set_aux_mode(struct direct_charge_device *di)
 	}
 }
 
+static void direct_charge_report_auth_event_again_for_turbo_charge(void)
+{
+	int len;
+	char auth_buf[POWER_EVENT_NOTIFY_SIZE] = { 0 };
+	struct power_event_notify_data n_data;
+
+	len = snprintf(auth_buf, POWER_EVENT_NOTIFY_SIZE - 1, "BMS_EVT=EVT_ADAPTER_AUTH_UPDATE@turbo\n");
+	if (len <= 0)
+		return;
+
+	n_data.event_len = len;
+	n_data.event = auth_buf;
+	power_event_report_uevent(&n_data);
+}
+
+static void direct_charge_report_pre_turbo_uevent()
+{
+	int max_pwr = direct_charge_turbo_get_pre_turbo_max_power();
+
+	if (dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_OK)
+		direct_charge_turbo_send_max_power(max_pwr);
+}
+
 static void direct_charge_mode_check(struct direct_charge_device *di, int hv_flag)
 {
 	unsigned int stage;
@@ -506,7 +534,7 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 			(di->dc_open_retry_cnt <= DC_OPEN_RETRY_CNT_MAX)) {
 			dc_show_eh_buf(di->dsm_buff);
 
-			if (di->cc_cable_detect_ok) {
+			if (dc_get_cable_type_info(DC_CABLE_DETECT_OK)  == CABLE_DETECT_OK) {
 				full_res_err_cnt = dc_get_err_tpye_cnt(di->err_type_cnt,
 					DC_EH_FULL_PATH_RESISTANCE);
 				if (full_res_err_cnt < DC_FULL_RES_ERR_MAX)
@@ -552,9 +580,12 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 		return;
 	}
 
+	dc_detect_std_cable();
+	direct_charge_report_pre_turbo_uevent();
 	/* step-6: check adapter antifake */
 	if (dc_check_adapter_antifake()) {
 		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_ADAPTER_ANTI_FAKE);
+		direct_charge_turbo_send_max_power(0);
 		di->error_cnt += 1;
 		di->adp_antifake_failed_cnt += 1;
 		adp_antifake_state = 1;
@@ -565,13 +596,28 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 		}
 	}
 
+	if (dc_is_scp_superior()) {
+		power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ADAPTER_PROTOCOL,
+			POWER_IF_SYSFS_ADAPTER_PROTOCOL, SYSFS_PROTOCOL_SCP);
+		charge_set_fcp_enable_flag(false);
+		dc_clear_cable_type_info();
+		charge_request_charge_monitor();
+		return;
+	}
+
 	/* step-7: detect cable */
 	if (direct_charge_get_stage_status() == DC_STAGE_ADAPTER_DETECT) {
 		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_ADAPTER_DETECT);
-		dc_detect_cable();
+		dc_update_cable_resistance_thld(&di->cable_info);
+		direct_charge_set_stage_status(DC_STAGE_SWITCH_DETECT);
+		dc_send_soc_decimal_uevent();
+		dc_send_cable_type_uevent();
+		dc_send_max_power_uevent();
+		direct_charge_report_auth_event_again_for_turbo_charge();
+		direct_charge_turbo_send_max_power(di->max_pwr);
 	}
 
-	if (di->orig_cable_type == DC_STD_CABLE)
+	if (dc_get_cable_type_info(DC_ORIG_CABLE_TYPE) == DC_STD_CABLE)
 		wltx_dc_adaptor_handler();
 	if (!direct_charge_check_enable_status())
 		return;
@@ -584,6 +630,7 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_BAT_TEMP);
 		direct_charge_set_stage_status(DC_STAGE_DEFAULT);
 		di->bat_temp_err_flag = true;
+		power_event_bnc_notify(POWER_BNT_DC, POWER_NE_DC_TEMP_ERR, NULL);
 		hwlog_err("temp out of range, try next loop\n");
 		return;
 	} else {
@@ -594,6 +641,7 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 	if (direct_charge_check_battery_voltage(di)) {
 		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_BAT_VOL);
 		direct_charge_set_stage_status(DC_STAGE_DEFAULT);
+		power_event_bnc_notify(POWER_BNT_DC, POWER_NE_DC_VOLTAGE_INVALID, NULL);
 		hwlog_err("volt out of range, try next loop\n");
 		return;
 	}
@@ -611,12 +659,11 @@ static void direct_charge_mode_check(struct direct_charge_device *di, int hv_fla
 
 	/* step-11: switch buck charging path to dc charging path */
 	if (direct_charge_get_stage_status() == DC_STAGE_SWITCH_DETECT) {
-		di->scp_stop_charging_complete_flag = 0;
-		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_SWITCH);
-		if (!direct_charge_check_enable_status()) {
-			di->scp_stop_charging_complete_flag = 1;
+		if (!direct_charge_check_enable_status())
 			return;
-		}
+
+		dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_SWITCH);
+		di->scp_stop_charging_complete_flag = 0;
 		if (dc_switch_charging_path(path) == 0) {
 			direct_charge_set_stage_status(DC_STAGE_CHARGE_INIT);
 		} else {
@@ -700,46 +747,6 @@ static void direct_charge_enter_specified_mode(struct direct_charge_device *di,
 	}
 }
 
-static void direct_detect_icon(void)
-{
-	int ret;
-	bool cc_moisture_status = false;
-	int adapter_type = ADAPTER_TYPE_UNKNOWN;
-	enum cur_cap c_cap;
-	struct direct_charge_device *di = direct_charge_get_di();
-
-	if (!di || di->cc_cable_detect_ok)
-		return;
-
-	/* 10v2a and 10v2.25a no need check cable */
-	adapter_get_adp_type(ADAPTER_PROTOCOL_SCP, &adapter_type);
-	if ((adapter_type == ADAPTER_TYPE_10V2A) ||
-		(adapter_type == ADAPTER_TYPE_10V2P25A)) {
-		di->cc_cable_detect_ok = 1; /* detect success flag */
-		di->full_path_res_thld = di->std_cable_full_path_res_max;
-		hwlog_info("%s %d\n", __func__, di->cc_cable_detect_ok);
-		dc_send_icon_uevent();
-		return;
-	}
-	if (!dc_is_support_cable_detect()) {
-		hwlog_err("cd_ops or cable_detect is null\n");
-		direct_charge_set_stage_status(DC_STAGE_DEFAULT);
-		return;
-	}
-	ret = dc_cable_detect();
-	cc_moisture_status = pd_dpm_get_cc_moisture_status();
-	c_cap = pd_dpm_get_cvdo_cur_cap();
-	if (ret && !cc_moisture_status && (c_cap < PD_DPM_CURR_5A)) {
-		di->cc_cable_detect_ok = 0; /* detect not success flag */
-	} else {
-		hwlog_info("%s stdandard cable detect ok\n", __func__);
-		di->cable_type = DC_STD_CABLE;
-		di->cc_cable_detect_ok = 1; /* detect success flag */
-		di->full_path_res_thld = di->std_cable_full_path_res_max;
-		dc_send_icon_uevent();
-	}
-}
-
 static void direct_charge_select_working_mode(bool *sc_flag, bool *sc4_flag)
 {
 	int adp_type;
@@ -796,6 +803,14 @@ void direct_charge_check(int hv_flag)
 		adp_mode = direct_charge_detect_adapter_support_mode();
 	hwlog_info("local_mode=%x adapter_mode=%x\n", local_mode, adp_mode);
 
+	power_event_bnc_notify(POWER_BNT_DC, POWER_NE_DC_ADAPTER_MODE, &adp_mode);
+	if (adp_mode == ADAPTER_TEST_MODE) {
+		charge_set_fcp_enable_flag(false);
+		hwlog_info("adapter is in test mode");
+		return;
+	}
+	charge_set_fcp_enable_flag(true);
+
 	if (adp_mode == ADAPTER_SUPPORT_UNDEFINED) {
 		hwlog_info("undefined adapter mode");
 		if (hv_flag == 0) {
@@ -835,7 +850,7 @@ void direct_charge_check(int hv_flag)
 	if (!sc4_flag && !sc_flag && !lvc_flag) {
 		direct_charge_set_can_enter_status(false);
 		hwlog_info("neither sc nor lvc matched");
-		return;
+		goto end;
 	}
 
 	direct_charge_select_working_mode(&sc_flag, &sc4_flag);
@@ -844,28 +859,30 @@ void direct_charge_check(int hv_flag)
 		sc4_di->cc_safe = cc_safe;
 		if ((hv_flag == 0) && sc4_di->cam_flash_stop) {
 			direct_charge_set_di(sc4_di);
-			direct_detect_icon();
+			dc_detect_std_cable();
+			dc_update_cable_resistance_thld(&sc4_di->cable_info);
 		} else {
 			sc4_di->adapter_type = adp_mode;
 			direct_charge_set_can_enter_status(true);
 			direct_charge_enter_specified_mode(sc4_di,
 				SC4_MODE, AT_TYPE_SC4, hv_flag);
 		}
-		return;
+		goto end;
 	}
 
 	if (sc_flag && sc_di->dc_stage != DC_STAGE_CHARGE_DONE) {
 		sc_di->cc_safe = cc_safe;
 		if ((hv_flag == 0) && sc_di->cam_flash_stop) {
 			direct_charge_set_di(sc_di);
-			direct_detect_icon();
+			dc_detect_std_cable();
+			dc_update_cable_resistance_thld(&sc_di->cable_info);
 		} else {
 			sc_di->adapter_type = adp_mode;
 			direct_charge_set_can_enter_status(true);
 			direct_charge_enter_specified_mode(sc_di,
 				SC_MODE, AT_TYPE_SC, hv_flag);
 		}
-		return;
+		goto end;
 	}
 
 	if (lvc_flag && lvc_di->dc_stage != DC_STAGE_CHARGE_DONE) {
@@ -875,6 +892,12 @@ void direct_charge_check(int hv_flag)
 		direct_charge_enter_specified_mode(lvc_di,
 			LVC_MODE, AT_TYPE_LVC, hv_flag);
 	}
+
+end:
+	/* set adapter default vbus will drop to 5v, set only in ufcs */
+	if ((direct_charge_in_charging_stage() != DC_IN_CHARGING_STAGE) &&
+		(adapter_detect_get_runtime_protocol_type() == BIT(ADAPTER_PROTOCOL_UFCS)))
+		dc_set_adapter_default();
 }
 
 int direct_charge_pre_check(void)

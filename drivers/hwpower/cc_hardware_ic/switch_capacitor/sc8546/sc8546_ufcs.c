@@ -123,7 +123,7 @@ static void sc8546_ufcs_delete_node(struct sc8546_device_info *di)
 	mutex_unlock(&di->ufcs_node_lock);
 }
 
-void sc8546_ufcs_free_node_list(struct sc8546_device_info *di)
+void sc8546_ufcs_free_node_list(struct sc8546_device_info *di, bool need_free_head)
 {
 	struct sc8546_ufcs_msg_head *head = g_sc8546_ufcs_msg_head;
 	struct sc8546_ufcs_msg_node *free_node = NULL;
@@ -142,9 +142,13 @@ void sc8546_ufcs_free_node_list(struct sc8546_device_info *di)
 		kfree(free_node);
 		free_node = temp;
 	}
+	head->next = NULL;
+	head->num = 0;
 
-	kfree(head);
-	g_sc8546_ufcs_msg_head = NULL;
+	if (need_free_head) {
+		kfree(head);
+		g_sc8546_ufcs_msg_head = NULL;
+	}
 	mutex_unlock(&di->ufcs_node_lock);
 }
 
@@ -176,6 +180,9 @@ void sc8546_ufcs_add_msg(struct sc8546_device_info *di)
 		return;
 
 	sc8546_ufcs_add_node(di, node);
+
+	hwlog_info("receive new msg, completion\n");
+	complete(&di->sc8546_add_msg_completion);
 }
 
 static struct sc8546_ufcs_msg_node *sc8546_ufcs_get_msg(struct sc8546_device_info *di)
@@ -197,8 +204,9 @@ static int sc8546_ufcs_wait(struct sc8546_device_info *di, u8 flag)
 	int i;
 
 	for (i = 0; i < SC8546_UFCS_WAIT_RETRY_CYCLE; i++) {
+		if (!di->plugged_state)
+			break;
 		power_usleep(DT_USLEEP_1MS);
-
 		reg_val1 = di->ufcs_irq[0];
 		reg_val2 = di->ufcs_irq[1];
 		hwlog_info("ufcs_isr1=0x%x, ufcs_isr2=0x%x\n", reg_val1, reg_val2);
@@ -208,6 +216,13 @@ static int sc8546_ufcs_wait(struct sc8546_device_info *di, u8 flag)
 			(reg_val1 & SC8546_UFCS_ISR1_CRC_ERROR_MASK)) {
 			hwlog_err("crc error\n");
 			break;
+		}
+
+		/* isr1[3] must be 1 */
+		if ((flag & HWUFCS_WAIT_SEND_PACKET_COMPLETE) &&
+			(reg_val2 & SC8546_UFCS_ISR2_RX_TX_CONFLICT_MASK)) {
+			hwlog_err("sent packet conflict with receive data\n");
+			return SC8546_UFCS_RX_TX_CONFLICT_ERROR;
 		}
 
 		/* isr1[3] must be 1 */
@@ -262,13 +277,13 @@ static void sc8546_ufcs_handshake_preparation(struct sc8546_device_info *di)
 		SC8546_UFCS_CTL2_ACK_NOT_BLOCK_MSG_SHIFT, 1);
 	sc8546_write_mask(di, SC8546_UFCS_CTL2_REG,
 		SC8546_UFCS_CTL2_MSG_NOT_BLOCK_ACK_MASK,
-		SC8546_UFCS_CTL2_MSG_NOT_BLOCK_ACK_SHIFT, 1);
+		SC8546_UFCS_CTL2_MSG_NOT_BLOCK_ACK_SHIFT, 0);
 	sc8546_write_mask(di, SC8546_UFCS_CTL2_REG,
 		SC8546_UFCS_CTL2_LATE_RX_BUFFER_BUSY_MASK,
 		SC8546_UFCS_CTL2_LATE_RX_BUFFER_BUSY_SHIFT, 1);
 
 	/* hidden register, disable the 600 μs delay detection between data frames */
-	sc8546_write_byte(di, 0xEA, 0x04);
+	sc8546_write_byte(di, 0xEA, 0x0C);
 	sc8546_write_byte(di, 0xED, 0x04);
 	/* enable handshake */
 	sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
@@ -295,7 +310,9 @@ static int sc8546_ufcs_detect_adapter(void *dev_data)
 	(void)power_usleep(DT_USLEEP_20MS);
 	/* waiting for handshake */
 	for (i = 0; i < SC8546_UFCS_HANDSHARK_RETRY_CYCLE; i++) {
-		(void)power_usleep(DT_USLEEP_2MS);
+		if (!di->plugged_state)
+			break;
+		(void)power_usleep(DT_USLEEP_5MS);
 		ret = sc8546_read_byte(di, SC8546_UFCS_ISR1_REG, &reg_val);
 		if (ret) {
 			hwlog_err("read isr reg[%x] fail\n", SC8546_UFCS_ISR1_REG);
@@ -324,13 +341,44 @@ static int sc8546_ufcs_detect_adapter(void *dev_data)
 		SC8546_UFCS_CTL2_DEV_ADDR_ID_MASK,
 		SC8546_UFCS_CTL2_DEV_ADDR_ID_SHIFT, SC8546_UFCS_CTL2_SOURCE_ADDR);
 	hwlog_info("handshake succ\n");
+	queue_delayed_work(di->msg_update_wq, &di->ufcs_msg_update_work, 0);
 	return HWUFCS_DETECT_SUCC;
+}
+
+static int sc8546_ufcs_end_read_msg(void *dev_data)
+{
+	struct sc8546_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	di->ufcs_msg_ready_flag = false;
+	complete(&di->sc8546_ufcs_read_msg_completion);
+	return 0;
+}
+
+static int sc8546_ufcs_clear_rx_buff(void *dev_data)
+{
+	struct sc8546_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	di->ufcs_irq[0] = 0;
+	di->ufcs_irq[1] = 0;
+	sc8546_ufcs_free_node_list(di, false);
+	reinit_completion(&di->sc8546_add_msg_completion);
+	return sc8546_ufcs_end_read_msg(di);
 }
 
 static int sc8546_ufcs_write_msg(void *dev_data, u8 *data, u8 len, u8 flag)
 {
 	struct sc8546_device_info *di = dev_data;
-	int ret;
+	int ret, i;
 
 	if (!di || !data) {
 		hwlog_err("di or data is null\n");
@@ -342,14 +390,25 @@ static int sc8546_ufcs_write_msg(void *dev_data, u8 *data, u8 len, u8 flag)
 		return -EINVAL;
 	}
 
-	di->ufcs_irq[0] = 0;
-	di->ufcs_irq[1] = 0;
-	ret = sc8546_write_byte(di, SC8546_UFCS_TX_LENGTH_REG, len);
-	ret += sc8546_write_block(di, SC8546_UFCS_TX_BUFFER_REG,
-		data, len);
-	ret += sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
-		SC8546_UFCS_CTL1_SEND_MASK, SC8546_UFCS_CTL1_SEND_SHIFT, 1);
-	ret += sc8546_ufcs_wait(di, flag);
+	for (i = 0; i < SC8546_UFCS_TX_CONFLICT_RETRY_TIMES; i++) {
+		di->ufcs_irq[0] = 0;
+		di->ufcs_irq[1] = 0;
+		ret = sc8546_write_byte(di, SC8546_UFCS_TX_LENGTH_REG, len);
+		ret += sc8546_write_block(di, SC8546_UFCS_TX_BUFFER_REG, data, len);
+		ret += sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
+			SC8546_UFCS_CTL1_SEND_MASK, SC8546_UFCS_CTL1_SEND_SHIFT, 1);
+		if (ret)
+			break;
+
+		ret = sc8546_ufcs_wait(di, flag);
+		if (ret == SC8546_UFCS_RX_TX_CONFLICT_ERROR) {
+			hwlog_err("send data conflict with receive data, retry %d times\n", i + 1);
+			sc8546_ufcs_clear_rx_buff(di);
+			continue;
+		}
+		break;
+	}
+
 	return ret;
 }
 
@@ -368,26 +427,39 @@ static int sc8546_ufcs_wait_msg_ready(void *dev_data, u8 flag)
 static int sc8546_ufcs_get_rx_len(void *dev_data, u8 *len)
 {
 	struct sc8546_device_info *di = dev_data;
-	struct sc8546_ufcs_msg_node *msg = sc8546_ufcs_get_msg(di);
 
-	if (!di || !msg) {
-		hwlog_err("di or msg is null\n");
+	if (!di) {
+		hwlog_err("di is null\n");
 		*len = 0;
 		return -ENODEV;
 	}
 
-	*len = msg->len;
+	if (!di->ufcs_msg_ready_flag) {
+		reinit_completion(&di->sc8546_ufcs_msg_update_completion);
+		if (!wait_for_completion_timeout(&di->sc8546_ufcs_msg_update_completion,
+			msecs_to_jiffies(SC8546_UFCS_WAIT_MSG_UPDATE_TIMEOUT))) {
+			hwlog_err("wait for updating msg timeout\n");
+			*len = 0;
+			return -ENODEV;;
+		}
+	}
+
+	*len = di->ufcs_pending_msg_len;
 	return 0;
 }
 
 static int sc8546_ufcs_read_msg(void *dev_data, u8 *data, u8 len)
 {
 	struct sc8546_device_info *di = dev_data;
-	struct sc8546_ufcs_msg_node *msg = sc8546_ufcs_get_msg(di);
 
-	if (!di || !data || !msg) {
-		hwlog_err("di or data or msg is null\n");
+	if (!di || !data) {
+		hwlog_err("di or data is null\n");
 		return -ENODEV;
+	}
+
+	if (!di->ufcs_msg_ready_flag) {
+		hwlog_err("msg is not ready\n");
+		return -EINVAL;
 	}
 
 	if (len > SC8546_UFCS_RX_BUF_WITHOUTHEAD_SIZE) {
@@ -395,23 +467,82 @@ static int sc8546_ufcs_read_msg(void *dev_data, u8 *data, u8 len)
 		return -EINVAL;
 	}
 
-	memcpy(data, &msg->data[0], len);
+	memcpy(data, &di->ufcs_pending_msg[0], len);
 	di->ufcs_irq[0] = 0;
 	di->ufcs_irq[1] = 0;
 	return 0;
 }
 
-static int sc8546_ufcs_end_read_msg(void *dev_data)
+void sc8546_ufcs_pending_msg_update_work(struct work_struct *work)
 {
-	struct sc8546_device_info *di = dev_data;
+	struct sc8546_ufcs_msg_node *msg;
+	struct sc8546_device_info *di = NULL;
 
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -ENODEV;
+	if (!work)
+		return;
+
+	di = container_of(work, struct sc8546_device_info, ufcs_msg_update_work.work);
+	if (!di || !di->client)
+		return;
+
+	hwlog_info("start pending msg update work\n");
+	/* init msg list */
+	sc8546_ufcs_free_node_list(di, true);
+	if (sc8546_ufcs_init_msg_head(di)) {
+		hwlog_err("msg list init fail\n");
+		return;
 	}
 
-	sc8546_ufcs_delete_node(di);
-	return 0;
+	reinit_completion(&di->sc8546_add_msg_completion);
+	reinit_completion(&di->sc8546_ufcs_read_msg_completion);
+
+	while (1) {
+		if (g_sc8546_ufcs_msg_head->num <= 0) {
+			if (!wait_for_completion_timeout(&di->sc8546_add_msg_completion,
+				msecs_to_jiffies(SC8546_UFCS_MSG_TIMEOUT))) {
+				hwlog_err("wait for adding msg timeout\n");
+				break;
+			}
+			reinit_completion(&di->sc8546_add_msg_completion);
+		}
+
+		msg = sc8546_ufcs_get_msg(di);
+		if (!msg) {
+			hwlog_err("msg is null\n");
+			break;
+		}
+
+		di->ufcs_pending_msg_len = msg->len;
+		memcpy(di->ufcs_pending_msg, &msg->data[0], di->ufcs_pending_msg_len);
+		di->ufcs_msg_ready_flag = true;
+		sc8546_ufcs_delete_node(di);
+		complete(&di->sc8546_ufcs_msg_update_completion);
+
+		hwlog_info("pending msg updated\n");
+
+		if (!di->ufcs_communicating_flag && di->ufcs_msg_ready_flag)
+			power_event_bnc_notify(POWER_BNT_UFCS,
+				POWER_NE_UFCS_REC_UNSOLICITED_DATA, NULL);
+
+		if (!wait_for_completion_timeout(&di->sc8546_ufcs_read_msg_completion,
+			msecs_to_jiffies(SC8546_UFCS_MSG_TIMEOUT))) {
+			hwlog_err("wait for reading msg timeout\n");
+			break;
+		}
+		reinit_completion(&di->sc8546_ufcs_read_msg_completion);
+	}
+
+	sc8546_ufcs_free_node_list(di, true);
+}
+
+void sc8546_ufcs_cancel_msg_update_work(struct sc8546_device_info *di)
+{
+	if (!di)
+		return;
+
+	complete(&di->sc8546_add_msg_completion);
+	complete(&di->sc8546_ufcs_read_msg_completion);
+	cancel_delayed_work(&di->ufcs_msg_update_work);
 }
 
 static int sc8546_ufcs_soft_reset_master(void *dev_data)
@@ -425,6 +556,7 @@ static int sc8546_ufcs_soft_reset_master(void *dev_data)
 
 	di->ufcs_irq[0] = 0;
 	di->ufcs_irq[1] = 0;
+	sc8546_ufcs_cancel_msg_update_work(di);
 	return sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
 		SC8546_UFCS_CTL1_EN_PROTOCOL_MASK,
 		SC8546_UFCS_CTL1_EN_PROTOCOL_SHIFT, 0);
@@ -433,7 +565,6 @@ static int sc8546_ufcs_soft_reset_master(void *dev_data)
 static int sc8546_ufcs_set_communicating_flag(void *dev_data, bool flag)
 {
 	struct sc8546_device_info *di = dev_data;
-	struct sc8546_ufcs_msg_head *head = g_sc8546_ufcs_msg_head;
 
 	if (!di) {
 		hwlog_err("di is null\n");
@@ -445,22 +576,40 @@ static int sc8546_ufcs_set_communicating_flag(void *dev_data, bool flag)
 		return -EINVAL;
 	}
 
-	if (di->ufcs_communicating_flag && !flag && head->num) {
-		hwlog_info("unprocessed information exists,num=%d\n", head->num);
-		power_event_bnc_notify(POWER_BNT_UFCS,
-			POWER_NE_UFCS_REC_UNSOLICITED_DATA, NULL);
-	}
+	di->ufcs_communicating_flag = flag;
+	return 0;
+}
 
-	/* init msg list */
-	sc8546_ufcs_free_node_list(di);
-	sc8546_ufcs_init_msg_head(di);
-	if (!head) {
-		hwlog_err("head is null\n");
+static int sc8546_ufcs_config_baud_rate(void *dev_data, int baud_rate)
+{
+	struct sc8546_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
 		return -ENODEV;
 	}
 
-	di->ufcs_communicating_flag = flag;
-	return 0;
+	return sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
+		SC8546_UFCS_CTL1_BAUD_RATE_MASK,
+		SC8546_UFCS_CTL1_BAUD_RATE_SHIFT, (u8)baud_rate);
+}
+
+static int sc8546_ufcs_hard_reset_cable(void *dev_data)
+{
+	struct sc8546_device_info *di = dev_data;
+	int ret;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	ret = sc8546_write_mask(di, SC8546_UFCS_CTL1_REG,
+		SC8546_UFCS_CTL1_CABLE_HARDRESET_MASK,
+		SC8546_UFCS_CTL1_CABLE_HARDRESET_SHIFT, 1);
+	power_usleep(DT_USLEEP_2MS);
+
+	return ret;
 }
 
 static bool sc8546_ufcs_need_check_ack(void *dev_data)
@@ -475,9 +624,12 @@ static struct hwufcs_ops sc8546_hwufcs_ops = {
 	.wait_msg_ready = sc8546_ufcs_wait_msg_ready,
 	.read_msg = sc8546_ufcs_read_msg,
 	.end_read_msg = sc8546_ufcs_end_read_msg,
+	.clear_rx_buff = sc8546_ufcs_clear_rx_buff,
 	.soft_reset_master = sc8546_ufcs_soft_reset_master,
 	.get_rx_len = sc8546_ufcs_get_rx_len,
 	.set_communicating_flag = sc8546_ufcs_set_communicating_flag,
+	.config_baud_rate = sc8546_ufcs_config_baud_rate,
+	.hard_reset_cable = sc8546_ufcs_hard_reset_cable,
 	.need_check_ack = sc8546_ufcs_need_check_ack,
 };
 

@@ -151,7 +151,9 @@ int mmc_try_claim_host(struct mmc_host *host, struct mmc_ctx *ctx,
 void mmc_release_host(struct mmc_host *host);
 void mmc_get_card(struct mmc_card *card, struct mmc_ctx *ctx);
 void mmc_put_card(struct mmc_card *card, struct mmc_ctx *ctx);
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+void mmc_wait_done(struct mmc_request *mrq);
+#endif
 /**
  *	mmc_claim_host - exclusively claim a host
  *	@host: mmc host to claim

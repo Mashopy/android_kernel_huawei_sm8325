@@ -883,7 +883,7 @@ static int cps2021_register_head(char *buffer, int size, void *dev_data)
 	int i, tmp;
 	int len = 0;
 	char buff[BUF_LEN] = {0};
-	const char *half_head = "dev      mode   Ibus   Vbus   Ibat   Vbat   Temp";
+	const char *half_head = "dev       mode   Ibus   Vbus   Ibat   Vbat   Temp   ";
 	struct cps2021_device_info *di = dev_data;
 
 	if (!di || !buffer)
@@ -933,12 +933,14 @@ static int cps2021_db_value_dump(struct cps2021_device_info *di,
 	(void)cps2021_get_device_temp(&dv.temp, di);
 	(void)cps2021_read_byte(di, CPS2021_CONTROL1_REG, &reg);
 
-	snprintf(buff, sizeof(buff), "%s  ", di->name);
+	snprintf(buff, sizeof(buff), "%-10s", di->name);
 	len += strlen(buff);
 	if (len < size)
 		strncat(buffer, buff, strlen(buff));
 
-	if (((reg & CPS2021_CONTROL1_OPMODE_MASK) >> CPS2021_CONTROL1_OPMODE_SHIFT) ==
+	if (cps2021_is_device_close(di))
+		snprintf(buff, sizeof(buff), "%s", "OFF    ");
+	else if (((reg & CPS2021_CONTROL1_OPMODE_MASK) >> CPS2021_CONTROL1_OPMODE_SHIFT) ==
 		CPS2021_CONTROL1_FBYPASSMODE)
 		snprintf(buff, sizeof(buff), "%s", "LVC    ");
 	else if (((reg & CPS2021_CONTROL1_OPMODE_MASK) >> CPS2021_CONTROL1_OPMODE_SHIFT) ==

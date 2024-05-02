@@ -53,8 +53,10 @@
 #define SYNA_ONE_CMD_LEN 6
 #define SYNA_CMD_GESTURE_LEN 8
 #define DOUBLE_TAP_FLAG 2
+#define SINGLE_TAP_FLAG 1
 #define STYLUS_EVENT_FLAG 32
 #define SYNA_CMD_GESTURE_MAX 24
+#define OMNI_CMD_GESTURE_MAX 64
 #define NEED_WORK_IN_SUSPEND 1
 #define NO_NEED_WORK_IN_SUSPEND 0
 #define FIRST_FRAME_USEFUL_LEN 2
@@ -77,7 +79,7 @@
 #define RMI_ADDR_SECOND 0xEE
 #define TOUCH_EVENT_TYPE 0xff
 
-#define SPI_READ_WRITE_SIZE 256
+#define SPI_READ_WRITE_SIZE 512
 #define RMI_CMD_LEN 2
 #define FRAME_HEAD_LEN 4
 #define MOVE_8BIT 8
@@ -86,7 +88,9 @@
 #define FRAME_CMD_LEN 4
 #define DYNAMIC_CMD_LEN 6
 
+#define CMD_GET_CHIP_IDENTIFY 0x02
 #define CMD_SET_DYNAMIC_CONFIG 0x24
+#define CMD_GET_DYNAMIC_CONFIG 0x23
 #define CMD_DYNAMIC_CONFIG_LEN 3
 #define SYNA_ENTER_GUESTURE_MODE 1
 #define SYNA_EXIT_GUESTURE_MODE 1
@@ -121,6 +125,18 @@
 #define SYNA_FINGER_ONE_CMD 0x08
 #define DEBUG_OPEN_VALUE 0x64
 #define DEBUG_LOG_LENGTH 102
+
+#define DEBUG_HEAD_LENGTH 2
+#define DEBUG_LOG_BUF_LENGTH 1024
+#define SYNA_NORMALIZED_EVENT_LENGTH 0x50
+
+enum syna_normalized_key_event {
+	EVENT_NULL = 0,
+	EVENT_SINGLE_CLICK = 1,
+	EVENT_DOUBLE_CLICK = 2,
+	EVENT_STYLUS_SINGLE_CLICK = 3,
+	EVENT_STYLUS_SINGLE_CLICK_AND_PRESS = 4,
+};
 
 enum dynamic_config_id {
 	DC_UNKNOWN = 0x00,
@@ -218,6 +234,9 @@ static unsigned char *spi_write_buf;
 static struct spi_transfer *spi_xfer;
 static unsigned int get_project_id_flag;
 static unsigned int need_power_off;
+static unsigned int use_normalized_ap_protocol;
+static u32 omni_distinguish_flag;
+static u32 packet_len;
 #if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
 static struct udfp_mode_status ud_mode_status;
 static void touch_driver_set_cmd(struct thp_device *tdev,
@@ -553,6 +572,26 @@ int touch_driver_parse_ic_feature_config(
 	unsigned int value = 0;
 
 	thp_log_debug("%s:Enter!\n", __func__);
+	rc = of_property_read_u32(thp_node, "aod_support_on_tddi", &value);
+	if (!rc) {
+		cd->aod_support_on_tddi = value;
+		thp_log_info("%s: aod_support_on_tddi %u\n",
+			__func__, value);
+	}
+	value = 0;
+	rc = of_property_read_u32(thp_node, "support_low_power_mode", &value);
+	if (!rc) {
+		cd->support_low_power_mode = value;
+		thp_log_info("%s: support_low_power_mode %u\n",
+			__func__, value);
+	}
+	value = 0;
+	rc = of_property_read_u32(thp_node, "omni_distinguish_flag", &value);
+	if (!rc) {
+		omni_distinguish_flag = value;
+		thp_log_info("%s: group_distinguish_flag value is: %u\n",
+			__func__, omni_distinguish_flag);
+	}
 	cd->support_get_frame_read_once = 0;
 	rc = of_property_read_u32(thp_node, "support_get_frame_read_once",
 		&value);
@@ -587,6 +626,14 @@ int touch_driver_parse_ic_feature_config(
 	if (!rc) {
 		cd->need_extra_system_clk = value;
 		thp_log_info("%s: need_extra_system_clk %u\n",
+			__func__, value);
+	}
+	use_normalized_ap_protocol = 0;
+	rc = of_property_read_u32(thp_node,
+		"use_normalized_ap_protocol", &value);
+	if (!rc) {
+		use_normalized_ap_protocol = value;
+		thp_log_info("%s: use_normalized_ap_protocol %u\n",
 			__func__, value);
 	}
 	return 0;
@@ -1224,6 +1271,7 @@ static int touch_driver_resume(struct thp_device *tdev)
 	sdev = tdev->thp_core->sdev;
 	pen_clk_control(CLK_ENABLE);
 	gesture_status = tdev->thp_core->easy_wakeup_info.sleep_mode;
+
 	if (tdev->thp_core->self_control_power) {
 		if (is_pt_test_mode(tdev)) {
 			gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
@@ -1262,12 +1310,15 @@ static int touch_driver_resume(struct thp_device *tdev)
 		}
 	} else {
 #ifndef CONFIG_HUAWEI_THP_MTK
-		if (gesture_status == TS_GESTURE_MODE &&
-			tdev->thp_core->lcd_gesture_mode_support) {
+		if ((gesture_status == TS_GESTURE_MODE &&
+			tdev->thp_core->lcd_gesture_mode_support) ||
+			tdev->thp_core->tddi_aod_screen_off_flag) {
 			thp_log_info("gesture mode exit\n");
 			gpio_set_value(tdev->gpios->rst_gpio, THP_RESET_LOW);
 			mdelay(10); /* 10ms sequence delay */
 			gpio_set_value(tdev->gpios->rst_gpio, THP_RESET_HIGH);
+			if (tdev->thp_core->aod_support_on_tddi)
+				ud_mode_status.lowpower_mode = 0; /* clear lowpower status */
 		} else {
 			if (!tdev->thp_core->not_support_cs_control)
 				gpio_set_value(tdev->gpios->cs_gpio, 1);
@@ -1277,6 +1328,8 @@ static int touch_driver_resume(struct thp_device *tdev)
 				mdelay(10); /* 10ms sequence delay */
 			}
 			gpio_set_value(tdev->gpios->rst_gpio, THP_RESET_HIGH);
+			if (tdev->thp_core->aod_support_on_tddi)
+				ud_mode_status.lowpower_mode = 0; /* clear lowpower status */
 		}
 #else
 		if (tdev->thp_core->support_pinctrl == 0) {
@@ -1611,6 +1664,7 @@ static int touch_driver_suspend(struct thp_device *tdev)
 	unsigned int gesture_status;
 	unsigned int finger_status;
 	unsigned int stylus_status;
+
 	u8 syna_sleep_cmd[SYNA_COMMAMD_LEN] = { 0x2C, 0x00, 0x00 }; // ic sleep mode
 
 	thp_log_info("%s: called\n", __func__);
@@ -1623,7 +1677,8 @@ static int touch_driver_suspend(struct thp_device *tdev)
 	finger_status = !!(thp_get_status(THP_STATUS_UDFP));
 	stylus_status = (thp_get_status(THP_STATUS_STYLUS)) |
 		(thp_get_status(THP_STATUS_STYLUS3));
-	thp_log_info("%s:gesture_status:%u,finger_status:%u,stylus_status=%u\n",
+	thp_log_info(
+		"%s:gesture_status:%u,finger_status:%u,stylus_status:%u\n",
 		__func__, gesture_status, finger_status, stylus_status);
 	thp_log_info(
 		"%s:ring_support:%d,ring_switch:%u,phone_status:%u,ring_setting_switch:%u\n",
@@ -1632,9 +1687,9 @@ static int touch_driver_suspend(struct thp_device *tdev)
 	thp_log_info("%s:aod_touch_status:%u\n", __func__,
 		cd->aod_touch_status);
 	pen_clk_control(CLK_DISABLE);
-	if ((gesture_status == TS_GESTURE_MODE) || finger_status ||
+	if (((gesture_status == TS_GESTURE_MODE) || finger_status ||
 		cd->ring_setting_switch || stylus_status ||
-		cd->aod_touch_status) {
+		cd->aod_touch_status)) {
 #ifdef CONFIG_HUAWEI_SHB_THP
 		if (cd->support_shb_thp)
 			touch_driver_get_poweroff_status();
@@ -1675,8 +1730,9 @@ static int touch_driver_suspend(struct thp_device *tdev)
 			}
 		}
 	} else {
-		if (gesture_status == TS_GESTURE_MODE &&
-			cd->lcd_gesture_mode_support) {
+		if ((gesture_status == TS_GESTURE_MODE &&
+			cd->lcd_gesture_mode_support) ||
+			tdev->thp_core->tddi_aod_screen_off_flag) {
 			thp_log_info("gesture mode enter\n");
 			/*
 			 * 120ms sequence delay,
@@ -1685,6 +1741,11 @@ static int touch_driver_suspend(struct thp_device *tdev)
 			msleep(120);
 			touch_driver_gesture_mode_enable_switch(tdev,
 				SYNA_ENTER_GUESTURE_MODE);
+			if (cd->aod_support_on_tddi && cd->tp_ud_lowpower_status) {
+				touch_driver_set_cmd(tdev, syna_sleep_cmd, sizeof(syna_sleep_cmd));
+				ud_mode_status.lowpower_mode = cd->tp_ud_lowpower_status;
+				thp_log_info("%s: complementary send tp lowpower cmd succ\n", __func__);
+			}
 		} else {
 #ifndef CONFIG_HUAWEI_THP_MTK
 			gpio_set_value(tdev->gpios->rst_gpio, 0);
@@ -1830,7 +1891,13 @@ static int touch_driver_set_lowpower_state(struct thp_device *tdev,
 		thp_log_err("%s: tdev null\n", __func__);
 		return -EINVAL;
 	}
-	if (cd->work_status != SUSPEND_DONE) {
+	/*
+	 *	aod_state_flag is true demostrate phone is working under
+	 *	aod condition, when screen on occurs during this period, TP driver will
+	 *	run off power branch during touch drver suspend.
+	 */
+	thp_log_info("%s : aod_state_flag value %u\n", __func__, cd->aod_state_flag);
+	if (!cd->aod_state_flag && cd->work_status != SUSPEND_DONE) {
 		thp_log_info("%s: resumed, not handle lp\n", __func__);
 		return NO_ERR;
 	}
@@ -1860,6 +1927,8 @@ static void parse_touch_event_info(struct thp_device *tdev,
 	unsigned int tmp_event;
 	unsigned int finger_status;
 	struct thp_core_data *cd = NULL;
+	uint16_t fingerprint_area_coverage = 0;
+	uint16_t finger_size = 0;
 
 	if ((!tdev) || (!read_buff) || (!udfp_data) || (len <= 0)) {
 		thp_log_err("%s: invalid data\n", __func__);
@@ -1875,7 +1944,14 @@ static void parse_touch_event_info(struct thp_device *tdev,
 	/* syna format: byte[20~23] = udfp_event */
 	tmp_event = read_buff[20] + (read_buff[21] << 8) +
 		(read_buff[22] << 16) + (read_buff[23] << 24);
-	thp_log_info("touch event = %u\n", tmp_event);
+	thp_log_info("touch event = %u, x = %u, y = %u\n",
+		tmp_event, udfp_data->tpud_data.tp_x, udfp_data->tpud_data.tp_y);
+	/* syna format: byte[24~25] = fingerprint area coverage ratio */
+	fingerprint_area_coverage = read_buff[24] + (read_buff[25] << MOVE_8BIT);
+	/* syna format: byte[26~27] = finger size */
+	finger_size = read_buff[26] + (read_buff[27] << MOVE_8BIT);
+	thp_log_info("fingerprint_area_coverage = %d, finger_size = %d\n",
+		fingerprint_area_coverage, finger_size);
 	udfp_data->tpud_data.udfp_event = TP_FP_EVENT_MAX;
 	if (finger_status) {
 		if (tmp_event == FP_CORE_AREA_FINGER_DOWN)
@@ -1937,6 +2013,287 @@ static int parse_event_info(struct thp_device *tdev,
 	return 0;
 }
 
+/*
+ * Packet: (286 byte)
+ *  0               1               2               3
+ *  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                              Head                             |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                             Payload                           |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * ...
+ *
+ * Head: (Flag: 0xC0)
+ *  0               1               2               3
+ *  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |      0xA5     |     Flag      |        Payload Length         |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ * Payload:(Huawei Standard Package Structure Payload + Debug Payload)
+ *  0               1               2               3
+ *  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |     Huawei Standard Package Structure Payload (80 byte)       |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * ...
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                 Debug Payload (202 byte)                      |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * ...
+ *
+ * Huawei Standard Package Structure Payload:
+ *   0   1   2   3   0   1   2   3   0   1   2   3   0   1   2   3
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ * |    version    |  ud_fp_event  |mis_touch_count|  t_to_fd_time |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ * |    pressure   |m_t_c_pressure |    coverage   | tp_fingersize |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ * |      tp_x     |      tp_y     |    tp_major   |    tp_minor   |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ * |tp_orientation |    down_up    |   aod_event   |    key_event  |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ * |    reserved   |    reserved   |    reserved   |    reserved   |
+ * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+ *
+ * Debug Payload: (202 byte)
+ *  0               1               2               3
+ *  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |  Line Length  |   Print Type  |           Print Data          |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * |                          Print Data                           |
+ * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ * ...
+ */
+
+static void parse_debug_c1_print_type_char(const unsigned char *debug_data,
+	unsigned int length, unsigned short line_length)
+{
+	unsigned int i;
+	unsigned int j;
+	char string_buf[DEBUG_LOG_BUF_LENGTH] = {0};
+	int string_buf_offset;
+
+	for (i = 0; i < length; i += line_length) {
+		memset(string_buf, 0, sizeof(string_buf));
+		string_buf_offset = 0;
+		for (j = 0; j < line_length; j++)
+			string_buf_offset += snprintf(string_buf + string_buf_offset,
+				DEBUG_LOG_BUF_LENGTH - string_buf_offset,
+				"%02x,", ((unsigned char*)debug_data)[i + j]);
+		thp_log_info("debug_raw[%3d-%3d]= %s\n", i, i + line_length - 1, string_buf);
+	}
+
+	return;
+}
+
+static void parse_debug_c1_print_type_short(const unsigned char *debug_data,
+	unsigned int length, unsigned short line_length)
+{
+	unsigned int i;
+	unsigned int j;
+	char string_buf[DEBUG_LOG_BUF_LENGTH] = {0};
+	int string_buf_offset;
+
+	for (i = 0; i < (length >> 1); i += line_length) {
+		memset(string_buf, 0, sizeof(string_buf));
+		string_buf_offset = 0;
+		for (j = 0; j < line_length; j++)
+			string_buf_offset += snprintf(string_buf + string_buf_offset,
+				DEBUG_LOG_BUF_LENGTH - string_buf_offset,
+				"%6hd,", ((short*)debug_data)[i + j]);
+		thp_log_info("debug_raw[%3d-%3d]= %s\n", i, i + line_length - 1, string_buf);
+	}
+
+	return;
+}
+
+static void parse_debug_c1_print_type_ushort(const unsigned char *debug_data,
+	unsigned int length, unsigned short line_length)
+{
+	unsigned int i;
+	unsigned int j;
+	char string_buf[DEBUG_LOG_BUF_LENGTH] = {0};
+	int string_buf_offset;
+
+	for (i = 0; i < (length >> 1); i += line_length) {
+		memset(string_buf, 0, sizeof(string_buf));
+		string_buf_offset = 0;
+		for (j = 0; j < line_length; j++)
+			string_buf_offset += snprintf(string_buf + string_buf_offset,
+				DEBUG_LOG_BUF_LENGTH - string_buf_offset,
+				"%6hu,", ((unsigned short*)debug_data)[i + j]);
+		thp_log_info("debug_raw[%3d-%3d]= %s\n", i, i + line_length - 1, string_buf);
+	}
+
+	return;
+}
+
+static void touch_driver_debug_c1(struct thp_device *tdev,
+	const unsigned char *debug_data, unsigned int length)
+{
+	unsigned short line_length = debug_data[0];
+	unsigned short data_type = debug_data[1];
+
+	if (line_length <= 0) {
+		thp_log_info("%s: invalid data, line_length=%d\n", __func__, length, line_length);
+		return;
+	}
+
+	thp_log_info("%s: line_length=%d, data_type=%d\n", __func__, line_length, data_type);
+
+	/* data type 0: %02x, BYTE */
+	if (data_type == 0)
+		parse_debug_c1_print_type_char(debug_data + DEBUG_HEAD_LENGTH,
+			length - DEBUG_HEAD_LENGTH, line_length);
+	/* data type 1: %6hd, int16 */
+	else if (data_type == 1)
+		parse_debug_c1_print_type_short(debug_data + DEBUG_HEAD_LENGTH,
+			length - DEBUG_HEAD_LENGTH, line_length);
+	/* data type 2: %6hu, uint16 */
+	else if (data_type == 2)
+		parse_debug_c1_print_type_ushort(debug_data + DEBUG_HEAD_LENGTH,
+			length - DEBUG_HEAD_LENGTH, line_length);
+
+	return;
+}
+
+static void parse_normalized_tpud_data(struct thp_device *tdev,
+	const char *read_buff, struct thp_udfp_data *udfp_data)
+{
+	unsigned int finger_status;
+	struct thp_core_data *cd = NULL;
+
+	cd = tdev->thp_core;
+	finger_status = !!(thp_get_status(THP_STATUS_UDFP));
+	/* read_buff [4:7] = version */
+	udfp_data->tpud_data.version = read_buff[4] + (read_buff[5] << MOVE_8BIT) +
+		(read_buff[6] << MOVE_16BIT) + (read_buff[7] << MOVE_24BIT);
+	/* read_buff [8:11] = udfp_event */
+	udfp_data->tpud_data.udfp_event = read_buff[8] + (read_buff[9] << MOVE_8BIT) +
+		(read_buff[10] << MOVE_16BIT) + (read_buff[11] << MOVE_24BIT);
+	thp_log_info("%s: unprocessed udfp_event:%u\n", __func__, udfp_data->tpud_data.udfp_event);
+	if ((udfp_data->tpud_data.udfp_event > TP_FP_EVENT_MAX) ||
+		!finger_status)
+		udfp_data->tpud_data.udfp_event = TP_FP_EVENT_MAX;
+	if ((udfp_data->tpud_data.udfp_event == TP_EVENT_HOVER_DOWN) ||
+		(udfp_data->tpud_data.udfp_event == TP_EVENT_HOVER_UP))
+		udfp_data->tpud_data.udfp_event = TP_FP_EVENT_MAX;
+	/* read_buff [12:15] = mis_touch_count_area */
+	udfp_data->tpud_data.mis_touch_count_area = read_buff[12] + (read_buff[13] << MOVE_8BIT) +
+		(read_buff[14] << MOVE_16BIT) + (read_buff[15] << MOVE_24BIT);
+	/* read_buff [16:19] = touch_to_fingerdown_time */
+	udfp_data->tpud_data.touch_to_fingerdown_time = read_buff[16] + (read_buff[17] << MOVE_8BIT) +
+		(read_buff[18] << MOVE_16BIT) + (read_buff[19] << MOVE_24BIT);
+	/* read_buff [20:23] = pressure */
+	udfp_data->tpud_data.pressure = read_buff[20] + (read_buff[21] << MOVE_8BIT) +
+		(read_buff[22] << MOVE_16BIT) + (read_buff[23] << MOVE_24BIT);
+	/* read_buff [24:27] = mis_touch_count_pressure */
+	udfp_data->tpud_data.mis_touch_count_pressure = read_buff[24] + (read_buff[25] << MOVE_8BIT) +
+		(read_buff[26] << MOVE_16BIT) + (read_buff[27] << MOVE_24BIT);
+	/* read_buff [28:31] = tp_coverage */
+	udfp_data->tpud_data.tp_coverage = read_buff[28] + (read_buff[29] << MOVE_8BIT) +
+		(read_buff[30] << MOVE_16BIT) + (read_buff[31] << MOVE_24BIT);
+	/* read_buff [32:35] = tp_fingersize */
+	udfp_data->tpud_data.tp_fingersize = read_buff[32] + (read_buff[35] << MOVE_8BIT) +
+		(read_buff[34] << MOVE_16BIT) + (read_buff[35] << MOVE_24BIT);
+	/* read_buff [36:39]  = tp_x */
+	udfp_data->tpud_data.tp_x = read_buff[36] + (read_buff[37] << MOVE_8BIT) +
+		(read_buff[38] << MOVE_16BIT) + (read_buff[39] << MOVE_24BIT);
+	/* read_buff [40:43]  = tp_y */
+	udfp_data->tpud_data.tp_y = read_buff[40] + (read_buff[41] << MOVE_8BIT) +
+		(read_buff[42] << MOVE_16BIT) + (read_buff[43] << MOVE_24BIT);
+	/* read_buff [44:47]  = tp_major */
+	udfp_data->tpud_data.tp_major = read_buff[44] + (read_buff[45] << MOVE_8BIT) +
+		(read_buff[46] << MOVE_16BIT) + (read_buff[47] << MOVE_24BIT);
+	/* read_buff [48:51]  = tp_minor */
+	udfp_data->tpud_data.tp_minor = read_buff[48] + (read_buff[49] << MOVE_8BIT) +
+		(read_buff[50] << MOVE_16BIT) + (read_buff[51] << MOVE_24BIT);
+	/* read_buff [52:55]  = tp_ori */
+	udfp_data->tpud_data.tp_ori = read_buff[52] + (read_buff[53] << MOVE_8BIT) +
+		(read_buff[54] << MOVE_16BIT) + (read_buff[55] << MOVE_24BIT);
+}
+
+static void parse_normalized_key_event(struct thp_device *tdev,
+	const char *read_buff, struct thp_udfp_data *udfp_data)
+{
+	int retval;
+	unsigned char report_to_ap_cmd[SYNA_CMD_GESTURE_LEN] = {
+		0xC7, 0x05, 0x00, 0x33,
+		0x00, 0x00, 0x00, 0x00
+	};
+
+	/* read_buff [64:67]  = key_event */
+	udfp_data->key_event = read_buff[64] + (read_buff[65] << MOVE_8BIT) +
+		(read_buff[66] << MOVE_16BIT) + (read_buff[67] << MOVE_24BIT);
+
+	if (udfp_data->key_event) {
+		if (udfp_data->key_event == EVENT_DOUBLE_CLICK) {
+			udfp_data->key_event = TS_DOUBLE_CLICK;
+			report_to_ap_cmd[TOUCH_GESTURE_CMD] |= THP_GESTURE_DOUBLE_CLICK;
+		} else if (udfp_data->key_event == EVENT_STYLUS_SINGLE_CLICK) {
+			udfp_data->key_event = TS_STYLUS_WAKEUP_TO_MEMO;
+			report_to_ap_cmd[TOUCH_GESTURE_CMD] |= THP_GESTURE_STYLUS_CLICK;
+		} else if (udfp_data->key_event == SINGLE_TAP_FLAG) {
+			udfp_data->aod_event = AOD_VALID_EVENT;
+		}
+
+		memset(spi_write_buf, 0, SPI_READ_WRITE_SIZE);
+		memcpy(spi_write_buf, report_to_ap_cmd, sizeof(report_to_ap_cmd));
+		retval = touch_driver_spi_write(tdev->thp_core->sdev,
+			spi_write_buf, sizeof(report_to_ap_cmd));
+		if (retval < 0)
+			thp_log_err("%s:spi write failed\n", __func__);
+	}
+}
+
+static int parse_normalized_event_info(struct thp_device *tdev,
+	const char *read_buff, struct thp_udfp_data *udfp_data, int len)
+{
+	unsigned int down_up;
+	unsigned int max_diff;
+	struct thp_core_data *cd = tdev->thp_core;
+
+	if ((!read_buff) || (!udfp_data) || (len <= 0)) {
+		thp_log_err("%s: invalid data\n", __func__);
+		return -EINVAL;
+	}
+	udfp_data->tpud_data.udfp_event = TP_FP_EVENT_MAX;
+	parse_normalized_tpud_data(tdev, read_buff, udfp_data);
+
+	/* read_buff [56:58]  = down_up */
+	down_up = read_buff[56] + (read_buff[57] << MOVE_8BIT) +
+		(read_buff[58] << MOVE_16BIT) + (read_buff[59] << MOVE_24BIT);
+	/* read_buff [60:63]  = aod_event */
+	if (cd->aod_touch_status)
+		udfp_data->aod_event = read_buff[60] + (read_buff[61] << MOVE_8BIT) +
+			(read_buff[62] << MOVE_16BIT) + (read_buff[63] << MOVE_24BIT);
+
+	parse_normalized_key_event(tdev, read_buff, udfp_data);
+
+	/* read_buff [68:71]  = max_diff */
+	max_diff = read_buff[68] + (read_buff[69] << MOVE_8BIT) +
+		(read_buff[70] << MOVE_16BIT) + (read_buff[71] << MOVE_24BIT);
+
+	thp_log_info("%s: down_up:%u, touch_position:(%u, %u), tp_coverage:%u, tp_fingersize:%u\n",
+		__func__, down_up, udfp_data->tpud_data.tp_x, udfp_data->tpud_data.tp_y,
+		udfp_data->tpud_data.tp_coverage, udfp_data->tpud_data.tp_fingersize);
+	thp_log_info("%s: tp_major:%u, tp_minor:%u, tp_ori:%u, max_diff:%u\n", __func__,
+		udfp_data->tpud_data.tp_major, udfp_data->tpud_data.tp_minor,
+		udfp_data->tpud_data.tp_ori, max_diff);
+	thp_log_info("%s: udfp_event:%u, aod:%u, key:%u\n", __func__, udfp_data->tpud_data.udfp_event,
+		udfp_data->aod_event, udfp_data->key_event);
+
+	if (len > SYNA_NORMALIZED_EVENT_LENGTH && len < SPI_READ_WRITE_SIZE - MESSAGE_HEADER_SIZE)
+		touch_driver_debug_c1(tdev,
+			read_buff + MESSAGE_HEADER_SIZE + SYNA_NORMALIZED_EVENT_LENGTH,
+			len - SYNA_NORMALIZED_EVENT_LENGTH);
+
+	return NO_ERR;
+}
+
 static int touch_driver_get_event_info(struct thp_device *tdev,
 	struct thp_udfp_data *udfp_data)
 {
@@ -1945,6 +2302,7 @@ static int touch_driver_get_event_info(struct thp_device *tdev,
 	int retval;
 	int i;
 	unsigned int length;
+	bool flag;
 
 	thp_log_info("%s enter\n", __func__);
 	if ((!tdev) || (!tdev->thp_core) || (!tdev->thp_core->sdev) ||
@@ -1988,7 +2346,8 @@ static int touch_driver_get_event_info(struct thp_device *tdev,
 		retval = -ENODATA;
 		goto error;
 	}
-	if ((data[0] != MESSAGE_MARKER) || (length > SYNA_CMD_GESTURE_MAX)) {
+	flag = (data[0] != MESSAGE_MARKER) || ((length > SYNA_CMD_GESTURE_MAX) && !use_normalized_ap_protocol);
+	if (flag) {
 		thp_log_err("%s: incorrect marker: 0x%02x\n",
 			__func__, data[0]);
 		if (data[1] == STATUS_CONTINUED_READ ||
@@ -2003,15 +2362,22 @@ static int touch_driver_get_event_info(struct thp_device *tdev,
 		goto error;
 	}
 	if (length) {
+		packet_len = omni_distinguish_flag ?
+			length + MESSAGE_HEADER_SIZE : length + FIRST_FRAME_USEFUL_LEN;
 		retval = touch_driver_spi_read(tdev->thp_core->sdev,
 			data + FIRST_FRAME_USEFUL_LEN,
-			length + FIRST_FRAME_USEFUL_LEN); /* read packet */
+			packet_len); /* read packet */
 		if (retval < 0) {
 			thp_log_err("%s: Failed to read length\n", __func__);
 			goto error;
 		}
-		retval = parse_event_info(tdev, data, udfp_data,
-			SYNA_CMD_GESTURE_MAX);
+
+		if (length > SYNA_CMD_GESTURE_MAX)
+			retval = parse_normalized_event_info(tdev, data, udfp_data,
+				length);
+		else
+			retval = parse_event_info(tdev, data, udfp_data,
+				SYNA_CMD_GESTURE_MAX);
 		if (retval) {
 			thp_log_err("parse_event_info fail %d\n", retval);
 			goto error;

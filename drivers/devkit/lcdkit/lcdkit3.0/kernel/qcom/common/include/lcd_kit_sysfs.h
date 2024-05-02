@@ -52,6 +52,12 @@ enum lcd_kit_sysfs_index {
 	PRE_CAMERA_POSITION,
 	PANEL_VERSION_INDEX,
 	LCD_CABC_MODE,
+#ifdef CONFIG_MATTING_ALGO_TASK
+	MATTING_ALGO_DEBUG_INDEX,
+	MATTING_ALGO_CROP_DEBUG_INDEX,
+	MATTING_ALGO_LUX_VALUE_INDEX,
+	MATTING_ALGO_ALS_PARAM_INDEX,
+#endif
 };
 /* sysfs support enum */
 enum lcd_kit_sysfs_support {
@@ -167,5 +173,23 @@ struct lcd_kit_sysfs_ops {
 		struct device_attribute *attr, char *buf);
 	ssize_t (*panel_version_show)(struct device *dev,
 		struct device_attribute *attr, char *buf);
+#ifdef CONFIG_MATTING_ALGO_TASK
+	ssize_t (*matting_algo_debug_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
+	ssize_t (*matting_algo_debug_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+	ssize_t (*matting_algo_crop_debug_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
+	ssize_t (*matting_algo_crop_debug_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+	ssize_t (*matting_algo_lux_value_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
+	ssize_t (*matting_algo_lux_value_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+	ssize_t (*matting_algo_als_param_show)(struct device *dev,
+		struct device_attribute *attr, char *buf);
+	ssize_t (*matting_algo_als_param_store)(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count);
+#endif
 };
 #endif

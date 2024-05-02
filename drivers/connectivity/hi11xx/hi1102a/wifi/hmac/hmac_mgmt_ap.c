@@ -1285,14 +1285,13 @@ OAL_STATIC oal_uint32 hmac_ap_prepare_assoc_req(
         return OAL_SUCC;
     }
 }
-OAL_STATIC void hmac_ap_up_rx_asoc_req_change_user_state_to_auth(hmac_vap_stru *hmac_vap, hmac_user_stru *hmac_user)
+OAL_STATIC void hmac_ap_up_rx_asoc_req_change_user_state_to_auth(mac_vap_stru *mac_vap, hmac_user_stru *hmac_user)
 {
-    if (hmac_user->assoc_ap_up_tx_auth_req) {
-        oam_warning_log0(hmac_vap->st_vap_base_info.uc_vap_id, OAM_SF_ASSOC,
+    if (mac_vap->pst_mib_info->st_wlan_mib_privacy.en_dot11RSNAMFPC != OAL_TRUE && hmac_user->assoc_ap_up_tx_auth_req) {
+        oam_warning_log0(mac_vap->uc_vap_id, OAM_SF_ASSOC,
                          "{hmac_ap_up_rx_asoc_req::RX (re)assoc req, change user to auth.}");
         hmac_user->assoc_ap_up_tx_auth_req = OAL_FALSE;
-        hmac_user_set_asoc_state(&(hmac_vap->st_vap_base_info), &hmac_user->st_user_base_info,
-            MAC_USER_STATE_AUTH_COMPLETE);
+        hmac_user_set_asoc_state(mac_vap, &hmac_user->st_user_base_info, MAC_USER_STATE_AUTH_COMPLETE);
     }
 }
 /*
@@ -1371,7 +1370,7 @@ OAL_STATIC oal_uint32 hmac_ap_up_rx_asoc_req(
     if (pst_hmac_user->st_mgmt_timer.en_is_registerd == OAL_TRUE) {
         frw_immediate_destroy_timer(&pst_hmac_user->st_mgmt_timer);
     }
-    hmac_ap_up_rx_asoc_req_change_user_state_to_auth(pst_hmac_vap, pst_hmac_user);
+    hmac_ap_up_rx_asoc_req_change_user_state_to_auth(&(pst_hmac_vap->st_vap_base_info), pst_hmac_user);
     en_status_code = MAC_SUCCESSFUL_STATUSCODE;
 
     /* 是否符合触发SA query流程的条件 */

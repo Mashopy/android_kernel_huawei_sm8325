@@ -18,10 +18,22 @@
  */
 
 #include <huawei_platform/power/direct_charger/direct_charger.h>
+#include <chipset_common/hwpower/adapter/adapter_detect.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 
 #define HWLOG_TAG direct_charge_work
 HWLOG_REGIST();
+
+static void dc_update_work_interval(int *time)
+{
+	/*
+	 * UFCS protocol has a fast communication speed.
+	 * In order to be consistent with SCP protocol,
+	 * 200ms is selected as the time interval
+	 */
+	if (adapter_detect_get_runtime_protocol_type() == BIT(ADAPTER_PROTOCOL_UFCS))
+		*time = 200;
+}
 
 void dc_control_work(struct work_struct *work)
 {
@@ -78,6 +90,7 @@ void dc_control_work(struct work_struct *work)
 	direct_charge_update_charge_info();
 
 	t = di->charge_control_interval;
+	dc_update_work_interval(&t);
 	hrtimer_start(&di->control_timer,
 		ktime_set(t / MSEC_PER_SEC, (t % MSEC_PER_SEC) * USEC_PER_SEC),
 		HRTIMER_MODE_REL);
@@ -118,6 +131,7 @@ void dc_calc_thld_work(struct work_struct *work)
 	}
 
 	t = di->threshold_caculation_interval;
+	dc_update_work_interval(&t);
 	hrtimer_start(&di->calc_thld_timer,
 		ktime_set(t / MSEC_PER_SEC, (t % MSEC_PER_SEC) * USEC_PER_SEC),
 		HRTIMER_MODE_REL);

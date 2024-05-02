@@ -20,12 +20,14 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/workqueue.h>
+#include <chipset_common/hwpower/common_module/power_algorithm.h>
 #include <chipset_common/hwpower/common_module/power_common_macro.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 #include <chipset_common/hwpower/common_module/power_sysfs.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_turbo.h>
+#include <huawei_platform/power/battery_voltage.h>
 
 #define HWLOG_TAG direct_charge_turbo
 HWLOG_REGIST();
@@ -45,6 +47,8 @@ enum {
 	TURBO_CHARGE_DISABLE,
 	TURBO_CHARGE_NEED_AGREE,
 	TURBO_CHARGE_ENABLE,
+	TURBO_CHARGE_PRE_CHECK,
+	TURBO_CHARGE_STATUS_END,
 };
 
 struct direct_charge_turbo_dev {
@@ -55,6 +59,40 @@ struct direct_charge_turbo_dev {
 };
 
 static struct direct_charge_turbo_dev *g_direct_charge_turbo_dev;
+
+void direct_charge_turbo_send_max_power(int value)
+{
+	struct power_event_notify_data n_data;
+
+	power_ui_event_notify(POWER_UI_NE_INNER_MAX_POWER, &value);
+	n_data.event = "BMS_EVT=TURBO_CHARGE";
+	n_data.event_len = (int)strlen(n_data.event);
+	power_event_report_uevent(&n_data);
+	hwlog_info("send turbo charge uevent, inner_max_power=%d\n", value);
+}
+
+int direct_charge_turbo_get_pre_turbo_max_power()
+{
+	struct direct_charge_device *l_di = direct_charge_get_di();
+
+	int bat_vol = hw_battery_get_series_num() * BAT_RATED_VOLT;
+	int max_cur_product = direct_charge_get_battery_max_current();
+	int max_cur_adp = dc_get_adapter_max_current(bat_vol * l_di->dc_volt_ratio);
+	int max_cur_cable =  dc_get_cable_max_current(l_di->working_mode);
+	int max_curr = power_min_positive(max_cur_product, max_cur_adp);
+	int base_volt = 0;
+	int max_power;
+
+	max_curr = power_min_positive(max_curr, max_cur_cable);
+	if (((l_di->working_mode == LVC_MODE) && (!l_di->cc_protect || l_di->cc_safe)) ||
+		((l_di->working_mode > LVC_MODE) && (l_di->cc_unsafe_sc_enable || l_di->cc_safe)))
+			base_volt = l_di->dc_volt_ratio * bat_vol;
+
+	max_power = base_volt * max_curr / POWER_UW_PER_MW;
+	hwlog_info("direct_charge_turbo get pre turbo_max_power=%d\n", max_power);
+
+	return max_power;
+}
 
 int direct_charge_turbo_get_time_para(struct direct_charge_time_para **para, int *size)
 {
@@ -74,13 +112,13 @@ static void direct_charge_turbo_set_charge_status(u32 value)
 	char temp[TURBO_CHARGE_STATUS_BUF_SIZE] = { 0 };
 	struct direct_charge_turbo_dev *l_dev = g_direct_charge_turbo_dev;
 
-	if (!l_dev || (value > TURBO_CHARGE_ENABLE)) {
+	if (!l_dev || (value >= TURBO_CHARGE_STATUS_END)) {
 		hwlog_err("%s di is null or value is invalid\n", __func__);
 		return;
 	}
 
 	if (value == l_dev->turbo_charge_status) {
-		hwlog_info("ignore same turbo charge status\n");
+		hwlog_info("ignore same turbo status, value=%u\n", value);
 		return;
 	}
 

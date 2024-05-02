@@ -56,6 +56,7 @@ struct lcd_kit_disp_info *lcd_kit_get_disp_info(uint32_t panel_id);
 #define disp_info	lcd_kit_get_disp_info(panel_id)
 unsigned int lcm_get_panel_state(uint32_t panel_id);
 void lcm_set_panel_state(uint32_t panel_id, unsigned int state);
+void lcd_kit_ts_aod_state_notify(struct dsi_panel *panel);
 int lcd_kit_drm_notifier_register(uint32_t panel_id, struct notifier_block *nb);
 int lcd_kit_drm_notifier_unregister(uint32_t panel_id, struct notifier_block *nb);
 
@@ -85,11 +86,11 @@ enum finger_unlock_status {
 
 struct elvdd_detect {
 	u32 support;
-	u32 detect_type;
-	u32 detect_gpio;
-	u32 exp_value;
-	u32 exp_value_mask;
 	u32 delay;
+	u32 exp_value_mask;
+	u32 exp_value;
+	u32 detect_gpio;
+	u32 detect_type;
 	bool is_start_delay_timer;
 	struct lcd_kit_dsi_panel_cmds cmds;
 };
@@ -113,6 +114,14 @@ struct lcd_kit_disp_info {
 	u32 lcd_type;
 	/* panel information */
 	char *compatible;
+	/* sncmp */
+	u32 sncmp;
+	/* sn check flags */
+	bool sn_check_flags;
+	/* oeminfo sn len */
+	u32 sn_len;
+	/* oeminfo sn */
+	unsigned char sn_code[SN_CODE_LENGTH_MAX];
 	/* product id */
 	u32 product_id;
 	/* vr support */
@@ -163,17 +172,17 @@ struct dsm_client *lcd_kit_get_lcd_dsm_client(void);
 #endif
 int is_mipi_cmd_panel(uint32_t panel_id);
 int lcd_kit_rgbw_set_handle(uint32_t panel_id);
-void lcd_kit_disp_on_check_delay(void);
-int lcm_rgbw_mode_set_param(struct drm_device *dev, void *data,
-	struct drm_file *file_priv);
-int lcm_rgbw_mode_get_param(struct drm_device *dev, void *data,
-	struct drm_file *file_priv);
-int lcm_display_engine_get_panel_info(struct drm_device *dev, void *data,
+int panel_drm_hbm_set(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);
 int lcm_display_engine_init(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);
-int panel_drm_hbm_set(struct drm_device *dev, void *data,
+int lcm_display_engine_get_panel_info(struct drm_device *dev, void *data,
 	struct drm_file *file_priv);
+int lcm_rgbw_mode_get_param(struct drm_device *dev, void *data,
+	struct drm_file *file_priv);
+int lcm_rgbw_mode_set_param(struct drm_device *dev, void *data,
+	struct drm_file *file_priv);
+void lcd_kit_disp_on_check_delay(void);
 int panel_drm_hbm_set_for_fingerprint(bool is_enable);
 int lcd_kit_panel_pre_prepare(struct dsi_panel *panel);
 int lcd_kit_panel_prepare(struct dsi_panel *panel);
@@ -184,9 +193,11 @@ int lcd_kit_panel_disable(struct dsi_panel *panel);
 int lcd_kit_panel_unprepare(struct dsi_panel *panel);
 int lcd_kit_panel_post_unprepare(struct dsi_panel *panel);
 int lcd_kit_bl_ic_set_backlight(unsigned int bl_level);
+int lcd_kit_update_priority_recovery_backlight(unsigned int bl_level);
 int lcd_kit_dsi_panel_update_backlight(struct dsi_panel *panel,
 	unsigned int bl_lvl);
 uint32_t lcd_get_active_panel_id(void);
+uint32_t lcd_get_panel_num(void);
 uint32_t lcd_kit_get_current_panel_id(struct dsi_panel *panel);
 void lcd_kit_set_pinctrl_status(const char *pinctrl_status);
 void lcd_kit_pinctrl_put(void);
@@ -202,4 +213,21 @@ void lcd_kit_fold_lp_handle(void);
 void lcd_kit_set_fold_info(void);
 void lcd_kit_trigger_reboot(void);
 uint32_t lcd_kit_get_current_brightness(uint32_t panel_id);
+
+#ifdef CONFIG_MATTING_ALGO_TASK
+/*
+ * callback function
+ */
+typedef uint32_t (*matting_algo_get_brightness_callback)(uint32_t brightness);
+
+/*
+ * callback function registration interface
+ */
+int lcd_kit_matting_algo_get_brightness_register(matting_algo_get_brightness_callback callback);
+
+/*
+ * get callback function
+ */
+matting_algo_get_brightness_callback lcd_kit_matting_algo_get_brightness_callback(void);
+#endif
 #endif

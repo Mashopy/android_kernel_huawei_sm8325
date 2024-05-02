@@ -26,8 +26,12 @@
 #include <lcd_kit_displayengine.h>
 #include <huawei_platform/log/log_jank.h>
 #include <linux/completion.h>
-
+#ifdef CONFIG_LCD_KIT_HYBRID
+#include <lcd_kit_hybrid_core.h>
+#endif
 #define MAX_DBV 4095
+#define NO_POWER_OFF 1
+#define ENTER_AOD 1
 
 #if defined CONFIG_HUAWEI_DSM
 static struct dsm_dev dsm_lcd = {
@@ -43,7 +47,8 @@ struct dsm_client *lcd_dclient = NULL;
 #endif
 
 unsigned int esd_recovery_level[MAX_ACTIVE_PANEL] = { 0 };
-bool esd_recovery_status[MAX_ACTIVE_PANEL] = { false };
+unsigned int priority_esd_recovery_level[MAX_ACTIVE_PANEL] = { 0 };
+unsigned int esd_recovery_status[MAX_ACTIVE_PANEL] = { 0 };
 bool esd_recovery_backlight_status[MAX_ACTIVE_PANEL] = { false };
 unsigned int fp_recovery_level = 0;
 static struct qcom_panel_info lcd_kit_info[MAX_ACTIVE_PANEL] = {0};
@@ -76,9 +81,15 @@ void lcd_kit_esd_recover_bl(struct dsi_panel *panel, u32 *bl_lvl)
 		complete_all(&lcd_panel_init_done[panel_id]);
 		DSI_INFO("panel-%u recovery done\n", panel_id);
 	} else {
-		DSI_INFO("panel-%u esd recovery backlight %u\n",
-			panel_id, esd_recovery_level[panel_id]);
-		*bl_lvl = esd_recovery_level[panel_id];
+		if (priority_esd_recovery_level[panel_id]) {
+			*bl_lvl = priority_esd_recovery_level[panel_id];
+			DSI_INFO("pri-panel-%u esd recovery backlight %u\n",
+				panel_id, priority_esd_recovery_level[panel_id]);
+		} else {
+			*bl_lvl = esd_recovery_level[panel_id];
+			DSI_INFO("panel-%u esd recovery backlight %u\n",
+				panel_id, esd_recovery_level[panel_id]);
+		}
 		esd_recovery_backlight_status[panel_id] = false;
 		complete_all(&lcd_panel_init_done[panel_id]);
 		DSI_INFO("panel-%u recovery done\n", panel_id);
@@ -124,17 +135,22 @@ void lcd_kit_record_frame_number(void)
 		complete_all(&first_frame_done);
 }
 
+int lcd_kit_get_esd_recovery_status(uint32_t panel_id)
+{
+	return esd_recovery_status[panel_id];
+}
+
 void lcd_kit_esd_recovery_enable(struct dsi_panel *panel)
 {
 	uint32_t panel_id = lcd_kit_get_current_panel_id(panel);
 
-	esd_recovery_status[panel_id] = true;
+	esd_recovery_status[panel_id]++;
 	LCD_KIT_INFO("panel_%u esd status enable\n", panel_id);
 	/* dual panel simultaneous scenario, panel dead trigger dual panel recovery */
 	if (lcd_kit_get_product_type() == LCD_DUAL_PANEL_SIM_DISPLAY_TYPE) {
 		panel_id = (panel_id == PRIMARY_PANEL) ? SECONDARY_PANEL : PRIMARY_PANEL;
 		if (lcm_get_panel_state(panel_id) == LCD_POWER_STATE_ON) {
-			esd_recovery_status[panel_id] = true;
+			esd_recovery_status[panel_id]++;
 			LCD_KIT_INFO("panel_%u esd status enable\n", panel_id);
 		}
 	}
@@ -145,7 +161,7 @@ void lcd_kit_esd_backlight_enable(struct dsi_panel *panel)
 	uint32_t panel_id = lcd_kit_get_current_panel_id(panel);
 	if (esd_recovery_status[panel_id]) {
 		esd_recovery_backlight_status[panel_id] = true;
-		esd_recovery_status[panel_id] = false;
+		esd_recovery_status[panel_id]--;
 		LCD_KIT_INFO("panel_%u esd recovery backlight enable\n", panel_id);
 	}
 }
@@ -154,7 +170,10 @@ void lcd_kit_get_esd_brightness(struct dsi_panel *panel, int *brightness)
 {
 	uint32_t panel_id = lcd_kit_get_current_panel_id(panel);
 	if (esd_recovery_backlight_status[panel_id]) {
-		*brightness = esd_recovery_level[panel_id];
+		if (priority_esd_recovery_level[panel_id])
+			*brightness = priority_esd_recovery_level[panel_id];
+		else
+			*brightness = esd_recovery_level[panel_id];
 		LCD_KIT_INFO("panel_%u esd brightness is %d\n", panel_id, *brightness);
 	}
 }
@@ -269,6 +288,18 @@ uint32_t lcd_get_active_panel_id(void)
 		return SECONDARY_PANEL;
 
 	return PRIMARY_PANEL;
+}
+
+enum panel_num {
+	SINGLE_PANEL = 1,
+	DUAL_PANEL = 2,
+};
+
+uint32_t lcd_get_panel_num(void)
+{
+	if (lcd_kit_product_type == LCD_SINGLE_PANEL_TYPE)
+		return SINGLE_PANEL;
+	return DUAL_PANEL;
 }
 
 int is_mipi_cmd_panel(uint32_t panel_id)
@@ -500,7 +531,7 @@ static bool lcd_kit_first_screenon(uint32_t last_bl_level, uint32_t bl_level)
 	return ret;
 }
 
-int  lcd_kit_bl_ic_set_backlight(unsigned int bl_level)
+int lcd_kit_bl_ic_set_backlight(unsigned int bl_level)
 {
 	struct lcd_kit_bl_ops *bl_ops = NULL;
 
@@ -516,6 +547,34 @@ int  lcd_kit_bl_ic_set_backlight(unsigned int bl_level)
 	}
 	return LCD_KIT_OK;
 }
+
+int lcd_kit_update_priority_recovery_backlight(unsigned int bl_level)
+{
+	priority_esd_recovery_level[PRIMARY_PANEL] = bl_level;
+	return LCD_KIT_OK;
+}
+
+#ifdef CONFIG_MATTING_ALGO_TASK
+static matting_algo_get_brightness_callback matting_algo_get_brightness_function = NULL;
+int lcd_kit_matting_algo_get_brightness_register(matting_algo_get_brightness_callback callback)
+{
+	matting_algo_get_brightness_function = callback;
+	return 0;
+}
+EXPORT_SYMBOL(lcd_kit_matting_algo_get_brightness_register);
+
+matting_algo_get_brightness_callback lcd_kit_matting_algo_get_brightness_callback(void)
+{
+	return matting_algo_get_brightness_function;
+}
+
+static void lcd_kit_matting_algo_get_current_brightness(uint32_t brightness)
+{
+	matting_algo_get_brightness_callback callback_function = lcd_kit_matting_algo_get_brightness_callback();
+	if (callback_function != NULL)
+		callback_function(brightness);
+}
+#endif
 
 int lcd_kit_dsi_panel_update_backlight(struct dsi_panel *panel,
 	unsigned int level)
@@ -556,6 +615,12 @@ int lcd_kit_dsi_panel_update_backlight(struct dsi_panel *panel,
 	}
 	tuned_level = display_engine_brightness_get_mapped_level(level, panel_id);
 	fp_recovery_level = tuned_level;
+#ifdef CONFIG_LCD_KIT_HYBRID
+	if (!hybrid_mipi_check() || hybrid_skip_backlight()) {
+		LCD_KIT_ERR("mipi switch at mcu or skip backlight, return!\n");
+		return ret;
+	}
+#endif
 	if (common_info->hbm.hbm_if_fp_is_using == 1) {
 		LCD_KIT_INFO("fingerprint is using, backlight can not set!\n");
 		return -EINVAL;
@@ -623,6 +688,9 @@ int lcd_kit_dsi_panel_update_backlight(struct dsi_panel *panel,
 		dsi->mode_flags = mode_flags;
 	if (ret < 0)
 		LCD_KIT_ERR("failed to update dcs backlight:%u\n", tuned_level);
+#ifdef CONFIG_MATTING_ALGO_TASK
+	lcd_kit_matting_algo_get_current_brightness(tuned_level);
+#endif
 	LCD_KIT_INFO("-, tuned_level [%u]", tuned_level);
 	return ret;
 }
@@ -782,7 +850,6 @@ static int lcd_kit_dsi_panel_power_on(struct dsi_panel *panel)
 	}
 
 	panel_id = lcd_kit_get_current_panel_id(panel);
-
 	lcd_kit_set_thp_proximity_sem(panel_id, true);
 	ret = dsi_panel_set_pinctrl_state(panel, true);
 	if (ret)
@@ -974,7 +1041,10 @@ int lcd_kit_panel_enable(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 	panel_id = lcd_kit_get_current_panel_id(panel);
-
+#ifdef CONFIG_LCD_KIT_HYBRID
+	lcd_kit_hybrid_mode(panel_id, HYBRID_LCD_ON);
+	mutex_lock(&panel->panel_lock);
+#else
 	mutex_lock(&panel->panel_lock);
 	lcd_kit_proxmity_proc(panel_id, LCD_RESET_HIGH);
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_ON);
@@ -983,6 +1053,7 @@ int lcd_kit_panel_enable(struct dsi_panel *panel)
 		       panel->name, rc);
 	else
 		panel->panel_initialized = true;
+#endif
 	/* record panel on time */
 	if (disp_info->quickly_sleep_out.support)
 		lcd_kit_disp_on_record_time(panel_id);
@@ -1057,6 +1128,38 @@ error:
 	return rc;
 }
 
+static void lcd_kit_ts_no_power_off_notify()
+{
+	struct ts_kit_ops *ts_ops = NULL;
+	bool error_flag;
+
+	ts_ops = ts_kit_get_ops();
+	error_flag = !ts_ops || !ts_ops->ts_aod_screen_off_notify;
+	if (error_flag) {
+		LCD_KIT_ERR("ts_ops or ts_power_notify is null\n");
+		return;
+	}
+	ts_ops->ts_aod_screen_off_notify(NO_POWER_OFF);
+}
+
+void lcd_kit_ts_aod_state_notify(struct dsi_panel *panel)
+{
+	struct ts_kit_ops *ts_ops = NULL;
+	bool error_flag;
+	uint32_t panel_id;
+	panel_id = lcd_kit_get_current_panel_id(panel);
+
+	if (!common_info->tddi_aod_support)
+		return;
+	ts_ops = ts_kit_get_ops();
+	error_flag = !ts_ops || !ts_ops->ts_aod_state_notify;
+	if (error_flag) {
+		LCD_KIT_ERR("ts_ops or ts_power_notify is null\n");
+		return;
+	}
+	ts_ops->ts_aod_state_notify(ENTER_AOD);
+}
+
 int lcd_kit_panel_disable(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -1079,11 +1182,18 @@ int lcd_kit_panel_disable(struct dsi_panel *panel)
 		 * Need to set IBB/AB regulator mode to STANDBY,
 		 * if panel is going off from AOD mode.
 		 */
-		if (dsi_panel_is_type_oled(panel) &&
-			(panel->power_mode == SDE_MODE_DPMS_LP1 ||
-			panel->power_mode == SDE_MODE_DPMS_LP2))
-			dsi_pwr_panel_regulator_mode_set(&panel->power_info,
-				"ibb", REGULATOR_MODE_STANDBY);
+		if (panel->power_mode == SDE_MODE_DPMS_LP1 ||
+			panel->power_mode == SDE_MODE_DPMS_LP2) {
+			if (dsi_panel_is_type_oled(panel))
+				dsi_pwr_panel_regulator_mode_set(&panel->power_info,
+					"ibb", REGULATOR_MODE_STANDBY);
+			if (common_info->tddi_aod_support) {
+				common_info->need_keep_high_in_doze_off = 1;
+				tddi_aod_light_set(common_info->tddi_aod_no_light.buf[0],
+					common_info->tddi_aod_no_light.buf[1]);
+				lcd_kit_ts_no_power_off_notify();
+			}
+		}
 		rc = lcd_kit_dsi_panel_off_lp(panel);
 		if (rc != LCD_KIT_OK)
 			LCD_KIT_ERR("panel off lp failed\n");
@@ -1104,6 +1214,9 @@ int lcd_kit_panel_disable(struct dsi_panel *panel)
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 
 	mutex_unlock(&panel->panel_lock);
+#ifdef CONFIG_LCD_KIT_HYBRID
+	lcd_kit_hybrid_mode(panel_id, HYBRID_LCD_OFF);
+#endif
 	LCD_KIT_INFO("exit\n");
 	return rc;
 }
@@ -1131,6 +1244,7 @@ int lcd_kit_panel_unprepare(struct dsi_panel *panel)
 int lcd_kit_panel_post_unprepare(struct dsi_panel *panel)
 {
 	int rc = 0;
+	uint32_t panel_id = lcd_get_active_panel_id();
 
 	LCD_KIT_INFO("enter\n");
 	if (!panel) {
@@ -1144,6 +1258,7 @@ int lcd_kit_panel_post_unprepare(struct dsi_panel *panel)
 		LCD_KIT_ERR("[%s] panel power_Off failed, rc=%d\n",
 		       panel->name, rc);
 	mutex_unlock(&panel->panel_lock);
+	common_info->need_keep_high_in_doze_off = 0;
 	LCD_KIT_INFO("exit\n");
 	return rc;
 }
@@ -1163,22 +1278,14 @@ static void lcd_kit_completion_init(void)
 	completion_init_flag = true;
 }
 
-int lcd_kit_init(struct dsi_panel *panel)
+static int lcd_kit_parse_panel_node(struct dsi_panel *panel)
 {
-	int ret = LCD_KIT_OK;
 	uint32_t panel_id;
 	struct device_node *np = NULL;
-
-	LCD_KIT_INFO("enter\n");
 
 	if (panel == NULL) {
 		LCD_KIT_ERR("panel is null\n");
 		return LCD_KIT_FAIL;
-	}
-
-	if (!lcd_kit_support()) {
-		LCD_KIT_INFO("not lcd_kit driver and return\n");
-		return ret;
 	}
 
 	np = of_find_compatible_node(NULL, NULL, DTS_COMP_LCD_KIT_PANEL_TYPE);
@@ -1199,6 +1306,25 @@ int lcd_kit_init(struct dsi_panel *panel)
 		LCD_KIT_ERR("not found device node\n");
 		return LCD_KIT_FAIL;
 	}
+
+	return LCD_KIT_OK;
+}
+
+int lcd_kit_init(struct dsi_panel *panel)
+{
+	int ret = LCD_KIT_OK;
+	uint32_t panel_id;
+
+	LCD_KIT_INFO("enter\n");
+
+	if (!lcd_kit_support()) {
+		LCD_KIT_INFO("not lcd_kit driver and return\n");
+		return ret;
+	}
+	if (lcd_kit_parse_panel_node(panel) != LCD_KIT_OK)
+		return LCD_KIT_FAIL;
+
+	panel_id = lcd_kit_get_current_panel_id(panel);
 
 #if defined CONFIG_HUAWEI_DSM
 	if (lcd_dclient == NULL)
@@ -1233,6 +1359,10 @@ int lcd_kit_init(struct dsi_panel *panel)
 #ifdef LCD_KIT_DEBUG_ENABLE
 	lcd_kit_dbg_init();
 	LCD_KIT_INFO("enter lcd_kit_dbg_init\n");
+#endif
+
+#ifdef CONFIG_LCD_KIT_HYBRID
+	lcd_kit_hybrid_init(panel);
 #endif
 	LCD_KIT_INFO("exit\n");
 	return ret;

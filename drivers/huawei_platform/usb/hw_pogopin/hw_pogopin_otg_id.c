@@ -56,9 +56,14 @@
 
 #define HWLOG_TAG hw_pogopin_id
 HWLOG_REGIST();
+static int g_pogopin_otg_status = POGO_OTG_OUT;
 
 static struct pogopin_otg_id_dev *g_pogopin_otg_id_di;
 
+int get_pogopin_otg_status(void)
+{
+	return g_pogopin_otg_status;
+}
 
 static int pogopin_otg_id_adc_sampling(struct pogopin_otg_id_dev *di)
 {
@@ -126,6 +131,8 @@ static void pogopin_otg_in_handle_work(struct pogopin_otg_id_dev *di)
 	pogopin_5pin_otg_in_switch_from_typec();
 	(void)power_msleep(DT_MSLEEP_100MS, 0, NULL);
 	pogopin_event_notify(POGOPIN_PLUG_IN_OTG);
+	if (!pogopin_get_vbus_attach_enable_status())
+		g_pogopin_otg_status = POGO_OTG_INSERT;
 }
 
 static void pogopin_otg_out_handle_work(struct pogopin_otg_id_dev *di)
@@ -142,6 +149,12 @@ static void pogopin_otg_out_handle_work(struct pogopin_otg_id_dev *di)
 	pogopin_set_usb_mode(POGOPIN_TYPEC_MODE);
 	pogopin_event_notify(POGOPIN_PLUG_OUT_OTG);
 	pogopin_5pin_remove_switch_to_typec();
+	if (!pogopin_get_vbus_attach_enable_status()) {
+		pogopin_5pin_typec_detect_disable(TRUE);
+		msleep(100);
+		pogopin_5pin_typec_detect_disable(FALSE);
+		g_pogopin_otg_status = POGO_OTG_OUT;
+	}
 }
 
 static int pogopin_otg_status_check_notifier_call(struct notifier_block *nb,

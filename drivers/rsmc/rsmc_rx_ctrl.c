@@ -9,9 +9,11 @@
 
 #include <securec.h>
 #include <huawei_platform/log/hw_log.h>
+#include <linux/cpumask.h>
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 
 #include "module_type.h"
 #include "rsmc_spi_ctrl.h"
@@ -31,6 +33,7 @@ HWLOG_REGIST();
 #define SPI_LOOP_TX 2
 #define PLL_DATA_LEN 5
 #define SEARCH_CORR_STEP 200
+#define AFFINITY_MAX_CPU_NUM 32
 
 struct chan_info {
 	volatile s32 mode;
@@ -607,6 +610,34 @@ cb_end:
 	return next;
 }
 
+void rsmc_set_cpu_affinity(struct smc_core_data *cd)
+{
+	cpumask_var_t mask;
+	u32 i;
+	u32 offset = cd->feature_config.cpu_affinity_offset;
+	u32 dtsi_mask = cd->feature_config.cpu_affinity_mask;
+	u32 cpu;
+
+	if (dtsi_mask == 0) {
+		hwlog_info("%s: not config cpu mask", __func__);
+		return;
+	}
+
+	if (!alloc_cpumask_var(&mask, GFP_KERNEL | __GFP_ZERO))
+		return;
+	for (i = 0; i < AFFINITY_MAX_CPU_NUM; i++) {
+		cpu = (dtsi_mask >> i) & 0x01;
+		if (cpu) {
+			cpumask_set_cpu(i + offset, mask);
+			hwlog_info("%s: i=%u", __func__, i);
+		}
+	}
+	if (!cpumask_empty(mask))
+		if (sched_setaffinity(0, mask) != 0)
+			hwlog_err("%s: set affinity to cpu error", __func__);
+	free_cpumask_var(mask);
+}
+
 static int rsmc_loop_read(void *data)
 {
 	struct spi_device *sdev = NULL;
@@ -616,6 +647,9 @@ static int rsmc_loop_read(void *data)
 
 	hwlog_info("%s: enter", __func__);
 	cd = smc_get_core_data();
+	if (cd == NULL)
+		return 0;
+	rsmc_set_cpu_affinity(cd);
 	sdev = cd->sdev;
 	if (sdev == NULL) {
 		hwlog_err("%s:sdev is null", __func__);

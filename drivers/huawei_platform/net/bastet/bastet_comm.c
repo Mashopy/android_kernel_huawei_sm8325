@@ -230,7 +230,7 @@ static void handle_bst_acore_core_msg_type_emcom_support(uint8_t *msg,
 			sizeof(*emcom_support_msg));
 		return;
 	}
-	Emcom_Ind_Modem_Support(emcom_support_msg->en_state);
+	emcom_ind_modem_support(emcom_support_msg->en_state);
 }
 #endif
 

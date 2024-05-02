@@ -145,7 +145,9 @@ static void ucsi_log(const char *prefix, unsigned int offset, u8 *buf,
 
 	str[pos] = '\0';
 
-	ucsi_dbg("%s %s %s\n", prefix, offset_to_name(offset), str);
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	pr_err("[ucsi-log]%s %s %s\n", prefix, offset_to_name(offset), str);
+#endif
 }
 
 static int handle_ucsi_read_ack(struct ucsi_dev *udev, void *data, size_t len)
@@ -250,10 +252,6 @@ static int ucsi_callback(void *priv, void *data, size_t len)
 
 	pr_debug("owner: %u type: %u opcode: %u len:%zu\n", hdr->owner,
 		hdr->type, hdr->opcode, len);
-
-#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
-	pd_dpm_set_glink_status();
-#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	if (hdr->opcode == UC_UCSI_READ_BUF_REQ)
 		handle_ucsi_read_ack(udev, data, len);

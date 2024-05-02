@@ -18,6 +18,7 @@ my @platform_chip_map = (
             [ "bengal",                 "qcom",          "bengal"     ],
             [ "kona",                 	"qcom",          "kona"       ],
             [ "lahaina",                "qcom",          "lahaina"    ],
+            [ "monaco_go",              "qcom",          "monaco_go"  ],
             [ "hi6250",                 "hisi",          "hi6250"     ],
             [ "hi3660",                 "hisi",          "hi3660"     ],
             [ "kirin970",               "hisi",          "kirin970"   ],

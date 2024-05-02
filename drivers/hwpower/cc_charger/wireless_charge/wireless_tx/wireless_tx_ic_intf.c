@@ -437,3 +437,23 @@ int wltx_ic_set_bridge(unsigned int type, unsigned int v_ask, unsigned int bridg
 
 	return -EPERM;
 }
+
+int wltx_ic_lowpower_enable(unsigned int type, bool flag)
+{
+	struct wltx_ic_ops *ops = wltx_ic_get_ops(type);
+
+	if (ops && ops->lowpower_enable)
+		return ops->lowpower_enable(flag, ops->dev_data);
+
+	return -EPERM;
+}
+
+int wltx_ic_q_calibration(unsigned int type)
+{
+	struct wltx_ic_ops *ops = wltx_ic_get_ops(type);
+
+	if (ops && ops->q_calibration)
+		return ops->q_calibration(ops->dev_data);
+
+	return -EPERM;
+}

@@ -2474,16 +2474,19 @@ static int spi_geni_suspend(struct device *dev)
 	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
 
 	if (!pm_runtime_status_suspended(dev)) {
+		GENI_SE_ERR(geni_mas->ipc, true, dev,
+			":%s: runtime PM is active\n", __func__);
 #ifdef CONFIG_HUAWEI_DSM
 		check_spi_idle_state(ktime_to_ms(ktime_get_real()));
 #endif
-				GENI_SE_ERR(geni_mas->ipc, true, dev,
-			":%s: runtime PM is active\n", __func__);
-			ret = -EBUSY;
+		ret = -EBUSY;
 		return ret;
-		}
+	}
 
 	GENI_SE_ERR(geni_mas->ipc, true, dev, ":%s: End\n", __func__);
+#ifdef CONFIG_HUAWEI_DSM
+	check_spi_idle_state(RESET_SPI_IDLE_CHECK);
+#endif
 	return ret;
 }
 #else

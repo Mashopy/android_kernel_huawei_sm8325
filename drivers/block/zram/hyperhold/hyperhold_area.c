@@ -184,7 +184,7 @@ static int extent_bit2id(struct hyperhold_area *area, int bit)
 		hh_print(HHLOG_ERR, "bit = %d invalid\n", bit);
 		return -EINVAL;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	hh_print(HHLOG_DEBUG, "bit = %d valid\n", bit);
 
 	if (hyperhold_is_file_space())
@@ -200,7 +200,7 @@ static int extent_id2bit(struct hyperhold_area *area, int id)
 		hh_print(HHLOG_ERR, "id = %d invalid\n", id);
 		return -EINVAL;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (hyperhold_is_file_space())
 		return (int)hyperhold_file_id2bit(id);
 #endif
@@ -480,7 +480,7 @@ unsigned long hyperhold_cache_scan_objs(struct shrinker *sh,
 	atomic64_add(freed, &area->cache_shrinker_reclaim_pages);
 	hh_print(HHLOG_DEBUG, "cache shrinker reclaimed %ld, total %ld\n",
 		freed, atomic64_read(&area->cache_shrinker_reclaim_pages));
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (!freed)
 		return SHRINK_STOP;
 #endif
@@ -600,7 +600,7 @@ void hyperhold_free_extent(struct hyperhold_area *area, int ext_id)
 	}
 	/*lint +e548*/
 	atomic_dec(&area->stored_exts);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	hyperhold_used_exts_num_dec();
 #endif
 }
@@ -647,7 +647,7 @@ int hyperhold_alloc_extent(struct hyperhold_area *area, struct mem_cgroup *mcg)
 
 	last_bit = atomic_read(&area->last_alloc_bit);
 	hh_print(HHLOG_DEBUG, "last_bit = %d.\n", last_bit);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	bit = alloc_bitmap(area->bitmap, hperhold_get_max_ext_num(), last_bit);
 	if (bit < 0) {
 		hh_print(HHLOG_ERR, "alloc bitmap failed, bit = %d\n", bit);
@@ -671,7 +671,7 @@ int hyperhold_alloc_extent(struct hyperhold_area *area, struct mem_cgroup *mcg)
 
 	atomic_set(&area->last_alloc_bit, bit);
 	atomic_inc(&area->stored_exts);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	hyperhold_used_exts_num_inc();
 #endif
 	hh_print(HHLOG_DEBUG, "extent %d init OK.\n", ext_id);
@@ -764,7 +764,7 @@ int get_memcg_extent(struct hyperhold_area *area, struct mem_cgroup *mcg,
 
 	mcg_id = mcg->id.id;
 	hh_lock_list(mcg_idx(area, mcg_id), area->ext_table);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (mcg != get_mem_cgroup(mcg_id)) {
 		ext_id = ((struct hh_list_head*)(&mcg->ext_lru))->next;
 		ext_id -= area->nr_objs;
@@ -787,7 +787,7 @@ int get_memcg_extent(struct hyperhold_area *area, struct mem_cgroup *mcg,
 		hh_list_del_nolock(idx, mcg_idx(area, mcg_id), area->ext_table);
 		hh_print(HHLOG_DEBUG, "ext id = %d\n", ext_id);
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 unlock:
 #endif
 	hh_unlock_list(mcg_idx(area, mcg_id), area->ext_table);
@@ -815,7 +815,7 @@ int get_memcg_zram_entry(struct hyperhold_area *area, struct mem_cgroup *mcg)
 
 	mcg_id = mcg->id.id;
 	hh_lock_list(mcg_idx(area, mcg_id), area->obj_table);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	if (mcg != get_mem_cgroup(mcg_id)) {
 		index = ((struct hh_list_head*)(&mcg->zram_lru))->next;
 		hh_print(HHLOG_ERR, "memcg corrupted, get index %d directly.\n", index);
@@ -828,7 +828,7 @@ int get_memcg_zram_entry(struct hyperhold_area *area, struct mem_cgroup *mcg)
 		index = idx;
 		break;
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 unlock:
 #endif
 	hh_unlock_list(mcg_idx(area, mcg_id), area->obj_table);

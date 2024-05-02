@@ -25,6 +25,9 @@
 int sc8562_write_byte(struct sc8562_device_info *di, u8 reg, u8 value);
 int sc8562_read_byte(struct sc8562_device_info *di, u8 reg, u8 *value);
 int sc8562_read_word(struct sc8562_device_info *di, u8 reg, s16 *value);
+int sc8562_read_block(struct sc8562_device_info *di, u8 reg, u8 *value, u8 len);
 int sc8562_write_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 shift, u8 value);
+int sc8562_read_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 shift, u8 *value);
+int sc8562_write_multi_mask(struct sc8562_device_info *di, u8 reg, u8 mask, u8 value);
 
 #endif /* _SC8562_I2C_H_ */

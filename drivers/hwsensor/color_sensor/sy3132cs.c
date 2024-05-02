@@ -23,6 +23,7 @@
 #include <linux/kernel.h>
 #include <linux/i2c.h>
 #include <linux/input.h>
+#include <linux/math64.h>
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/errno.h>
@@ -63,6 +64,8 @@ HWLOG_REGIST();
 static bool fd_timer_stopped = true;
 static bool first_fifo_full = false;
 static uint32_t algo_support;
+static uint32_t hal_cali_info_support;
+static uint32_t distinguish_product;
 static uint16_t ring_count = 0;
 static uint8_t print_log_count = 0;
 static struct color_chip *p_chip;
@@ -713,7 +716,7 @@ static int32_t sy3132cs_ln_fix_proc(int32_t data)
 		temp_log = talor_log(data, TALOR_JI_SHU);
 		factor = temp_log * nature_log_coef +
 			nature_log_offset;
-		temp_data = data * factor / DATA_EXPAND_10000;
+		temp_data = data * div_s64(factor, DATA_EXPAND_10000);
 	} else {
 		temp_data = 0;
 	}
@@ -1628,7 +1631,7 @@ void sy3132cs_normal_mode(struct sy3132cs_ctx *ctx)
 		break;
 	}
 	sy3132cs_algo.avg_data[CH9_VALUE] = sy3132cs_algo.avg_data[CH9_VALUE] *
-				SY3132CS_ALS_IT_ST / sy3132cs_algo.avg_flk_gain * GAIN_CALI_NUM; // clear
+				div_u64(SY3132CS_ALS_IT_ST, sy3132cs_algo.avg_flk_gain) * GAIN_CALI_NUM; // clear
 	if (cali_flag || monochro_flag) {
 		sy3132cs_algo.avg_data[CH8_VALUE] = sy3132cs_algo.ch_raw_data[CH8_VALUE]; // nir
 		sy3132cs_cali_mode(ctx);
@@ -1667,9 +1670,9 @@ void sy3132cs_data_algo_process(struct sy3132cs_ctx *ctx)
 
 	sy3132cs_get_als_gain(ctx, &sy3132cs_algo.als_gain);
 	sy3132cs_get_als_it(ctx, &sy3132cs_algo.als_it);
-	sy3132cs_algo.als_trans_gain = SY3132CS_ALS_GAIN_ST  / sy3132cs_algo.als_gain;
-	sy3132cs_algo.als_trans_it = SY3132CS_ALS_IT_ST *
-		DATA_EXPAND_100 * DATA_EXPAND_100 / sy3132cs_algo.als_it;
+	sy3132cs_algo.als_trans_gain = div_u64(SY3132CS_ALS_GAIN_ST, sy3132cs_algo.als_gain);
+	sy3132cs_algo.als_trans_it = div_u64((SY3132CS_ALS_IT_ST *
+		DATA_EXPAND_100 * DATA_EXPAND_100), sy3132cs_algo.als_it);
 	sy3132cs_algo.avg_flk_gain = sy3132cs_algo.flk_gain;
 
 	sy3132cs_read_channel_raw_data(ctx);
@@ -1964,6 +1967,18 @@ void sy3132cs_flk_show_enable(struct color_chip *chip, int *state)
 		*state = 0;
 }
 
+static int sy3132cs_hal_cali_info_available(void)
+{
+	hwlog_info("%s, hal_cali_info_support = %d\n", __func__, hal_cali_info_support);
+	return hal_cali_info_support;
+}
+
+static int sy3132cs_distinguish_product_available(void)
+{
+	hwlog_info("%s, distinguish_product = %d\n", __func__, distinguish_product);
+	return distinguish_product;
+}
+
 void sy3132cs_flk_store_enable(struct color_chip *chip, int state)
 {
 	int flk_status;
@@ -2008,6 +2023,8 @@ static void configure_functions(struct color_chip *chip)
 	chip->color_report_type = sy3132cs_rgb_report_type;
 	chip->color_chip_name = sy3132cs_chip_name;
 	chip->color_algo_type = sy3132cs_algo_type;
+	chip->color_hal_cali_info_available = sy3132cs_hal_cali_info_available;
+	chip->color_distinguish_product_available = sy3132cs_distinguish_product_available;
 
 	color_default_enable = sy3132cs_enable_rgb;
 }
@@ -2028,8 +2045,20 @@ static void sy3132cs_get_dts_parameter(const struct device *dev)
 		hwlog_warn("%s, get algo_support failed\n", __func__);
 		algo_support = UNSUPPORT_ALGO; // default not support algo
 	}
-	hwlog_info("%s flicker_support = %u, algo_support = %u\n", __func__,
-		flicker_support, algo_support);
+	rc = of_property_read_u32(dev->of_node,
+		"hal_cali_info_support", &hal_cali_info_support);
+	if (rc < 0) {
+		hwlog_warn("%s, get hal_cali_info_support failed\n", __func__);
+		hal_cali_info_support = 0; // default not support algo
+	}
+	rc = of_property_read_u32(dev->of_node,
+		"distinguish_product", &distinguish_product);
+	if (rc < 0) {
+		hwlog_warn("%s, get distinguish_product failed\n", __func__);
+		distinguish_product = 0; // default not support algo
+	}
+	hwlog_info("%s flicker_support = %u, algo_support = %u, hal_cali_info_support = %u, distinguish_product = %u\n", __func__,
+		flicker_support, algo_support, hal_cali_info_support, distinguish_product);
 }
 
 static void init_library(struct color_chip *chip)

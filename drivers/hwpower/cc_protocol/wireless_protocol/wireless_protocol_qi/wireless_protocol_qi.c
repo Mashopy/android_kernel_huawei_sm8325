@@ -66,6 +66,8 @@ static const struct wireless_protocol_device_data g_hwqi_dev_data[] = {
 	{ WIRELESS_DEVICE_ID_STWLC33, "stwlc33" },
 	{ WIRELESS_DEVICE_ID_CPS4067, "cps4067" },
 	{ WIRELESS_DEVICE_ID_MT5785, "mt5785" },
+	{ WIRELESS_DEVICE_ID_CPS8601, "cps8601" },
+	{ WIRELESS_DEVICE_ID_MT5806, "mt5806" },
 };
 
 static int hwqi_get_device_id(const char *str)

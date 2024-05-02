@@ -1055,7 +1055,6 @@ void cdc_ncm_unbind(struct usbnet *dev, struct usb_interface *intf)
 	if (ctx == NULL)
 		return;		/* no setup */
 
-	dump_stack();
 	atomic_set(&ctx->stop, 1);
 
 	hrtimer_cancel(&ctx->tx_timer);

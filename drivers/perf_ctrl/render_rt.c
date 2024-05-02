@@ -531,7 +531,11 @@ static inline void update_rthread_util(struct child_thread *thread,
 
 	/* normalized the util */
 	frame_load = frame_load << SCHED_CAPACITY_SHIFT;
+#ifdef CONFIG_ARM
+	frame_util = div64_u64(frame_load, window_size);
+#else
 	frame_util = frame_load / window_size;
+#endif
 
 	trace_update_rthread_util(thread->task, frame_load, frame_util);
 

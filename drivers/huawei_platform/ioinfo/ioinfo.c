@@ -545,8 +545,13 @@ static int io_dev_get_devstats(struct io_diskstats *pio_d)
 		filp = filp_open(IOSTAT_DEVSTAT_PATH, O_RDONLY, 0);
 
 	if (IS_ERR(filp)) {
-		pr_err("io_stat:ERR: open %s failed, ret:%lu\n",
+		if (get_bootdevice_type() == BOOT_DEVICE_UFS) {
+			pr_err("io_stat:ERR: open %s failed, ret:%lu\n",
+			IOSTAT_UFS_DEVSTAT_PATH, (unsigned long)filp);
+		} else {
+			pr_err("io_stat:ERR: open %s failed, ret:%lu\n",
 			IOSTAT_DEVSTAT_PATH, (unsigned long)filp);
+		}
 		return ret;
 	}
 

@@ -67,7 +67,8 @@
 #define DELAY_LIMIT_FRAME_COUNT 5
 #define SUPPORT_PEN_PROTOCOL_CLASS 2
 #define SUPPORT_PEN_PROTOCOL_CODE 4
-
+#define SINGLE_TAP 1
+#define DOUBLE_TAP 2
 #define DEFAULT_MAGNIFICATION 1
 #define MAX_MAGNIFICATION 16
 
@@ -682,6 +683,12 @@ static int thp_notify_fp_event(struct thp_shb_info info)
 	fp_ops = fp_get_ops();
 	if (!fp_ops || !fp_ops->fp_irq_notify) {
 		thp_log_err("%s: point is NULL!\n", __func__);
+		return -EINVAL;
+	}
+
+	if (info.cmd_len < sizeof(struct tp_to_udfp_data)) {
+		thp_log_err("%s:cmd_len:%u is illegal\n", __func__,
+			info.cmd_len);
 		return -EINVAL;
 	}
 	ret = fp_ops->fp_irq_notify((struct tp_to_udfp_data *)info.cmd_addr);
@@ -1376,20 +1383,49 @@ static int thp_ioctl_set_tp_broken_info(unsigned long arg)
 	return NO_ERR;
 }
 
+static int thp_mt_wrapper_ioctl_set_aod_status(unsigned long arg)
+{
+	void __user *argp = NULL;
+	uint32_t thp_aod_status;
+
+	thp_log_info("%s : called\n", __func__);
+	if (arg == 0) {
+		thp_log_err("arg == 0\n");
+		return -EINVAL;
+	}
+	argp = (void __user *)(uintptr_t)arg;
+	if (copy_from_user(&thp_aod_status, argp, sizeof(thp_aod_status))) {
+		thp_log_err("%s Failed to copy_from_user\n", __func__);
+		return -EFAULT;
+	}
+	thp_log_info("%s:aod_status = %d\n", __func__, thp_aod_status);
+	switch (thp_aod_status) {
+	case SINGLE_TAP:
+		thp_inputkey_report(TS_SINGLE_CLICK);
+		break;
+	case DOUBLE_TAP:
+		thp_inputkey_report(TS_DOUBLE_CLICK);
+		break;
+	default:
+		return -EINVAL;
+	}
+	thp_log_info("%s : call end\n", __func__);
+	return 0;
+}
+
 static long thp_mt_wrapper_ioctl(struct file *filp, unsigned int cmd,
 	unsigned long arg)
 {
 	long ret = 0;
-	struct thp_core_data *cd = NULL;
 	unsigned int have_time_data = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+	if (!cd) {
+		thp_log_err("%s:thp_core_data is NULL\n", __func__);
+		return -EINVAL;
+	}
 
 	switch (cmd) {
 	case INPUT_MT_WRAPPER_IOCTL_CMD_SET_COORDINATES_AND_TIME:
-		cd = thp_get_core_data();
-		if (!cd) {
-			thp_log_err("%s:thp_core_data is NULL\n", __func__);
-			return -EINVAL;
-		}
 		if (!cd->tp_time_sync_support)
 			return -EINVAL;
 		have_time_data = 1; // should not break
@@ -1450,20 +1486,10 @@ static long thp_mt_wrapper_ioctl(struct file *filp, unsigned int cmd,
 		ret = ioctl_get_app_info(arg);
 		break;
 	case INPUT_MT_IOCTL_CMD_GET_STYLUS3_CONNECT_STATUS:
-		cd = thp_get_core_data();
-		if (!cd) {
-			thp_log_err("%s:have null ptr\n", __func__);
-			return -EINVAL;
-		}
 		if ((cd->pen_supported) && (cd->pen_mt_enable_flag))
 			ret = thp_ioctl_get_stylus3_connect_status(arg);
 		break;
 	case INPUT_MT_IOCTRL_CMD_SET_STYLUS3_CONNECT_STATUS:
-		cd = thp_get_core_data();
-		if (!cd) {
-			thp_log_err("%s:have null ptr\n", __func__);
-			return -EINVAL;
-		}
 		if (cd->pen_change_protocol) {
 			ret = set_stylus3_change_protocol(arg);
 			return ret;
@@ -1491,6 +1517,9 @@ static long thp_mt_wrapper_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	case INPUT_MT_WRAPPER_IOCTL_CMD_SET_TP_BROKEN_INFO:
 		ret = thp_ioctl_set_tp_broken_info(arg);
+		break;
+	case INPUT_MT_IOCTL_CMD_SET_AOD_STATUS:
+		ret = thp_mt_wrapper_ioctl_set_aod_status(arg);
 		break;
 	default:
 		thp_log_err("%s: cmd unknown, cmd = 0x%x\n", __func__, cmd);

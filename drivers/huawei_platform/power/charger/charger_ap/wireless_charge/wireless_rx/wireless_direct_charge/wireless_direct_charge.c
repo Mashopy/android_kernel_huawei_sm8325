@@ -31,6 +31,7 @@
 #include <chipset_common/hwpower/hardware_ic/boost_5v.h>
 #include <chipset_common/hwpower/hardware_ic/charge_pump.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_power_supply.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_acc.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_alarm.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_ic_intf.h>
@@ -359,7 +360,7 @@ static void wldc_select_group_volt_param(struct wldc_dev_info *di)
 static void wldc_get_imax_by_tx_ability(struct wldc_dev_info *di)
 {
 	s64 tmp;
-	int rx_ratio;
+	int cp_ratio;
 	int tx_eff;
 	struct wlprot_acc_cap *acc_cap = wlrx_acc_get_cap(WLTRX_DRV_MAIN);
 
@@ -367,20 +368,20 @@ static void wldc_get_imax_by_tx_ability(struct wldc_dev_info *di)
 		hwlog_err("%s: acc_cap null\n", __func__);
 		return;
 	}
-	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
+	cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
 	tmp = (s64)(acc_cap->vmax / POWER_PERCENT) * acc_cap->imax * WLRX_ACC_TX_PWR_RATIO;
 	tx_eff = wlrx_acc_get_tx_eff(WLTRX_DRV_MAIN);
-	di->tx_imax = (int)tmp / (WLDC_VBAT_OVP_TH * rx_ratio * di->volt_ratio) * tx_eff / POWER_PERCENT;
+	di->tx_imax = (int)tmp / (WLDC_VBAT_OVP_TH * cp_ratio * di->dc_ratio) * tx_eff / POWER_PERCENT;
 	hwlog_info("[%s] tx_imax = %dmA\n", __func__, di->tx_imax);
 }
 
 static int wldc_get_imax_by_pwr_limit(struct wldc_dev_info *di)
 {
 	int vmax;
-	int rx_ratio;
+	int cp_ratio;
 
-	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
-	vmax = WLDC_VBAT_OVP_TH * rx_ratio * di->volt_ratio;
+	cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
+	vmax = WLDC_VBAT_OVP_TH * cp_ratio * di->dc_ratio;
 	if (vmax > 0)
 		return di->sysfs_data.pwr_limit / vmax;
 
@@ -413,11 +414,11 @@ void wldc_start_charging(struct wldc_dev_info *di)
 }
 
 static void wldc_rx_vset_volt_check(struct wldc_dev_info *di,
-	int rx_vout, int rx_ratio, int rx_vmax)
+	int rx_vout, int cp_ratio, int rx_vmax)
 {
 	if ((di->max_vgap > 0) &&
-		(di->rx_vout_set > rx_vout + di->max_vgap * rx_ratio))
-		di->rx_vout_set = rx_vout + di->max_vgap * rx_ratio;
+		(di->rx_vout_set > rx_vout + di->max_vgap * cp_ratio))
+		di->rx_vout_set = rx_vout + di->max_vgap * cp_ratio;
 	if ((rx_vmax > 0) && (di->rx_vout_set > rx_vmax))
 		di->rx_vout_set = rx_vmax;
 }
@@ -428,7 +429,7 @@ static int wldc_update_regulation_data(struct wldc_dev_info *di,
 	if (!wldc_is_mode_para_valid(di, di->cur_dc_mode))
 		return -EINVAL;
 
-	data->rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
+	data->cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
 	(void)wlrx_ic_get_vrect(WLTRX_IC_MAIN, &data->rx_vrect);
 	(void)wlrx_ic_get_vout(WLTRX_IC_MAIN, &data->rx_vout);
 	(void)wlrx_ic_get_iout(WLTRX_IC_MAIN, &data->rx_iout);
@@ -447,7 +448,7 @@ static int wldc_update_regulation_data(struct wldc_dev_info *di,
 		"cp: type=%d iout=%d iavg=%d vbat_th=%d cp_iout_hth=%d\t"
 		"cp_iout_lth=%d cp_iout_err_th=%d\n",
 		di->cur_stage, di->ic_data.cur_type, data->ls_vbus, data->ls_ibus,
-		data->ls_vbatt, data->ls_ibatt, data->rx_ratio, data->rx_vrect,
+		data->ls_vbatt, data->ls_ibatt, data->cp_ratio, data->rx_vrect,
 		data->rx_vout, data->rx_iout, data->rx_iavg, di->cp_data.cur_type,
 		data->cp_iout, data->cp_iout_avg, di->cur_vbat_hth,
 		di->cur_cp_iout_hth, di->cur_cp_iout_lth, di->cp_iout_err_hth);
@@ -465,27 +466,27 @@ static void wldc_charge_regulation(struct wldc_dev_info *di)
 
 	if ((data.rx_iout > data.rx_imax + WLDC_DFT_IMAX_ERR_TH) ||
 		(data.rx_iout > di->tx_imax + WLDC_DFT_IMAX_ERR_TH)) {
-		di->rx_vout_set = data.rx_vout - di->vstep * data.rx_ratio;
+		di->rx_vout_set = data.rx_vout - di->vstep * data.cp_ratio;
 		hwlog_info("[%s] rx_iout:%dmA>hth:%dmA or tx_imax:%dmA, decrease rx_vout\n",
 			__func__, data.rx_iout, data.rx_imax, di->tx_imax);
 		goto set_vout;
 	}
 	if (data.cp_iout_avg > di->cur_cp_iout_hth + di->cp_iout_err_hth) {
-		di->rx_vout_set -= di->vstep * data.rx_ratio;
+		di->rx_vout_set -= di->vstep * data.cp_ratio;
 		hwlog_info("[%s] cp_iout_avg:%dmA>%dmA, decrease rx_vout\n",
 			__func__, data.cp_iout_avg,
 			di->cur_cp_iout_hth + di->cp_iout_err_hth);
 		goto set_vout;
 	}
 	if (data.ls_vbatt > di->cur_vbat_hth) {
-		di->rx_vout_set -= data.rx_ratio * di->volt_ratio *
+		di->rx_vout_set -= data.cp_ratio * di->dc_ratio *
 			(data.ls_vbatt - di->cur_vbat_hth);
 		hwlog_info("[%s] ls_vbatt:%dmV>%dmV, decrease rx_vout\n",
 			__func__, data.ls_vbatt, di->cur_vbat_hth);
 		goto set_vout;
 	}
 	if (data.ls_ibatt > di->ibat_max_hth) {
-		di->rx_vout_set -= di->vstep * data.rx_ratio;
+		di->rx_vout_set -= di->vstep * data.cp_ratio;
 		hwlog_info("[%s] ls_ibatt:%dmA>%dmA, decrease rx_vout\n",
 			__func__, data.ls_ibatt, di->ibat_max_hth);
 		goto set_vout;
@@ -497,7 +498,7 @@ static void wldc_charge_regulation(struct wldc_dev_info *di)
 	if (data.ls_ibatt > di->ibat_min_lth)
 		return;
 	if (data.cp_iout_avg < di->cur_cp_iout_hth - di->cp_iout_err_hth) {
-		di->rx_vout_set += di->vstep * data.rx_ratio;
+		di->rx_vout_set += di->vstep * data.cp_ratio;
 		hwlog_info("[%s] cp_iout_avg:%dmA<%dmA, increase rx_vout\n",
 			__func__, data.cp_iout_avg,
 			di->cur_cp_iout_hth - di->cp_iout_err_hth);
@@ -505,7 +506,7 @@ static void wldc_charge_regulation(struct wldc_dev_info *di)
 	}
 
 set_vout:
-	wldc_rx_vset_volt_check(di, data.rx_vout, data.rx_ratio, data.rx_vmax);
+	wldc_rx_vset_volt_check(di, data.rx_vout, data.cp_ratio, data.rx_vmax);
 	ret = wireless_charge_set_rx_vout(di->rx_vout_set);
 	if (ret)
 		hwlog_err("%s: set_rx_vout fail\n", __func__);
@@ -549,12 +550,12 @@ static bool wldc_abnormal_iout_check(struct wldc_dev_info *di)
 	static int cnt;
 	int cp_iout;
 	int cp_iout_avg;
-	int rx_ratio;
+	int cp_ratio;
 
-	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
+	cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
 	cp_iout = wldc_cp_get_iout();
 	cp_iout_avg = wldc_cp_get_iavg();
-	if ((rx_ratio > WLDC_RATION_MODE) && (cp_iout < WLDC_IOUT_LTH) &&
+	if ((cp_ratio > WLDC_RATION_MODE) && (cp_iout < WLDC_IOUT_LTH) &&
 		(cp_iout_avg < WLDC_IOUT_LTH)) {
 		cnt++;
 		hwlog_err("cp_iout_avg:%d cp_iout:%d\n", cp_iout_avg, cp_iout);
@@ -633,8 +634,8 @@ static void wldc_check_intfr_imax(struct wldc_dev_info *di)
 
 	plimit_iout = wlrx_intfr_get_irx(WLTRX_DRV_MAIN);
 	if ((plimit_iout > 0) &&
-		(di->cur_cp_iout_hth > plimit_iout * di->volt_ratio))
-		di->cur_cp_iout_hth = plimit_iout * di->volt_ratio;
+		(di->cur_cp_iout_hth > plimit_iout * di->dc_ratio))
+		di->cur_cp_iout_hth = plimit_iout * di->dc_ratio;
 }
 
 static void wldc_select_charge_param(struct wldc_dev_info *di)
@@ -644,7 +645,7 @@ static void wldc_select_charge_param(struct wldc_dev_info *di)
 	int cp_iout_low;
 	int rx_imax = 0;
 	int cp_iin_thermal;
-	int rx_ratio;
+	int cp_ratio;
 	int i_limit_by_pwr;
 	static int original_iout_hth = 0;
 	unsigned int idx;
@@ -672,17 +673,18 @@ static void wldc_select_charge_param(struct wldc_dev_info *di)
 		cp_iin_thermal = cp_iout_low;
 
 	wlrx_ic_get_imax(WLTRX_IC_MAIN, &rx_imax);
-	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
-	if (di->cur_cp_iout_hth > rx_imax * rx_ratio)
-		di->cur_cp_iout_hth = rx_imax * rx_ratio;
-	if ((di->cur_cp_iout_hth > cp_iin_thermal) && !wlc_get_high_pwr_test_flag())
+	cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
+	if (di->cur_cp_iout_hth > rx_imax * cp_ratio)
+		di->cur_cp_iout_hth = rx_imax * cp_ratio;
+	if ((di->cur_cp_iout_hth > cp_iin_thermal) &&
+		!wlrx_in_high_pwr_test(WLTRX_DRV_MAIN))
 		di->cur_cp_iout_hth = cp_iin_thermal;
-	if (di->cur_cp_iout_hth > di->tx_imax * rx_ratio)
-		di->cur_cp_iout_hth = di->tx_imax * rx_ratio;
+	if (di->cur_cp_iout_hth > di->tx_imax * cp_ratio)
+		di->cur_cp_iout_hth = di->tx_imax * cp_ratio;
 
 	wldc_check_intfr_imax(di);
 
-	tx_evt_ilim = wlrx_get_alarm_ilim(WLDC_VBAT_OVP_TH * di->volt_ratio);
+	tx_evt_ilim = wlrx_get_alarm_ilim(WLDC_VBAT_OVP_TH * di->dc_ratio);
 	if (tx_evt_ilim && (di->cur_cp_iout_hth > tx_evt_ilim))
 		di->cur_cp_iout_hth = tx_evt_ilim;
 
@@ -697,8 +699,8 @@ static void wldc_select_charge_param(struct wldc_dev_info *di)
 		hwlog_info("[select_param] stage_vbat_hth=%d stage_cp_iout_hth=%d stage_cp_iout_lth=%d "
 			"rx_imax=%d cp_iin_thermal=%d tx_imax=%d tx_evt_ilim=%d i_limit_by_pwr=%d\n",
 			di->volt_para[stage_id].vbatt_hth, di->volt_para[stage_id].cp_iout_hth,
-			di->volt_para[stage_id].cp_iout_lth, rx_imax * rx_ratio, cp_iin_thermal,
-			di->tx_imax * rx_ratio, tx_evt_ilim, i_limit_by_pwr);
+			di->volt_para[stage_id].cp_iout_lth, rx_imax * cp_ratio, cp_iin_thermal,
+			di->tx_imax * cp_ratio, tx_evt_ilim, i_limit_by_pwr);
 		original_iout_hth = di->cur_cp_iout_hth;
 	}
 }
@@ -737,13 +739,13 @@ static void wldc_stop_limit_output_current(struct wldc_dev_info *di)
 	int i;
 	int rx_iout = 0;
 	int rx_vout = 0;
-	int rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
+	int cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
 
 	(void)wlrx_ic_get_vout(WLTRX_IC_MAIN, &rx_vout);
 	for (i = 0; i < 8; i++) { /* 8: limit current cnt */
 		if (wlrx_get_wired_channel_state() == WIRED_CHANNEL_ON)
 			break;
-		rx_vout -= 150 * rx_ratio; /* 150mv: limit current step volt */
+		rx_vout -= 150 * cp_ratio; /* 150mv: limit current step volt */
 		if (wireless_charge_set_rx_vout(rx_vout))
 			break;
 		(void)power_msleep(DT_MSLEEP_50MS, 0, NULL);
@@ -876,13 +878,13 @@ static void wldc_update_soh_para(struct wldc_dev_info *di)
 
 static int wldc_multi_ic_check(struct wldc_dev_info *di)
 {
-	int rx_ratio;
+	int cp_ratio;
 
 	if (!wldc_is_mode_para_valid(di, di->cur_dc_mode))
 		return -1;
 
-	rx_ratio = di->mode_para[di->cur_dc_mode].init_para.rx_ratio;
-	if (mulit_ic_check(SC_MODE, di->ic_data.cur_type, &di->ic_check_info, rx_ratio) < 0) {
+	cp_ratio = di->mode_para[di->cur_dc_mode].init_para.cp_ratio;
+	if (mulit_ic_check(SC_MODE, di->ic_data.cur_type, &di->ic_check_info, cp_ratio) < 0) {
 		di->ic_data.multi_ic_err_cnt++;
 		return -1;
 	}
@@ -1204,7 +1206,7 @@ static void wldc_print_mode_para(struct wldc_dev_info *di)
 			"rx_vout_th:%-3d vdiff_th:%-4d ileak_th:%-3d\t"
 			"vdelt:%-3d rx_vmax:%-3d tx_vout:%-5d\n", i,
 			para->dc_type, para->dc_name, para->ext_pwr_type,
-			para->rx_ratio, para->vbatt_min, para->vbatt_max,
+			para->cp_ratio, para->vbatt_min, para->vbatt_max,
 			para->rx_vout, para->rx_vout_th, para->vdiff_th,
 			para->ileak_th, para->vdelt, para->rx_vmax, para->tx_vout);
 	}
@@ -1287,7 +1289,7 @@ static void wldc_parse_basic_para(struct device_node *np,
 		&di->ibat_min_lth, WLDC_DEFAULT_IBAT_MIN_TH);
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "volt_ratio",
-		&di->volt_ratio, SC_DEFAULT_VOLT_RATIO);
+		&di->dc_ratio, SC_DEFAULT_VOLT_RATIO);
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ctrl_interval",
 		&di->ctrl_interval, WLDC_DEFAULT_CTRL_INTERVAL);

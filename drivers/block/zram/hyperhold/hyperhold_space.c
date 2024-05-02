@@ -31,12 +31,17 @@
 #include <linux/init.h>
 #include <linux/kthread.h>
 #include <linux/hyperhold_inf.h>
-
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+#include <linux/fcntl.h>
+#include <linux/falloc.h>
+#include <linux/fs.h>
+#endif
 #include "zram_drv.h"
 #include "hyperhold.h"
 #include "hyperhold_internal.h"
 
 #define HP_PARTITION_PATH "/dev/block/by-name/hyperhold"
+#define USERDATA_PARTITION_PATH "/dev/block/by-name/userdata"
 #define HP_FILE_PATH "/data/vendor/hyperhold/swapfile"
 #define MAX_HP_FILE_PATH_LEN 128
 #define MAX_HP_FILE_RATE (100UL)
@@ -45,6 +50,27 @@
 #define MAX_HP_FILE_NUM MAX_HP_FILE_SZ_MBYTE
 #define HP_FILE_SZ_MBYTE (128UL)
 #define HP_EXT_NUM_PER_MBYTE (32UL)
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+#define HP_FILE_NAME_FOR_3G "/data/vendor/hyperhold/swapfile_0"
+#define BIG_FILE_SIZE (3UL * 1024UL * 1024UL * 1024UL)
+#endif
+
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
+static struct file *hyperhold_open_bdev(const char *file_name);
+static void hyperhold_get_userdata_bdev(struct block_device **bdev);
+static void hyperhold_get_userdata_bdev(struct block_device **bdev)
+{
+	struct file *backing_dev = NULL;
+	struct inode *inode = NULL;
+
+	backing_dev = hyperhold_open_bdev(USERDATA_PARTITION_PATH);
+	if (unlikely(!backing_dev))
+		return;
+
+	inode = backing_dev->f_mapping->host;
+	*bdev = bdgrab(I_BDEV(inode));
+}
+#endif
 
 static void hyperhold_space_set_zram(struct zram *zram,
 	struct block_device *bdev, unsigned long nr_pages)
@@ -54,14 +80,22 @@ static void hyperhold_space_set_zram(struct zram *zram,
 	down_write(&zram->init_lock);
 	zram->bdev = bdev;
 	zram->backing_dev = NULL;
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	zram->nr_pages = nr_pages;
+#else
 	zram->nr_pages += nr_pages;
+#endif
 	up_write(&zram->init_lock);
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	space_info->nr_exts = (nr_pages << PAGE_SHIFT) >> EXTENT_SHIFT;
+#else
 	space_info->nr_exts += (nr_pages << PAGE_SHIFT) >> EXTENT_SHIFT;
 	atomic64_set(&space_info->max_ext_num, space_info->nr_exts);
-
+#endif
 	hh_print(HHLOG_ERR, "nr_pages %llu\n", nr_pages);
 }
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 static void hyperhold_set_par_file(struct zram *zram,
 	struct block_device *bdev, unsigned long nr_pages)
 {
@@ -93,6 +127,7 @@ bool hyperhold_get_par_file_enable(void)
 
 	return space_info->enable_par_file;
 }
+#endif
 
 static sector_t hyperhold_get_partition_sector(int ext_id)
 {
@@ -161,16 +196,24 @@ static void hyperhold_update_max_use_exts(void)
 	atomic64_set(&space_info->max_ext_num, max_use_nr_exts);
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static int hyperhold_alloc_file_proc(unsigned long start_file_index)
+#else
 static void hyperhold_alloc_file_proc(unsigned long start_file_index)
+#endif
 {
-	int ret;
+	int ret = 0;
 	unsigned long file_index;
 	char file_path[MAX_HP_FILE_PATH_LEN] = { 0 };
 	struct space_info_para *space_info = hyperhold_space_info();
 	unsigned long long file_size;
 
 	if (start_file_index >= space_info->file_num)
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+		return ret;
+#else
 		return;
+#endif
 
 	file_size = (unsigned long long)space_info->file_size * MBYTE_TO_BYTE_FACTOR;
 	hh_print(HHLOG_ERR, "file_size %llu %llu\n", space_info->file_size, file_size);
@@ -188,14 +231,21 @@ static void hyperhold_alloc_file_proc(unsigned long start_file_index)
 
 		space_info->file_ops->free(file_path, file_size);
 		ret = space_info->file_ops->alloc(file_path, file_size);
-		if (ret)
+		if (ret) {
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+			hh_print(HHLOG_ERR, "alloc file_index %u failed! %d", file_index, ret);
+#endif
 			break;
-
+		}
 		hh_print(HHLOG_ERR, "alloc new file_index %u\n", file_index);
 	}
 
 	space_info->allocated_file_num = file_index;
 	hh_print(HHLOG_ERR, "allocated_file_num %u\n", file_index);
+
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	return ret;
+#endif
 }
 
 static void hyperhold_free_file_proc(unsigned long file_num,
@@ -248,6 +298,40 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static int hyperhold_create_big_file_func(unsigned long long file_size, const char *file_path)
+{
+	int ret = 0;
+	mode_t file_attr = S_IRUSR | S_IWUSR;
+	int file_flags = O_RDWR | O_CREAT | O_TRUNC;
+	int fallocate_mode = 0;
+	off_t start_offset = 0;
+	int fd;
+	mm_segment_t oldfs;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+	fd = ksys_open(file_path, file_flags, file_attr);
+	if (fd < 0) {
+		hh_print(HHLOG_ERR, "%s open failed! fd = %d\n", __func__, fd);
+		ret = -EFAULT;
+		goto file_create_err;
+	}
+	ret = ksys_fallocate(fd, fallocate_mode, start_offset, file_size);
+	if (ret < 0) {
+		hh_print(HHLOG_ERR, "%s failed! ret = %d\n", __func__, ret);
+		ret = -EINVAL;
+		ksys_close((unsigned int)fd);
+		goto file_create_err;
+	}
+	hh_print(HHLOG_INFO, "%s success!\n", __func__);
+	ksys_close((unsigned int)fd);
+file_create_err:
+	set_fs(oldfs);
+	return ret;
+}
+#endif
+
 static int hyperhold_check_space_setting(struct blk_hp_set_space *space_setting)
 {
 	struct space_info_para *space_info = hyperhold_space_info();
@@ -298,6 +382,9 @@ static void hyperhold_save_space_setting(struct blk_hp_set_space *space_setting)
 		space_info->nr_pages =
 			(total_file_size * MBYTE_TO_BYTE_FACTOR) >> PAGE_SHIFT;
 		space_info->allocated_file_num = 0;
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
+		space_info->userdata_bdev = NULL;
+#endif
 	}
 
 	hh_print(HHLOG_ERR, "space_type %u space_size %u\n",
@@ -350,23 +437,41 @@ static void hyperhold_space_update_file_info(void)
 		}
 		space_info->file_inited_num = loop + 1;
 	}
-
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	for (loop = 0; loop < space_info->file_inited_num; ++loop)
 		hh_print(HHLOG_ERR, "fileindex %d start_sector %lu\n",
 			loop, space_info->start_sector[loop]);
-
+#endif
 	hyperhold_update_max_use_exts();
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static int hyperhold_expend_space_proc(void)
+#else
 static void hyperhold_expend_space_proc(void)
+#endif
 {
 	struct space_info_para *space_info = hyperhold_space_info();
 	unsigned long start_file_index = space_info->allocated_file_num;
-
-	if (space_info->file_num > space_info->allocated_file_num)
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	int ret = 0;
+#endif
+	if (space_info->file_num > space_info->allocated_file_num) {
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	ret = hyperhold_alloc_file_proc(start_file_index);
+		if (ret) {
+			hh_print(HHLOG_ERR, "alloc file_index %u failed! %d", start_file_index, ret);
+			return ret;
+		}
+#else
 		hyperhold_alloc_file_proc(start_file_index);
+#endif
+	}
 
 	hyperhold_space_update_file_info();
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	return ret;
+#endif
 }
 
 static void hyperhold_close_bdev(struct block_device *bdev,
@@ -400,6 +505,7 @@ static struct file *hyperhold_open_bdev(const char *file_name)
 	return backing_dev;
 }
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 static void hyperhold_check_partition_space(struct zram *zram, const char *file_name)
 {
 	struct file *backing_dev = NULL;
@@ -455,6 +561,7 @@ static void hyperhold_check_partition_space(struct zram *zram, const char *file_
 out:
 	hyperhold_close_bdev(bdev, backing_dev);
 }
+#endif
 
 static int hyperhold_bind(struct zram *zram, const char *file_name)
 {
@@ -532,7 +639,7 @@ int hyperhold_set_space(struct blk_hp_set_space *space_setting)
 	return 0;
 }
 
-int  hyperhold_free_filespace(void)
+int hyperhold_free_filespace(void)
 {
 	int ret;
 
@@ -546,13 +653,29 @@ int  hyperhold_free_filespace(void)
 	return 0;
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+int hyperhold_expend_space(bool en)
+#else
 void hyperhold_expend_space(bool en)
+#endif
 {
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	int ret = 0;
+#endif
 	if (!en)
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+		return ret;
+#else
 		return;
+#endif
 
 	if (hyperhold_is_file_space())
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+		ret = hyperhold_expend_space_proc();
+	return ret;
+#else
 		hyperhold_expend_space_proc();
+#endif
 }
 
 unsigned long hperhold_get_max_ext_num(void)
@@ -583,9 +706,15 @@ void hyperhold_space_sector_deinit(void)
 	}
 }
 
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+static int hyperhold_space_file_sector_init(void)
+#else
 int hyperhold_space_file_sector_init(void)
+#endif
 {
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	int loop;
+#endif
 	struct space_info_para *space_info = hyperhold_space_info();
 
 	space_info->start_sector = vzalloc(space_info->file_num * sizeof(sector_t));
@@ -593,7 +722,7 @@ int hyperhold_space_file_sector_init(void)
 		hh_print(HHLOG_ERR, "start_sector alloc failed\n");
 		return -ENOMEM;
 	}
-
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	if (space_info->enable_par_file) {
 		for (loop = space_info->file_inited_num;
 			loop < space_info->par_file_num; ++loop) {
@@ -608,9 +737,32 @@ int hyperhold_space_file_sector_init(void)
 	for (loop = 0; loop < space_info->file_inited_num; ++loop)
 		hh_print(HHLOG_ERR, "fileindex %d start_sector %lu\n",
 			loop, space_info->start_sector[loop]);
-
+#else
+	hyperhold_space_update_file_info();
+#endif
 	return 0;
 }
+
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+int hyperhold_space_sector_init(void)
+{
+	if (!hyperhold_is_file_space())
+		return 0;
+
+	return hyperhold_space_file_sector_init();
+}
+#endif
+
+#if defined(CONFIG_RAMTURBO) && defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
+static void hyperhold_set_userdata_bdev(struct space_info_para *space_info)
+{
+	struct block_device *userdata_bdev = NULL;
+
+	hyperhold_get_userdata_bdev(&userdata_bdev);
+	if (userdata_bdev)
+		space_info->userdata_bdev = userdata_bdev;
+}
+#endif
 
 static int hyperhold_alloc_file_space(struct zram *zram)
 {
@@ -618,7 +770,9 @@ static int hyperhold_alloc_file_space(struct zram *zram)
 	struct block_device *bdev = NULL;
 	struct space_info_para *space_info = hyperhold_space_info();
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	hyperhold_check_partition_space(zram, HP_PARTITION_PATH);
+#endif
 
 	ret = hyperhold_get_bdev("/data/vendor", &bdev);
 	if (unlikely(ret)) {
@@ -636,13 +790,38 @@ static int hyperhold_alloc_file_space(struct zram *zram)
 		hh_print(HHLOG_ERR, "health check failed\n");
 		return hyperhold_free_filespace();
 	}
-
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 	hyperhold_alloc_file_proc(space_info->par_file_num);
 	hyperhold_free_file_proc(MAX_HP_FILE_NUM - space_info->allocated_file_num,
 		space_info->allocated_file_num);
 
 	hyperhold_space_set_zram(zram, bdev, space_info->nr_pages);
+#else
+#ifdef CONFIG_RAMTURBO
+	hyperhold_set_userdata_bdev(space_info);
+#endif
+	ret = hyperhold_alloc_file_proc(0);
+	if (!ret) {
+		hyperhold_free_file_proc(MAX_HP_FILE_NUM - space_info->allocated_file_num,
+			space_info->allocated_file_num);
 
+		hyperhold_space_set_zram(zram, bdev, space_info->nr_pages);
+	} else {
+ 		if (ret != -ENOSPC) {
+ 			hh_print(HHLOG_ERR, "%s start create 3GB", __func__);
+ 			hyperhold_free_file_proc(MAX_HP_FILE_NUM, 0);
+ 			ret = hyperhold_create_big_file_func(BIG_FILE_SIZE, HP_FILE_NAME_FOR_3G);
+ 			if (ret != -EFAULT && ret != -EINVAL) {
+ 				return -ERANGE;
+ 			} else {
+ 				return ret;
+ 			}
+ 		}
+ 		hyperhold_free_file_proc(MAX_HP_FILE_NUM, 0);
+ 		hh_print(HHLOG_ERR, "space not enough\n");
+ 		return -ENOSPC;
+ 	}
+#endif
 	return 0;
 }
 
@@ -681,6 +860,7 @@ unsigned long hyperhold_file_id2bit(unsigned long ext_id)
 		space_info->nr_exts_per_file - 1 - file_offset;
 }
 
+#ifndef CONFIG_HYPERHOLD_DYNAMIC_SPACE
 bool io_spacetype_different(struct hyperhold_segment *segment,
 	struct hyperhold_entry *io_entry)
 {
@@ -704,3 +884,4 @@ bool ext_to_par_file(int ext_id)
 
 	return (ext_id / space_info->nr_exts_per_file) < space_info->par_file_num;
 }
+#endif

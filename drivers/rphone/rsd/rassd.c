@@ -472,7 +472,7 @@ static int proc_ops_show(rSd) (struct seq_file *m, void *v)
 			if (fault_temp->delay > 0)
 				seq_printf(m, "delay=%d(ms) ",
 					fault_temp->delay);
-				seq_printf(m, "%s", "\n");
+			seq_printf(m, "%s", "\n");
 		}
 		if (fault_temp->cmd != -1) {
 			seq_printf(m, "%2d cmd=%2d ", i, fault_temp->cmd);
@@ -552,4 +552,6 @@ module_exit(tool_exit);
 MODULE_DESCRIPTION("SD faults inject.");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("V001R001C151-1.0");
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

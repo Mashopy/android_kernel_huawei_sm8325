@@ -107,6 +107,11 @@ int cps4067_parse_dts(struct device_node *np, struct cps4067_dev_info *di)
 		CPS4067_TX_PING_FREQ);
 
 	cps4067_parse_tx_fod(np, di);
+	ret = wlrx_parse_fod_cfg(di->ic_type, np, CPS4067_RX_FOD_LEN);
+	if (ret) {
+		hwlog_err("parse_dts: parse rx_fod para failed\n");
+		return ret;
+	}
 	ret = cps4067_parse_ldo_cfg(np, di);
 	if (ret) {
 		hwlog_err("parse_dts: parse ldo cfg failed\n");

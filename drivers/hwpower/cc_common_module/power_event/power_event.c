@@ -61,6 +61,10 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	[POWER_NE_DC_LVC_CHARGING] = "dc_lvc_charging",
 	[POWER_NE_DC_SC_CHARGING] = "dc_sc_charging",
 	[POWER_NE_DC_STOP_CHARGE] = "dc_stop_charge",
+	[POWER_NE_DC_PING_FAIL] = "dc_ping_fail",
+	[POWER_NE_DC_ADAPTER_MODE] = "dc_adapter_mode",
+	[POWER_NE_DC_TEMP_ERR] = "dc_temp_err",
+	[POWER_NE_DC_VOLTAGE_INVALID] = "dc_voltage_invalid",
 	/* section: for lightstrap */
 	[POWER_NE_LIGHTSTRAP_ON] = "lightstrap_on",
 	[POWER_NE_LIGHTSTRAP_OFF] = "lightstrap_off",
@@ -113,6 +117,7 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	[POWER_NE_WLTX_GET_RX_PRODUCT_TYPE] = "wltx_get_rx_product_type",
 	[POWER_NE_WLTX_GET_RX_MAX_POWER] = "wltx_get_rx_max_power",
 	[POWER_NE_WLTX_ASK_RX_EVT] = "wltx_ask_rx_evt",
+	[POWER_NE_WLTX_TX_Q_CALIBRATION] = "wltx_tx_q_calibration",
 	/* section: for wireless rx */
 	[POWER_NE_WLRX_PWR_ON] = "wlrx_pwr_on",
 	[POWER_NE_WLRX_PREV_READY] = "wlrx_prev_ready",
@@ -127,6 +132,7 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	[POWER_NE_CHG_START_CHARGING] = "chg_start_charging",
 	[POWER_NE_CHG_STOP_CHARGING] = "chg_stop_charging",
 	[POWER_NE_CHG_CHARGING_DONE] = "chg_charging_done",
+	[POWER_NE_CHG_CHARGING_RECHARGE] = "chg_charging_recharge",
 	[POWER_NE_CHG_PRE_STOP_CHARGING] = "chg_pre_stop_charging",
 	[POWER_NE_CHG_WAKE_UNLOCK] = "chg_wake_unlock",
 	/* section: for coul */
@@ -191,6 +197,8 @@ static const char * const g_power_event_ne_table[POWER_NE_END] = {
 	[POWER_NE_BATTERY_MOVE] = "battery_move",
 	/* section: for usb extra modem */
 	[POWER_NE_UEM_RECEIVE_EVENT] = "uem_receive_event",
+	/* section: for reverse charge */
+	[POWER_NE_RVS_CHG_RESET_PROTOCOL] = "rvs_chg_reset_protocol",
 };
 
 static const char *power_event_get_ne_name(unsigned int event)

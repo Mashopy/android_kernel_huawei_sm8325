@@ -2990,6 +2990,11 @@ static long nvme_dev_ioctl(struct file *file, unsigned int cmd,
 	struct nvme_ctrl *ctrl = file->private_data;
 	void __user *argp = (void __user *)arg;
 
+	if (ctrl == NULL)
+		return -ENOTTY;
+	if (ctrl->state == NVME_CTRL_DELETING || ctrl->state == NVME_CTRL_DEAD)
+		return -ENOTTY;
+
 	switch (cmd) {
 	case NVME_IOCTL_ADMIN_CMD:
 		return nvme_user_cmd(ctrl, NULL, argp);

@@ -57,6 +57,9 @@
 #include <huawei_platform/usb/hw_pd_dev.h>
 #include <huawei_platform/usb/pd/richtek/tcpm.h>
 #include <huawei_platform/usb/switch/usbswitch_common.h>
+#ifdef CONFIG_POGO_PIN
+#include <huawei_platform/usb/hw_pogopin_otg_id.h>
+#endif /* CONFIG_POGO_PIN */
 #ifdef CONFIG_WIRELESS_CHARGER
 #include <huawei_platform/power/wireless/wireless_charger.h>
 #endif
@@ -108,6 +111,8 @@ static bool g_pd_cc_moisture_happened;
 static int cc_moisture_status_report;
 static int emark_detect_enable;
 static int emark_detect_finish_not_support;
+static int vbus_only_ignore;
+static int only_charger_stg;
 static int g_ibus_check;
 /* 0: disabled 1: only for SC; 2: for SC and LVC */
 static unsigned int cc_dynamic_protect;
@@ -126,6 +131,8 @@ void pd_dpm_reinit_chip(void);
 
 #define PD_DPM_POWER_QUICK_CHG_THR      18000000
 #define PD_DPM_POWER_WIRELESS_CHG_THR   9000000
+#define WAIT_PD_PROTOCOL_START_TIME     1000
+#define WAIT_NON_STANDARD_REDO_TIME     10000
 
 #ifndef HWLOG_TAG
 #define HWLOG_TAG huawei_pd
@@ -1082,7 +1089,24 @@ int pd_dpm_request_dpdm(bool enable)
 	return rc;
 }
 
-static void pd_dpm_report_device_attach(void)
+struct delayed_work device_attach_work;
+static void pd_dpm_device_attach_work(struct work_struct *work)
+{
+	int charger_type = CHARGER_REMOVED;
+
+	(void)power_supply_get_int_property_value("charge_manager",
+		POWER_SUPPLY_PROP_CHG_TYPE, &charger_type);
+	hwlog_info("%s charger_type = %d\r\n", __func__, charger_type);
+
+	if ((charger_type == CHARGER_TYPE_USB) || (charger_type == CHARGER_TYPE_BC_USB)) {
+		pd_dpm_request_dpdm(false);
+		extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB, true);
+	} else if (charger_type == CHARGER_TYPE_STANDARD) {
+		pd_dpm_request_dpdm(true);
+	}
+}
+
+void pd_dpm_report_device_attach(void)
 {
 	int charger_type = CHARGER_REMOVED;
 	hwlog_err("%s \r\n", __func__);
@@ -1090,6 +1114,14 @@ static void pd_dpm_report_device_attach(void)
 #ifdef SNDJ
 	water_detection_entrance();
 #endif
+#ifdef CONFIG_POGO_PIN
+	if (get_pogopin_otg_status() == POGO_OTG_INSERT) {
+		hwlog_info("%s otg insert return\n", __func__);
+		power_supply_set_int_property_value("charge_manager",
+			POWER_SUPPLY_PROP_CHG_TYPE, CHARGER_TYPE_NON_STANDARD);
+		return;
+	}
+#endif /* CONFIG_POGO_PIN */
 	pd_dpm_request_dpdm(true);
 	usbswitch_common_chg_type_det(true);
 	msleep(DISABLE_INTERVAL);
@@ -1103,12 +1135,42 @@ static void pd_dpm_report_device_attach(void)
 		extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB, true);
 	} else if (charger_type == CHARGER_TYPE_STANDARD) {
 		pd_dpm_request_dpdm(true);
+	} else if (charger_type == CHARGER_TYPE_NON_STANDARD) {
+		if (only_charger_stg)
+			schedule_delayed_work(&device_attach_work,
+				msecs_to_jiffies(WAIT_NON_STANDARD_REDO_TIME));
+	}
+}
+
+struct delayed_work host_attach_work;
+static void pd_dpm_host_attach_work(struct work_struct *work)
+{
+	hwlog_err("%s negotiate_flag =%d\n", __func__, get_pd_negotiate_flag());
+	if (!get_pd_negotiate_flag()) {
+		pd_dpm_request_dpdm(false);
+		extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB, false);
+		extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB_HOST, true);
 	}
 }
 
 static inline void pd_dpm_report_host_attach(void)
 {
-	hwlog_err("%s \r\n", __func__);
+	hwlog_err("%s: only_charger_stg=%d, pullout_flag=%d\n", __func__,
+		only_charger_stg, get_dummy_pullout_flag());
+	if (only_charger_stg) {
+		if (get_dummy_pullout_flag()) {
+			pd_dpm_request_dpdm(false);
+			extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB, false);
+			extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB_HOST, true);
+			return;
+		}
+		/* Only for the STG Leifeng feature */
+		pd_dpm_request_dpdm(true);
+		schedule_delayed_work(&host_attach_work,
+			msecs_to_jiffies(WAIT_PD_PROTOCOL_START_TIME));
+		return;
+	}
+
 	extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB, false);
 	extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB_HOST, true);
 }
@@ -1124,6 +1186,11 @@ void pd_dpm_report_device_detach(void)
 static inline void pd_dpm_report_host_detach(void)
 {
 	hwlog_err("%s \r\n", __func__);
+	if (only_charger_stg) {
+		pd_dpm_request_dpdm(false);
+		set_pd_negotiate_flag(false);
+		cancel_delayed_work(&host_attach_work);
+	}
 	extcon_set_state_sync(g_pd_di->extcon, EXTCON_USB_HOST, false);
 }
 
@@ -1517,16 +1584,22 @@ int pd_dpm_handle_pe_event(unsigned long event, void *data)
 					hwlog_err("%s: ignore ATTACHED_VBUS_ONLY\n", __func__);
 					return 0;
 				}
-				pd_dpm_set_source_sink_state(START_SINK);
-				usb_event = PD_DPM_USB_TYPEC_DEVICE_ATTACHED;
+				if (vbus_only_ignore == 0) {
+					hwlog_info("%s no hardware_workarounds\n", __func__);
+					pd_dpm_set_source_sink_state(START_SINK);
+					usb_event = PD_DPM_USB_TYPEC_DEVICE_ATTACHED;
+				}
 				hwlog_info("%s ATTACHED_VBUS_ONLY\r\n", __func__);
 				break;
 			case PD_DPM_TYPEC_UNATTACHED_VBUS_ONLY:
 				g_pd_cc_orientation_factory = CC_ORIENTATION_FACTORY_SET;
 				hwlog_info("%s UNATTACHED_VBUS_ONLY\r\n", __func__);
 				pd_dpm_handle_abnomal_change(PD_DPM_UNATTACHED_VBUS_ONLY);
-				usb_event = PD_DPM_USB_TYPEC_DETACHED;
-				pd_dpm_set_source_sink_state(STOP_SINK);
+				if (vbus_only_ignore == 0) {
+					hwlog_info("%s no hardware_workarounds\n", __func__);
+					usb_event = PD_DPM_USB_TYPEC_DETACHED;
+					pd_dpm_set_source_sink_state(STOP_SINK);
+				}
 				break;
 			default:
 				hwlog_info("%s can not detect typec state\r\n", __func__);
@@ -1683,7 +1756,11 @@ static void pd_accessory_dts_parser(struct pd_dpm_info *di, struct device_node *
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"emark_detect_enable", &emark_detect_enable, 1);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-                "emark_detect_finish_not_support", &emark_detect_finish_not_support, 0);
+		"emark_detect_finish_not_support", &emark_detect_finish_not_support, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vbus_only_ignore", &vbus_only_ignore, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"only_charger_stg", &only_charger_stg, 0);
 	if (power_dts_read_string(power_dts_tag(HWLOG_TAG), np,
 		"tcp_name", &di->tcpc_name))
 		di->tcpc_name = "type_c_port0";
@@ -1840,6 +1917,8 @@ static int pd_dpm_probe(struct platform_device *pdev)
 	notify_tcp_dev_ready(di->tcpc_name);
 	dc_cable_ops_register(&cable_detect_ops);
 	power_if_ops_register(&pd_if_ops);
+	INIT_DELAYED_WORK(&host_attach_work, pd_dpm_host_attach_work);
+	INIT_DELAYED_WORK(&device_attach_work, pd_dpm_device_attach_work);
 	hwlog_info("%s end\n", __func__);
 	return 0;
 }

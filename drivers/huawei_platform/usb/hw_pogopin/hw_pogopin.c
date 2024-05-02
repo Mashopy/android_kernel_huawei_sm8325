@@ -41,6 +41,9 @@
 #include <huawei_platform/hwpower/common_module/power_glink.h>
 #include <chipset_common/hwpower/common_module/power_supply_interface.h>
 #include <chipset_common/hwpower/common_module/power_wakeup.h>
+#include <chipset_common/hwpower/charger/charger_event.h>
+#include <huawei_platform/usb/switch/usbswitch_common.h>
+#include <chipset_common/hwpower/charger/charge_manager.h>
 
 #ifdef HWLOG_TAG
 #undef HWLOG_TAG
@@ -53,6 +56,7 @@ static struct device *g_pogopin_dev;
 static struct class *g_pogopin_class;
 static struct pogopin_info *g_pogopin_di;
 struct blocking_notifier_head g_pogopin_evt_nb;
+static struct pogopin_cc_ops *g_pogopin_cc_ops;
 BLOCKING_NOTIFIER_HEAD(g_pogopin_evt_nb);
 
 static struct pogopin_info *pogopin_get_dev_info(void)
@@ -63,6 +67,47 @@ static struct pogopin_info *pogopin_get_dev_info(void)
 	}
 
 	return g_pogopin_di;
+}
+
+static struct pogopin_cc_ops *pogopin_get_cc_ops(void)
+{
+	struct pogopin_info *di = pogopin_get_dev_info();
+
+	if (!di)
+		return NULL;
+
+	if (!di->ops) {
+		hwlog_err("g_pogopin cc ops is null\n");
+		return NULL;
+	}
+
+	return di->ops;
+}
+
+void pogopin_5pin_typec_detect_disable(bool en)
+{
+	struct pogopin_cc_ops *cc_ops = NULL;
+
+	cc_ops = pogopin_get_cc_ops();
+	if (!cc_ops)
+		return;
+
+	if (!cc_ops->typec_detect_disable) {
+		hwlog_err("typec_detect_disable is null\n");
+		return;
+	}
+
+	cc_ops->typec_detect_disable(en);
+}
+
+int pogopin_get_vbus_attach_enable_status(void)
+{
+	struct pogopin_info *di = pogopin_get_dev_info();
+
+	if (!di)
+		return POGOPIN_DEFAULT_ATTACH_STATUS;
+
+	return di->pmic_vbus_attach_enable;
 }
 
 struct pogopin_sysfs_info {
@@ -248,6 +293,12 @@ EXPORT_SYMBOL_GPL(pogopin_get_interface_status);
 
 void pogopin_cc_register_ops(struct pogopin_cc_ops *ops)
 {
+	if (ops) {
+		hwlog_info("pogopin cc ops register ok\n");
+		g_pogopin_cc_ops = ops;
+	} else {
+		hwlog_err("pogopin cc ops register fail\n");
+	}
 }
 
 void pogopin_event_notify(enum pogopin_event event)
@@ -399,10 +450,22 @@ static void pogopin_5pin_pogo_vbus_in(void)
 		return;
 
 	hwlog_info("%s\n", __func__);
+	if (!di->pmic_vbus_attach_enable) {
+		charger_source_sink_event(STOP_SOURCE);
+		pogopin_event_notify(POGOPIN_PLUG_OUT_OTG);
+		pogopin_5pin_typec_detect_disable(TRUE);
+	}
 	/* set usb mode to micro usb mode */
 	pogopin_set_usb_mode(POGOPIN_MICROB_CHARGER_MODE);
 	pogopin_5pin_set_pogo_status(POGO_CHARGER);
 	pogopin_5pin_vbus_in_switch_from_typec();
+	if (!di->pmic_vbus_attach_enable) {
+		msleep(200);
+		charger_source_sink_event(START_SINK);
+#ifdef CONFIG_HUAWEI_PD_THIRDPARTY
+		pd_dpm_report_device_attach();
+#endif /* CONFIG_HUAWEI_PD_THIRDPARTY */
+	}
 }
 
 static void pogopin_5pin_pogo_vbus_out(void)
@@ -417,6 +480,13 @@ static void pogopin_5pin_pogo_vbus_out(void)
 	pogopin_set_usb_mode(POGOPIN_TYPEC_MODE);
 	pogopin_5pin_remove_switch_to_typec();
 	pogopin_5pin_set_pogo_status(POGO_NONE);
+	if (!di->pmic_vbus_attach_enable) {
+		charger_source_sink_event(STOP_SINK);
+#ifdef CONFIG_HUAWEI_PD_THIRDPARTY
+		pd_dpm_report_device_detach();
+#endif /* CONFIG_HUAWEI_PD_THIRDPARTY */
+		pogopin_5pin_typec_detect_disable(FALSE);
+	}
 }
 
 static int pogopin_5pin_is_usbswitch_at_typec(void)
@@ -769,7 +839,16 @@ static int pogopin_probe(struct platform_device *pdev)
 	/* default support switch to audio */
 	power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "typec_chg_ana_audio_suport",
 		&di->typec_chg_ana_audio_suport, 1);
-
+	power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "pmic_vbus_attach_enable",
+		&di->pmic_vbus_attach_enable, POGOPIN_DEFAULT_ATTACH_STATUS);
+	if (!di->pmic_vbus_attach_enable) {
+		if (g_pogopin_cc_ops) {
+			di->ops = g_pogopin_cc_ops;
+		} else {
+			hwlog_err("cc ops is null\n");
+			goto fail_register_wakeup_source;
+		}
+	}
 	di->pogo_gpio_status = -1;
 	(void)power_pinctrl_config(&(pdev->dev), "pinctrl-names", 1);
 	if (di->typec_chg_ana_audio_suport) {

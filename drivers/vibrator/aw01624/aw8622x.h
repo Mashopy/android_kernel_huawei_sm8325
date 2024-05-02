@@ -65,6 +65,7 @@
 #define AW8622X_LRA_DELAY_MAX			(35000)
 #define AW8622X_F0_CALI_THER_H		(2350 + 150)
 #define AW8622X_F0_CALI_THER_L		(2350 - 150)
+#define HAPTIC_WAKE_LOCK_GAP		400
 /*********************************************************
  *
  * enum
@@ -202,7 +203,6 @@ struct aw8622x {
 	unsigned char duration_time_size;
 	unsigned char seq[AW8622X_SEQUENCER_SIZE];
 	unsigned char loop[AW8622X_SEQUENCER_SIZE];
-	unsigned char wk_lock_flag;
 	struct wakeup_source *nv_ws;
 
 	char duration_time_flag;

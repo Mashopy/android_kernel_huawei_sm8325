@@ -473,6 +473,34 @@ static int cps2021_ufcs_set_communicating_flag(void *dev_data, bool flag)
 	return 0;
 }
 
+static int cps2021_ufcs_config_baud_rate(void *dev_data, int baud_rate)
+{
+	struct cps2021_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	return cps2021_write_mask(di, CPS2021_UFCS_CTL1_REG,
+		CPS2021_UFCS_CTL1_BAUD_RATE_MASK,
+		CPS2021_UFCS_CTL1_BAUD_RATE_SHIFT, (u8)baud_rate);
+}
+
+static int cps2021_ufcs_hard_reset_cable(void *dev_data)
+{
+	struct cps2021_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	return cps2021_write_mask(di, CPS2021_UFCS_CTL1_REG,
+		CPS2021_UFCS_CTL1_CABLE_HARDRESET_MASK,
+		CPS2021_UFCS_CTL1_CABLE_HARDRESET_SHIFT, 1);
+}
+
 static struct hwufcs_ops cps2021_hwufcs_ops = {
 	.chip_name = "cps2021",
 	.detect_adapter = cps2021_ufcs_detect_adapter,
@@ -483,6 +511,8 @@ static struct hwufcs_ops cps2021_hwufcs_ops = {
 	.soft_reset_master = cps2021_ufcs_soft_reset_master,
 	.get_rx_len = cps2021_ufcs_get_rx_len,
 	.set_communicating_flag = cps2021_ufcs_set_communicating_flag,
+	.config_baud_rate = cps2021_ufcs_config_baud_rate,
+	.hard_reset_cable = cps2021_ufcs_hard_reset_cable,
 };
 
 int cps2021_ufcs_ops_register(struct cps2021_device_info *di)

@@ -384,7 +384,13 @@ int power_vote_set(const char *name,
 		if (obj->cb && (obj->override_result == -EINVAL))
 			ret = obj->cb(obj, obj->data, eff_result, eff_client_name);
 	}
-	obj->voted_on = true;
+
+	if (ret) {
+		hwlog_err("callback failed\n");
+		obj->voted_on = false;
+	} else {
+		obj->voted_on = true;
+	}
 
 out:
 	power_vote_unlock(obj);

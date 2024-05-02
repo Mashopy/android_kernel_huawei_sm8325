@@ -62,12 +62,7 @@ static const struct driver_error_type_info
 	{ EEPROM_I2C_ERR,                 927013060, "eeprom i2c error" },
 	{ OIS_I2C_ERR,                    927013070, "ois i2c error" },
 	{ LED_FLASH_I2C_ERR,              927013080, "LED flash i2c error" },
-	{ FPC_OPEN_CIRCUIT_ERR,           927013310, "FPC open circuit error" },
-	{ LED_FLASH_OVER_FLOW_ERR,        927013320, "LED flash over flow error" },
-	{ LED_FLASH_OVER_TEMPERATURE_ERR, 927013322, "LED flash over temperature error" },
-	{ LED_FLASH_SHORT_CIRCUIT_ERR,    927013324, "LED flash short circuit error" },
-	{ LED_FLASH_OVER_VOLTAGE_ERR,     927013326, "LED flash over voltage error" },
-	{ LED_FLASH_OPEN_CIRCUIT_ERR,     927013328, "LED flash open circuit error" },
+	{ VA_I2C_ERR,                     927013320, "va i2c error"},
 	{ LED_OPEN_SHORT_ERR,             927002001, "LED flash open/short error"},
 };
 

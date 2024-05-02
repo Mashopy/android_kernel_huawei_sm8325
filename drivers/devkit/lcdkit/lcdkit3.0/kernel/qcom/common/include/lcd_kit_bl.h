@@ -22,6 +22,8 @@
 
 struct lcd_kit_bl_ops {
 	int (*set_backlight)(unsigned int level);
+	int (*backlight_set_in_aod)(unsigned int bl_lsb, unsigned int bl_msb);
+	int (*backlight_set_aod_dimming)(void);
 	int (*en_backlight)(unsigned int level);
 	ssize_t (*bl_self_test)(void);
 	int (*check_backlight)(void);

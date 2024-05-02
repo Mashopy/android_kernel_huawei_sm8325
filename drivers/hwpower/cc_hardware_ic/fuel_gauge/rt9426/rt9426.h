@@ -47,12 +47,13 @@
 #include <chipset_common/hwpower/common_module/power_algorithm.h>
 #include <chipset_common/hwpower/common_module/power_supply.h>
 #include <chipset_common/hwpower/common_module/power_supply_interface.h>
+#include <chipset_common/hwpower/common_module/power_nv.h>
 #include <chipset_common/hwpower/hardware_ic/ground_loop_compensate.h>
 #include <chipset_common/hwpower/battery/battery_model_public.h>
 #ifdef CONFIG_HUAWEI_HW_DEV_DCT
 #include <chipset_common/hwmanufac/dev_detect/dev_detect.h>
 #endif
-
+#include <huawei_platform/hwpower/common_module/power_platform.h>
 
 #define RT9426_DRIVER_VER               0x0007
 

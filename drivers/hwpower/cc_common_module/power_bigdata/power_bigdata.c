@@ -37,6 +37,11 @@ static struct power_bigdata_info g_power_bigdata_info[] = {
 		POWER_BIGDATA_TYPE_COUL,
 		POWER_BIGDATA_EVENT_ID_COUL,
 	},
+	{
+		"bigdata_wltx_aux_calibrate",
+		POWER_BIGDATA_TYPE_WLTX_AUX_CALIBRATE,
+		POWER_BIGDATA_EVENT_ID_WLTX_AUX_CALIBRATE,
+	},
 };
 
 static int power_bigdata_check_type(unsigned int type)

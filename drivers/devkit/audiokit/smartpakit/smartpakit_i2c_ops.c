@@ -1273,6 +1273,7 @@ void smartpakit_i2c_handler_irq(struct work_struct *work)
 	mutex_lock(&pakit_priv->hw_reset_lock);
 	mutex_lock(&pakit_priv->dump_regs_lock);
 	mutex_lock(&pakit_priv->i2c_ops_lock);
+	__pm_stay_awake(i2c_priv->wake_lock);
 
 	INIT_LIST_HEAD(&dump_regs_list);
 
@@ -1299,6 +1300,7 @@ void smartpakit_i2c_handler_irq(struct work_struct *work)
 	}
 
 err_out:
+	__pm_relax(i2c_priv->wake_lock);
 	smartpakit_reg_info_del_list_all(&dump_regs_list);
 	mutex_unlock(&pakit_priv->i2c_ops_lock);
 	mutex_unlock(&pakit_priv->dump_regs_lock);
@@ -1573,6 +1575,7 @@ static int smartpakit_i2c_request_reset_gpio(
 		reset->gpio = 0;
 		return -EFAULT;
 	}
+	i2c_priv->reset_gpio_requested = true;
 	return 0;
 }
 
@@ -2210,8 +2213,11 @@ static void smartpakit_i2c_free(struct smartpakit_i2c_priv *i2c_priv)
 	}
 
 	if (i2c_priv->hw_reset != NULL) {
-		gpio_free((unsigned int)i2c_priv->hw_reset->gpio);
+		if (i2c_priv->reset_gpio_requested)
+			gpio_free((unsigned int)i2c_priv->hw_reset->gpio);
+
 		i2c_priv->hw_reset->gpio = 0;
+		i2c_priv->reset_gpio_requested = false;
 		/* irq_debounce_work was set in hw_reset flow */
 		if (i2c_priv->reset_debounce_wait_time > 0)
 			cancel_delayed_work_sync(&i2c_priv->irq_debounce_work);
@@ -2304,6 +2310,7 @@ static void smartpakit_i2c_reset_priv_data(
 	i2c_priv->reset_debounce_wait_time = 0;
 	i2c_priv->i2c_pseudo_addr          = 0;
 	i2c_priv->sync_irq_debounce_time   = false;
+	i2c_priv->reset_gpio_requested     = false;
 }
 
 static int smartpakit_i2c_init_chip(struct i2c_client *i2c,
@@ -2528,6 +2535,12 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 	if (i2c_priv == NULL)
 		return -ENOMEM;
 
+	i2c_priv->wake_lock = wakeup_source_register(i2c_priv->dev, "smartpakit_i2c_ops");
+	if (!i2c_priv->wake_lock) {
+		hwlog_err("%s Failed to register wakeup_source\n", __func__);
+		return -EINVAL;
+	}
+
 	INIT_WORK(&i2c_priv->irq_handle_work, smartpakit_i2c_handler_irq);
 #ifdef CONFIG_HUAWEI_ARMPC_PLATFORM
 	INIT_WORK(&i2c_priv->pm_s4_work, smartpakit_restore_process);
@@ -2563,6 +2576,7 @@ static int smartpakit_i2c_probe(struct i2c_client *i2c,
 err_out:
 	hwlog_err("%s: end failed\n", __func__);
 skip_probe:
+	wakeup_source_unregister(i2c_priv->wake_lock);
 	smartpakit_i2c_free(i2c_priv);
 	return ret;
 }
@@ -2589,6 +2603,7 @@ static int smartpakit_i2c_remove(struct i2c_client *i2c)
 	/* deregister i2c device */
 	smartpakit_deregister_i2c_device(i2c_priv);
 	smartpakit_deregister_i2c_ctl_ops();
+	wakeup_source_unregister(i2c_priv->wake_lock);
 
 	smartpakit_i2c_free(i2c_priv);
 	return 0;

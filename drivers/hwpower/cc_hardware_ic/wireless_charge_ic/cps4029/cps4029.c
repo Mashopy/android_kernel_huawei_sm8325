@@ -431,6 +431,8 @@ static int cps4029_gpio_init(struct cps4029_dev_info *di,
 static int cps4029_irq_init(struct cps4029_dev_info *di,
 	struct device_node *np)
 {
+	INIT_WORK(&di->irq_work, cps4029_irq_work);
+
 	if (power_gpio_config_interrupt(np, "gpio_int", "cps4029_int",
 		&di->gpio_int, &di->irq_int))
 		return -EINVAL;
@@ -444,7 +446,6 @@ static int cps4029_irq_init(struct cps4029_dev_info *di,
 
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, cps4029_irq_work);
 
 	return 0;
 }

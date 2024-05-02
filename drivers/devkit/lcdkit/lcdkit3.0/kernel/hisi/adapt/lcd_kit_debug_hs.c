@@ -31,16 +31,16 @@ static bool dbg_panel_power_on(void);
 
 static int dbg_fps_updt_support(int val)
 {
-	disp_info->fps.support = val;
-	LCD_KIT_INFO("disp_info->fps.support = %d\n", disp_info->fps.support);
+	DISP_INFO->fps.support = val;
+	LCD_KIT_INFO("DISP_INFO->fps.support = %d\n", DISP_INFO->fps.support);
 	return LCD_KIT_OK;
 }
 
 static int dbg_quickly_sleep_out_support(int val)
 {
-	disp_info->quickly_sleep_out.support = val;
-	LCD_KIT_INFO("disp_info->quickly_sleep_out.support = %d\n",
-		disp_info->quickly_sleep_out.support);
+	DISP_INFO->quickly_sleep_out.support = val;
+	LCD_KIT_INFO("DISP_INFO->quickly_sleep_out.support = %d\n",
+		DISP_INFO->quickly_sleep_out.support);
 	return LCD_KIT_OK;
 }
 
@@ -108,7 +108,7 @@ static int dbg_rgbw_support(int val)
 		return ret;
 	}
 	pinfo->rgbw_support = val;
-	disp_info->rgbw.support = val;
+	DISP_INFO->rgbw.support = val;
 	LCD_KIT_INFO("pinfo->rgbw_support = %d\n", pinfo->rgbw_support);
 	return LCD_KIT_OK;
 }
@@ -738,8 +738,8 @@ static int dbg_mipi_phy_update(int val)
 
 static int dbg_rgbw_bl_max(int val)
 {
-	disp_info->rgbw.rgbw_bl_max = val;
-	LCD_KIT_INFO("rgbw_bl_max = %d\n", disp_info->rgbw.rgbw_bl_max);
+	DISP_INFO->rgbw.rgbw_bl_max = val;
+	LCD_KIT_INFO("rgbw_bl_max = %d\n", DISP_INFO->rgbw.rgbw_bl_max);
 	return LCD_KIT_OK;
 }
 
@@ -749,7 +749,7 @@ static int dbg_rgbw_set_mode1(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode1_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.mode1_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -759,7 +759,7 @@ static int dbg_rgbw_set_mode2(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode2_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.mode2_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -769,7 +769,7 @@ static int dbg_rgbw_set_mode3(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode3_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.mode3_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -779,7 +779,7 @@ static int dbg_rgbw_set_mode4(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.mode4_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.mode4_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -789,7 +789,7 @@ static int dbg_rgbw_backlight_cmd(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.backlight_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.backlight_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -799,7 +799,7 @@ static int dbg_rgbw_pixel_gainlimit_cmd(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->rgbw.pixel_gain_limit_cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->rgbw.pixel_gain_limit_cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -809,7 +809,7 @@ static int dbg_barcode_2d_cmd(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->oeminfo.barcode_2d.cmds, buf, len);
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->oeminfo.barcode_2d.cmds, buf, len);
 	return LCD_KIT_OK;
 }
 
@@ -819,7 +819,7 @@ static int dbg_brightness_color_cmd(char *buf, int len)
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	lcd_kit_dbg_parse_cmd(&disp_info->oeminfo.brightness_color_uniform.brightness_color_cmds,
+	lcd_kit_dbg_parse_cmd(&DISP_INFO->oeminfo.brightness_color_uniform.brightness_color_cmds,
 		buf, len);
 	return LCD_KIT_OK;
 }

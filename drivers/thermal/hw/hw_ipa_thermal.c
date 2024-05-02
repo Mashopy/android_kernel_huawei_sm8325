@@ -1841,6 +1841,12 @@ static int ipa_register_soc_cdev(struct ipa_thermal *thermal_data,
 		}
 
 		policy = cpufreq_cpu_get(cpuid);
+		if (!policy) {
+			pr_err("%s: No policy for CPU%d. Defer.\n", __func__, cpuid);
+			ret = -EPROBE_DEFER;
+			goto cdevs_unregister;
+		}
+
 		thermal_data->cdevs[i] =
 			of_cpufreq_power_cooling_register(cdev_np, policy,
 							  get_dyn_power_coeff(cluster,

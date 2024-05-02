@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_ic_intf.o
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_intf.o
+obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_sysfs.o
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_dts.o
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_status.o
 obj-$(CONFIG_WIRELESS_CHARGER) += wireless_rx_event.o

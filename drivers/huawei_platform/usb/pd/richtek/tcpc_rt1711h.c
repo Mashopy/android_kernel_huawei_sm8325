@@ -1810,6 +1810,10 @@ static int rt1711_tcpcdev_init(struct rt1711_chip *chip, struct device *dev)
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"rt-tcpc,en_temporary_lock", &(chip->tcpc->en_temporary_lock), 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"vbus_only_ignore", &(chip->tcpc->vbus_only_ignore), 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"only_charger_stg", &(chip->tcpc->only_charger_stg), 0);
 
 	if (chip->chip_id <= RT1711H_DID_B)
 		chip->tcpc->tcpc_flags = TCPC_FLAGS_LPM_WAKEUP_WATCHDOG;
@@ -1892,6 +1896,11 @@ static int is_cable_for_direct_charge(void)
 static struct cc_check_ops cc_check_ops = {
 	.is_cable_for_direct_charge = is_cable_for_direct_charge,
 };
+
+bool get_only_charger_stg()
+{
+	return g_chip_for_reg_read->tcpc->only_charger_stg;
+}
 
 static int rt1711_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)

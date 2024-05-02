@@ -164,6 +164,12 @@ static void bat_heating_send_uevent(struct bat_heating_dev *l_dev, int type)
 		value = 0; /* 0: remove */
 		power_ui_event_notify(POWER_UI_NE_HEATING_STATUS, &value);
 		break;
+	case BAT_HEATING_EXIT_SERVICE:
+		l_dev->service_exit_flag = true;
+		n_data.event = "HEATING_EXIT=";
+		n_data.event_len = 13; /* length of HEATING_EXIT= */
+		power_event_report_uevent(&n_data);
+		break;
 	default:
 		break;
 	}
@@ -186,6 +192,7 @@ static void bat_heating_set_default_data(struct bat_heating_dev *l_dev)
 	l_dev->ui_msg_flag = false;
 	l_dev->overload_count = 0;
 	l_dev->dc_stop_flag = false;
+	l_dev->service_exit_flag = false;
 }
 
 static bool bat_heating_check_charger_type(struct bat_heating_dev *l_dev)
@@ -357,8 +364,11 @@ static void bat_heating_monitor_work(struct work_struct *work)
 	if (!l_dev)
 		return;
 
-	if (bat_heating_check(l_dev))
+	if (bat_heating_check(l_dev)) {
+		hwlog_info("monitor work exit\n");
+		bat_heating_send_uevent(l_dev, BAT_HEATING_EXIT_SERVICE);
 		return;
+	}
 
 	if (bat_heating_check_screen_state(l_dev)) {
 		/* popup ui message */
@@ -538,6 +548,9 @@ static int bat_heating_dc_status_notifier_call(struct notifier_block *nb,
 	struct bat_heating_dev *l_dev = bat_heating_get_dev();
 
 	if (!l_dev)
+		return NOTIFY_OK;
+
+	if (l_dev->service_exit_flag)
 		return NOTIFY_OK;
 
 	switch (event) {

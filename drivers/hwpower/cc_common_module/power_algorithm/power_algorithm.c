@@ -385,6 +385,26 @@ int power_lookup_table_linear_trans_dichotomy(const int table[][2], int len, int
 }
 
 /*
+ * return the minimum that is positive, unless zero if  both are non-positive
+ * @x: first value
+ * @y: second value
+ */
+int power_min_positive(int x, int y)
+{
+	return x > 0 ? (y > 0 ? min(x, y) : x) : (y > 0 ? y : 0);
+}
+
+/*
+ * return the maximum that is positive, unless zero if  both are non-positive
+ * @x: first value
+ * @y: second value
+ */
+int power_max_positive(int x, int y)
+{
+	return x > 0 ? (y > 0 ? max(x, y) : x) : (y > 0 ? y : 0);
+}
+
+/*
  * Returns true when the character class str[s_idx, e_idx] is matched with target_c,
  * such as [a-b] is matched with char a.
  */

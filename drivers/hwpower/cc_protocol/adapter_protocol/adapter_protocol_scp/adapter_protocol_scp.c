@@ -47,6 +47,7 @@ static const struct adapter_protocol_device_data g_hwscp_dev_data[] = {
 	{ PROTOCOL_DEVICE_ID_SCHARGER_V600, "scharger_v600" },
 	{ PROTOCOL_DEVICE_ID_FUSB3601, "fusb3601" },
 	{ PROTOCOL_DEVICE_ID_SM5450, "sm5450" },
+	{ PROTOCOL_DEVICE_ID_HL7136, "hl7136" },
 	{ PROTOCOL_DEVICE_ID_HL7139, "hl7139" },
 	{ PROTOCOL_DEVICE_ID_SC8545, "sc8545" },
 	{ PROTOCOL_DEVICE_ID_SC8562, "sc8562" },
@@ -746,6 +747,8 @@ static int hwscp_check_adp_type(int mode, int value)
 		case HWSCP_ADP_B_TYPE1_YLR_100W:
 		case HWSCP_ADP_B_TYPE1_YLR_100W_CAR:
 			return ADAPTER_TYPE_YLR_20V5A_CAR;
+		case HWSCP_ADP_B_TYPE1_FRO_88W:
+			return ADAPTER_TYPE_FRO_20V4P4A;
 		default:
 			break;
 		}
@@ -792,9 +795,12 @@ static int hwscp_check_adp_type(int mode, int value)
 		case HWSCP_ADP_B_TYPE1_HHR_90W_1:
 			return ADAPTER_TYPE_HHR_20V4P5A;
 		case HWSCP_ADP_B_TYPE1_FCR_66W:
+		case HWSCP_ADP_B_TYPE1_FCR_66W_1:
 			if (hwscp_detect_adapter_is_m7_by_0x54())
 				return ADAPTER_TYPE_M7_11V6A;
 			return ADAPTER_TYPE_FCR_C_11V6A;
+		case HWSCP_ADP_B_TYPE1_XH_66W:
+			return ADAPTER_TYPE_XH_11V6A;
 		default:
 			break;
 		}
@@ -1062,9 +1068,10 @@ static int hwscp_get_max_voltage(int *volt)
 	else if (hwscp_get_max_voltage_by_reg(volt))
 		return -EPERM;
 
-	hwlog_info("get_max_voltage_f: %d\n", *volt);
 	hwscp_get_adp_type(&adp_type);
 	*volt = (adp_type == ADAPTER_TYPE_M7_11V6A) ? M7_ADAP_MAX_VOLTAGE : *volt;
+
+	hwlog_info("get_max_voltage_f: %d\n", *volt);
 	l_dev->info.max_volt_rd_flag = HAS_READ_FLAG;
 	l_dev->info.max_volt = *volt;
 	return 0;
@@ -2422,6 +2429,7 @@ static void __exit hwscp_exit(void)
 	if (!g_hwscp_dev)
 		return;
 
+	power_event_bnc_unregister(POWER_BNT_CONNECT, &g_hwscp_dev->event_nb);
 	kfree(g_hwscp_dev);
 	g_hwscp_dev = NULL;
 }

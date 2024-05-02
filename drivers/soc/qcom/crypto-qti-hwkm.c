@@ -88,8 +88,12 @@ int crypto_qti_program_key(struct crypto_vops_qti_entry *ice_entry,
 							err_program);
 		return err_program;
 	}
-
+#ifdef CONFIG_DISK_MAGO
+	if ((ice_entry->flags & QTI_HWKM_INIT_DONE) != QTI_HWKM_INIT_DONE ||
+		qti_need_hwkm_reinit(ice_entry->hwkm_slave_mmio_base)) {
+#else
 	if ((ice_entry->flags & QTI_HWKM_INIT_DONE) != QTI_HWKM_INIT_DONE) {
+#endif
 		err_program = qti_hwkm_init(ice_entry->hwkm_slave_mmio_base);
 		if (err_program) {
 			pr_err("%s: Error with HWKM init %d\n", __func__,
@@ -204,6 +208,19 @@ int crypto_qti_invalidate_key(struct crypto_vops_qti_entry *ice_entry,
 		return err;
 	}
 
+#ifdef CONFIG_DISK_MAGO
+	if ((ice_entry->flags & QTI_HWKM_INIT_DONE) != QTI_HWKM_INIT_DONE ||
+		qti_need_hwkm_reinit(ice_entry->hwkm_slave_mmio_base)) {
+		err = qti_hwkm_init(ice_entry->hwkm_slave_mmio_base);
+		if (err) {
+			pr_err("%s: Error with HWKM init %d\n", __func__,
+								err);
+			qti_hwkm_clocks(false);
+			return -EINVAL;
+		}
+		ice_entry->flags |= QTI_HWKM_INIT_DONE;
+	}
+#endif
 	/* Clear key from ICE keyslot */
 	err = crypto_qti_hwkm_evict_slot(KEYMANAGER_ICE_MAP_SLOT(slot), true);
 	if (err) {
@@ -265,8 +282,12 @@ int crypto_qti_derive_raw_secret_platform(
 							err_program);
 		return err_program;
 	}
-
+#ifdef CONFIG_DISK_MAGO
+	if ((ice_entry->flags & QTI_HWKM_INIT_DONE) != QTI_HWKM_INIT_DONE ||
+		qti_need_hwkm_reinit(ice_entry->hwkm_slave_mmio_base)) {
+#else
 	if ((ice_entry->flags & QTI_HWKM_INIT_DONE) != QTI_HWKM_INIT_DONE) {
+#endif
 		err_program = qti_hwkm_init(ice_entry->hwkm_slave_mmio_base);
 		if (err_program) {
 			pr_err("%s: Error with HWKM init %d\n", __func__,

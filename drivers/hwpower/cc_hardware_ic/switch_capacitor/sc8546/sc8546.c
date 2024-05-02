@@ -28,6 +28,7 @@
 #include <chipset_common/hwpower/common_module/power_pinctrl.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_device_id.h>
+#include <chipset_common/hwpower/common_module/power_common_macro.h>
 
 #define HWLOG_TAG sc8546_chg
 HWLOG_REGIST();
@@ -100,6 +101,24 @@ static int sc8546_get_device_id(void *dev_data)
 	hwlog_info("get_device_id [%x]=0x%x, device_id: 0x%x\n",
 		SC8546_DEVICE_ID_REG, dev_id, di->device_id);
 	return di->device_id;
+}
+
+static int sc8546_get_sc_max_ibat(void *dev_data, int *ibat)
+{
+	struct sc8546_device_info *di = dev_data;
+
+	if (!di)
+		return -ENODEV;
+
+	if (di->sc8546_sc_para.max_ibat <= 0) {
+		hwlog_err("sc_max_ibat read fail\n");
+		return -EPERM;
+	}
+
+	*ibat = di->sc8546_sc_para.max_ibat;
+	hwlog_info("sc_max_ibat: %d\n", di->sc8546_sc_para.max_ibat);
+
+	return 0;
 }
 
 static int sc8546_get_vbat_mv(void *dev_data)
@@ -253,15 +272,17 @@ static int sc8546_config_watchdog_ms(int time, void *dev_data)
 	if (!di)
 		return -EPERM;
 
-	if (time >= SC8546_WTD_CONFIG_TIMING_30000MS)
+	if (time > SC8546_WTD_CONFIG_TIMING_30000MS)
+		val = SC8546_WTD_CONFIG_TIMING_DIS;
+	else if (time > SC8546_WTD_CONFIG_TIMING_5000MS)
 		val = SC8546_WTD_SET_30000MS;
-	else if (time >= SC8546_WTD_CONFIG_TIMING_5000MS)
+	else if (time > SC8546_WTD_CONFIG_TIMING_1000MS)
 		val = SC8546_WTD_SET_5000MS;
-	else if (time >= SC8546_WTD_CONFIG_TIMING_1000MS)
+	else if (time > SC8546_WTD_CONFIG_TIMING_500MS)
 		val = SC8546_WTD_SET_1000MS;
-	else if (time >= SC8546_WTD_CONFIG_TIMING_500MS)
+	else if (time > SC8546_WTD_CONFIG_TIMING_200MS)
 		val = SC8546_WTD_SET_500MS;
-	else if (time >= SC8546_WTD_CONFIG_TIMING_200MS)
+	else if (time > SC8546_WTD_CONFIG_TIMING_DIS)
 		val = SC8546_WTD_SET_200MS;
 	else
 		val = SC8546_WTD_CONFIG_TIMING_DIS;
@@ -471,7 +492,7 @@ static int sc8546_threshold_reg_init(struct sc8546_device_info *di, int mode)
 	int ret, ibus_ocp;
 
 	if (mode == SC8546_CHG_MODE_CHGPUMP)
-		ibus_ocp = SC8546_SC_IBUS_OCP_TH_INIT;
+		ibus_ocp = (di->sc8546_sc_para.ibus_ocp > 0) ? di->sc8546_sc_para.ibus_ocp : SC8546_SC_IBUS_OCP_TH_INIT;
 	else
 		ibus_ocp = SC8546_LVC_IBUS_OCP_TH_INIT;
 
@@ -572,6 +593,8 @@ static int sc8546_reg_reset(struct sc8546_device_info *di)
 	power_usleep(DT_USLEEP_1MS);
 	ret = sc8546_read_byte(di, SC8546_CTRL1_REG, &ctrl1_reg);
 	ret += sc8546_config_vac_ovp_th_mv(di, SC8546_VAC_OVP_TH_INIT);
+	ret += sc8546_write_mask(di, SC8546_OTG_EN_REG,
+		SC8546_OTG_EN_MASK, SC8546_OTG_EN_SHIFT, 1); // 1 otg enable
 	if (ret)
 		return -EIO;
 
@@ -614,6 +637,8 @@ static int sc8546_reg_init(struct sc8546_device_info *di)
 	ret += sc8546_write_mask(di, SC8546_UFCS_MASK1_REG,
 		SC8546_UFCS_MASK1_ACK_REC_TIMEOUT_MASK,
 		SC8546_UFCS_MASK1_ACK_REC_TIMEOUT_SHIFT, 1);
+	ret += sc8546_write_mask(di, SC8546_OTG_EN_REG,
+		SC8546_OTG_EN_MASK, SC8546_OTG_EN_SHIFT, 1); // 1 otg enable
 	if (ret)
 		hwlog_err("reg_init failed\n");
 
@@ -710,7 +735,7 @@ static int sc8546_register_head(char *buffer, int size, void *dev_data)
 		return -EPERM;
 
 	snprintf(buffer, size,
-		"dev        mode   Vbus   Ibus   Vbat   Ibat   Vusb   Vout   Temp");
+		"dev       mode   Vbus   Ibus   Vbat   Ibat   Vusb   Vout   Temp   ");
 
 	return 0;
 }
@@ -733,7 +758,7 @@ static int sc8546_dump_reg(char *buffer, int size, void *dev_data)
 	(void)sc8546_get_vout_mv(&dv.vout, di);
 	(void)sc8546_get_device_temp(&dv.temp, di);
 	(void)sc8546_read_byte(di, SC8546_CTRL3_REG, &reg);
-	snprintf(buff, sizeof(buff), "%s    ", di->name);
+	snprintf(buff, sizeof(buff), "%-10s", di->name);
 	strncat(buffer, buff, strlen(buff));
 
 	if (sc8546_is_device_close(di))
@@ -744,6 +769,8 @@ static int sc8546_dump_reg(char *buffer, int size, void *dev_data)
 	else if (((reg & SC8546_CHG_MODE_MASK) >> SC8546_CHG_MODE_SHIFT) ==
 		SC8546_CHG_MODE_CHGPUMP)
 		snprintf(buff, sizeof(buff), "%s", "SC     ");
+	else
+		snprintf(buff, sizeof(buff), "%s", "BUCK   ");
 
 	strncat(buffer, buff, strlen(buff));
 	snprintf(buff, sizeof(buff), "%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
@@ -777,6 +804,7 @@ static struct dc_ic_ops g_sc8546_sc_ops = {
 	.config_ic_watchdog = sc8546_config_watchdog_ms,
 	.kick_ic_watchdog = sc8546_kick_watchdog_ms,
 	.ic_reg_reset_and_init = sc8546_reg_reset_and_init,
+	.get_max_ibat = sc8546_get_sc_max_ibat,
 };
 
 static struct dc_batinfo_ops g_sc8546_batinfo_ops = {
@@ -944,12 +972,12 @@ static void sc8546_interrupt_work(struct work_struct *work)
 	(void)sc8546_read_byte(di, SC8546_UFCS_ISR1_REG, &ufcs_irq[0]);
 	(void)sc8546_read_byte(di, SC8546_UFCS_ISR2_REG, &ufcs_irq[1]);
 
-	if (ufcs_irq[0] & SC8546_UFCS_ISR1_DATA_READY_MASK) {
-		if (!di->ufcs_communicating_flag)
-			power_event_bnc_notify(POWER_BNT_UFCS,
-				POWER_NE_UFCS_REC_UNSOLICITED_DATA, NULL);
+	if (ufcs_irq[0] & SC8546_UFCS_ISR1_HARD_RESET_MASK)
+		power_event_bnc_notify(POWER_ANT_DC_FAULT,
+			POWER_NE_DC_FAULT_AC_HARD_RESET, NULL);
+
+	if (ufcs_irq[0] & SC8546_UFCS_ISR1_DATA_READY_MASK)
 		sc8546_ufcs_add_msg(di);
-	}
 
 	di->ufcs_irq[0] |= ufcs_irq[0];
 	di->ufcs_irq[1] |= ufcs_irq[1];
@@ -1011,9 +1039,16 @@ static int sc8546_notifier_call(struct notifier_block *nb,
 
 	switch (event) {
 	case POWER_NE_USB_DISCONNECT:
+		di->ufcs_irq[0] = 0;
+		di->ufcs_irq[1] = 0;
+		di->plugged_state = false;
 		hwlog_info("reset ic\n");
 		(void)sc8546_write_mask(di, SC8546_DPDM_CTRL1_REG,
 			SC8546_DPDM_EN_MASK, SC8546_DPDM_EN_SHIFT, 0);
+		sc8546_ufcs_cancel_msg_update_work(di);
+		break;
+	case POWER_NE_USB_CONNECT:
+		di->plugged_state = true;
 		break;
 	default:
 		break;
@@ -1063,6 +1098,53 @@ static void sc8546_destroy_lock_mutex(struct sc8546_device_info *di)
 	mutex_destroy(&di->accp_adapter_reg_lock);
 }
 
+static int sc8546_parse_mode_para_dts(struct device_node *np,
+	struct sc8546_mode_para *data, const char *name, int id)
+{
+	int array_len, col, row, idata;
+	int index = -1; /* -1 : illegal value */
+	const char *device_name = dc_get_device_name_without_mode(id);
+	const char *tmp_string = NULL;
+
+	array_len = power_dts_read_count_strings(power_dts_tag(HWLOG_TAG), np,
+		name, SC8546_COMP_MAX_NUM, SC8546_INFO_TOTAL);
+	if (array_len < 0)
+		return -EPERM;
+
+	for (row = 0; row < array_len / SC8546_INFO_TOTAL; row++) {
+		col = row * SC8546_INFO_TOTAL + SC8546_INFO_IC_NAME;
+		if (power_dts_read_string_index(power_dts_tag(HWLOG_TAG),
+			np, name, col, &tmp_string))
+			return -EPERM;
+
+		if (!strcmp(tmp_string, device_name)) {
+			strncpy(data->ic_name, tmp_string, CHIP_DEV_NAME_LEN - 1);
+			index = row;
+			break;
+		}
+
+		if (!strcmp(tmp_string, "default")) {
+			strncpy(data->ic_name, tmp_string, CHIP_DEV_NAME_LEN - 1);
+			index = row;
+		}
+	}
+
+	if (index >= 0) {
+		col = index * SC8546_INFO_TOTAL + SC8546_INFO_MAX_IBAT;
+		power_dts_read_string_index(power_dts_tag(HWLOG_TAG),
+			np, name, col, &tmp_string);
+		kstrtoint(tmp_string, POWER_BASE_DEC, &idata);
+		data->max_ibat = idata;
+		col = index * SC8546_INFO_TOTAL + SC8546_INFO_IBUS_OCP;
+		power_dts_read_string_index(power_dts_tag(HWLOG_TAG),
+			np, name, col, &tmp_string);
+		kstrtoint(tmp_string, POWER_BASE_DEC, &idata);
+		data->ibus_ocp = idata;
+	}
+
+	return 0;
+}
+
 static int sc8546_probe(struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
@@ -1087,13 +1169,13 @@ static int sc8546_probe(struct i2c_client *client,
 	if ((ret < 0) || (ret == DC_DEVICE_ID_END))
 		goto sc8546_fail_0;
 
+	sc8546_parse_mode_para_dts(np, &di->sc8546_sc_para, "sc_para", di->device_id);
+
 	sc8546_init_lock_mutex(di);
 
-	if (di->dts_ufcs_support) {
-		di->event_nb.notifier_call = sc8546_notifier_call;
-		if (power_event_bnc_register(POWER_BNT_CONNECT, &di->event_nb))
-			goto sc8546_fail_1;
-	}
+	di->event_nb.notifier_call = sc8546_notifier_call;
+	if (power_event_bnc_register(POWER_BNT_CONNECT, &di->event_nb))
+		goto sc8546_fail_1;
 
 	ret = sc8546_reg_reset(di);
 	if (ret)
@@ -1103,11 +1185,17 @@ static int sc8546_probe(struct i2c_client *client,
 	if (ret)
 		goto sc8546_fail_1;
 
+	init_completion(&di->sc8546_add_msg_completion);
+	init_completion(&di->sc8546_ufcs_read_msg_completion);
+	init_completion(&di->sc8546_ufcs_msg_update_completion);
+
 	(void)power_pinctrl_config(di->dev, "pinctrl-names", 1); /* 1:pinctrl-names length */
 	ret = sc8546_irq_init(di, np);
 	if (ret)
 		goto sc8546_fail_1;
 
+	di->msg_update_wq = create_singlethread_workqueue("ufcs_msg_update_wq");
+	INIT_DELAYED_WORK(&di->ufcs_msg_update_work, sc8546_ufcs_pending_msg_update_work);
 	sc8546_ops_register(di);
 	i2c_set_clientdata(client, di);
 	return 0;
@@ -1135,7 +1223,8 @@ static int sc8546_remove(struct i2c_client *client)
 	if (di->gpio_int)
 		gpio_free(di->gpio_int);
 
-	sc8546_ufcs_free_node_list(di);
+	power_event_bnc_unregister(POWER_BNT_CONNECT, &di->event_nb);
+	sc8546_ufcs_free_node_list(di, true);
 	sc8546_destroy_lock_mutex(di);
 	devm_kfree(&client->dev, di);
 

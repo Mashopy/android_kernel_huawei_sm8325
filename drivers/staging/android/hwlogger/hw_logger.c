@@ -166,7 +166,6 @@ static struct logger_entry *get_entry_header(struct logger_log *log,
 					     struct logger_entry *scratch)
 {
 	size_t len = min(sizeof(*scratch), log->size - off);
-
 	if (len != sizeof(*scratch)) {
 		memcpy(((void *)scratch), log->buffer + off, len);
 		memcpy(((void *)scratch) + len, log->buffer,
@@ -292,7 +291,6 @@ static size_t get_next_entry_by_uid(struct logger_log *log,
 		size_t next_len;
 
 		entry = get_entry_header(log, off, &scratch);
-
 		if (uid_eq(entry->euid, euid))
 			return off;
 
@@ -486,7 +484,6 @@ static void do_write_log(struct logger_log *log, const void *buf, size_t count)
 		memcpy(log->buffer, buf + len, count - len);
 
 	log->w_off = logger_offset(log, log->w_off + count);
-
 }
 
 /*
@@ -742,7 +739,7 @@ static long logger_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return ret;
 #endif
 		ret = memcheck_ioctl(file, cmd, arg);
-		if(ret != MEMCHECK_CMD_INVALID)
+		if (ret != MEMCHECK_CMD_INVALID)
 			return ret;
 	}
 	mutex_lock(&log->mutex);
@@ -852,10 +849,9 @@ static int check_tag_level_to_show(char *srcbuff, const char *name, int level)
 		return -2;
 	}
 
-	if (strlen(name) > MAX_NAME_LEN) {
+	if (strlen(name) > MAX_NAME_LEN)
 		pr_warn_ratelimited("name: %s is longer than %d\n", name,
 				    MAX_NAME_LEN);
-	}
 
 	snprintf(checkbuff, MAX_NAME_LEN + 1, "%s", name);
 	strcat(checkbuff, " ");

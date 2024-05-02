@@ -10,6 +10,7 @@
 		<lcd>290-20d-10p9-qcom,                         0x04,   2100,    debussy,    debussy,  def     </lcd>
 		<lcd>190-20d-10p9-qcom,                         0x00,   2100,    debussy,    debussy,  def     </lcd>
 		<lcd>110-20d-10p9-qcom,                         0x01,   2100,    debussy,    debussy,  def     </lcd>
+		<lcd>110-a09-10p9-qcom,                         0x09,   2100,    debussy,    debussy,  def     </lcd>
 		<lcd>Dual-nt36523-video-mode_default,           0x0A,   2100,    debussy,    debussy,  def     </lcd>
 		<lcd>300-505-10p8-qcom,                         0x00,   3100,    marx,   marx, def     </lcd>
 		<lcd>190-505-10p8-qcom,                         0x01,   3100,    marx,   marx, def     </lcd>
@@ -17,7 +18,11 @@
 		<lcd>auo-otm1901a-10p8-1080p-video-default,     0x0A,   3100,    marx,   marx, def     </lcd>
 		<lcd>boe-nt37701-video-mode,                    0x01,   4100,    udp,    udp,  def     </lcd>
 		<lcd>350-c00-12p6-qcom,                         0x08,   7100,    got,    got,  def     </lcd>
+                <lcd>350-h01-12p6-qcom,                         0x08,   7100,    got,    got,  def     </lcd>
 		<lcd>auo-otm3501a-5p2-1600p-video-default,      0x0A,   7100,    got,    got,  def     </lcd>
+		<lcd>110-a09-10p95-qcom,                        0x09,   11000,    dbr,    dbr,  def     </lcd>
+		<lcd>190-a09-10p95-qcom,                        0x04,   11000,    dbr,    dbr,  def     </lcd>
+		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   11000,    dbr,    dbr,  def     </lcd>
 	</lcdlist>
 
 	<PanelEntry>

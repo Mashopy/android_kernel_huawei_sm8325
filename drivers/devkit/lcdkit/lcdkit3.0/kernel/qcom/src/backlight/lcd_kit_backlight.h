@@ -298,6 +298,10 @@ struct lcd_kit_backlight_info {
 	struct backlight_ic_cmd pull_down_vsn_cmd;
 	struct backlight_ic_cmd pull_down_boost_cmd;
 	struct backlight_ic_cmd bias_enable_cmd;
+	struct backlight_ic_cmd vsp_enable_cmd;
+	struct backlight_ic_cmd vsn_enable_cmd;
+	struct backlight_ic_cmd vsp_disable_cmd;
+	struct backlight_ic_cmd vsn_disable_cmd;
 	unsigned int bl_lowpower_delay;
 	unsigned int fault_check_enable;
 	struct backlight_ic_cmd bl_ovp_flag_cmd;

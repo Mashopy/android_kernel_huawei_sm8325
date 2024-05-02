@@ -237,7 +237,7 @@ void lcd_kit_power_off_optimize_handle(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_panel_info *pinfo = &(hisifd->panel_info);
 
-	if (!disp_info->pwr_off_optimize_info.support)
+	if (!DISP_INFO->pwr_off_optimize_info.support)
 		return;
 	if (pinfo->product_type != LCD_FOLDER_TYPE)
 		return;
@@ -261,7 +261,7 @@ void lcd_kit_power_off_optimize_handle(struct hisi_fb_data_type *hisifd)
 	g_pwr_off_optimize_cfg.lcd_rst = &power_hdl->lcd_rst;
 
 	schedule_delayed_work(&g_pwr_off_optimize_cfg.pwr_off_optimize_work,
-		msecs_to_jiffies(disp_info->pwr_off_optimize_info.delay_time));
+		msecs_to_jiffies(DISP_INFO->pwr_off_optimize_info.delay_time));
 }
 
 static void lcd_kit_register_power_off_optimize(void)
@@ -391,33 +391,33 @@ void lcd_kit_ext_panel_init(void)
 	OF_PROPERTY_READ_U32_RETURN(np, "product_type",
 		&floder_type);
 	PUBLIC_CFG->product_type = floder_type;
-	LCD_KIT_INFO("disp_info->folder_type = 0x%x\n",
+	LCD_KIT_INFO("DISP_INFO->folder_type = 0x%x\n",
 		PUBLIC_CFG->product_type);
 	if (PUBLIC_CFG->product_type != LCD_FOLDER_TYPE)
 		return;
 
 	lcd_kit_panel_switch(LCD_EXT_PANEL);
 	if (of_property_read_u32(np, "board_version",
-		&disp_info->board_version))
-		disp_info->board_version = 0;
+		&DISP_INFO->board_version))
+		DISP_INFO->board_version = 0;
 
-	LCD_KIT_INFO("disp_info->board_version = 0x%x\n",
-		disp_info->board_version);
-	lcd_kit_parse_u32(np, "product_id", &disp_info->product_id, 0);
-	LCD_KIT_INFO("disp_info->product_id = %d",
-		disp_info->product_id);
-	disp_info->compatible = (char *)of_get_property(np,
+	LCD_KIT_INFO("DISP_INFO->board_version = 0x%x\n",
+		DISP_INFO->board_version);
+	lcd_kit_parse_u32(np, "product_id", &DISP_INFO->product_id, 0);
+	LCD_KIT_INFO("DISP_INFO->product_id = %d",
+		DISP_INFO->product_id);
+	DISP_INFO->compatible = (char *)of_get_property(np,
 		"ext_lcd_panel_type", NULL);
-	if (!disp_info->compatible) {
+	if (!DISP_INFO->compatible) {
 		LCD_KIT_ERR("can not get lcd kit compatible\n");
 		return;
 	}
-	LCD_KIT_INFO("disp_info->compatible = %s\n", disp_info->compatible);
-	len = strlen(disp_info->compatible);
+	LCD_KIT_INFO("DISP_INFO->compatible = %s\n", DISP_INFO->compatible);
+	len = strlen(DISP_INFO->compatible);
 	memset((char *)lcd_kit_ext_panel_driver.driver.of_match_table->compatible,
 		0, LCD_KIT_PANEL_COMP_LENGTH);
 	strncpy((char *)lcd_kit_ext_panel_driver.driver.of_match_table->compatible,
-		disp_info->compatible, len > (LCD_KIT_PANEL_COMP_LENGTH - 1) ?
+		DISP_INFO->compatible, len > (LCD_KIT_PANEL_COMP_LENGTH - 1) ?
 		(LCD_KIT_PANEL_COMP_LENGTH - 1) : len);
 	/* register driver */
 	ret = platform_driver_register(&lcd_kit_ext_panel_driver);

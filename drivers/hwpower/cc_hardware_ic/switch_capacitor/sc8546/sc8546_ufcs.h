@@ -25,8 +25,11 @@
 #define SC8546_UFCS_WAIT_RETRY_CYCLE                 80
 #define SC8546_UFCS_HANDSHARK_RETRY_CYCLE            10
 #define SC8546_UFCS_TX_BUF_WITHOUTHEAD_SIZE          34
-#define SC8546_UFCS_RX_BUF_SIZE                      125
 #define SC8546_UFCS_RX_BUF_WITHOUTHEAD_SIZE          123
+#define SC8546_UFCS_MSG_TIMEOUT                      3000   /* 3s */
+#define SC8546_UFCS_WAIT_MSG_UPDATE_TIMEOUT          40
+#define SC8546_UFCS_RX_TX_CONFLICT_ERROR             (-1)
+#define SC8546_UFCS_TX_CONFLICT_RETRY_TIMES          3
 
 /* CTL2 reg=0x41 */
 #define SC8546_UFCS_CTL2_REG                         0x41
@@ -65,6 +68,8 @@
 
 /* ISR2 reg=0x43 */
 #define SC8546_UFCS_ISR2_REG                         0x43
+#define SC8546_UFCS_ISR2_RX_TX_CONFLICT_MASK         BIT(7)
+#define SC8546_UFCS_ISR2_RX_TX_CONFLICT_SHIFT        7
 #define SC8546_UFCS_ISR2_RX_BUF_OVERFLOW_MASK        BIT(6)
 #define SC8546_UFCS_ISR2_RX_BUF_OVERFLOW_SHIFT       6
 #define SC8546_UFCS_ISR2_RX_LEN_ERR_MASK             BIT(5)
@@ -142,7 +147,9 @@ struct sc8546_ufcs_msg_head {
 int sc8546_ufcs_ops_register(struct sc8546_device_info *di);
 void sc8546_ufcs_work(struct work_struct *work);
 int sc8546_ufcs_init_msg_head(struct sc8546_device_info *di);
-void sc8546_ufcs_free_node_list(struct sc8546_device_info *di);
+void sc8546_ufcs_free_node_list(struct sc8546_device_info *di, bool need_free_head);
 void sc8546_ufcs_add_msg(struct sc8546_device_info *di);
+void sc8546_ufcs_pending_msg_update_work(struct work_struct *work);
+void sc8546_ufcs_cancel_msg_update_work(struct sc8546_device_info *di);
 
 #endif /* _SC8546_UFCS_H_ */

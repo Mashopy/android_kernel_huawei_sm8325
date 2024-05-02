@@ -29,6 +29,7 @@ static unsigned int g_charge_quicken_work_flag;
 static unsigned int g_charge_run_time;
 static bool g_pd_charge_flag;
 static bool g_pd_init_flag;
+static bool g_fcp_enable = true;
 static int g_first_check;
 
 int charge_get_first_insert(void)
@@ -40,6 +41,17 @@ void charge_set_first_insert(int flag)
 {
 	pr_info("set insert flag %d\n", flag);
 	g_first_check = flag;
+}
+
+void charge_set_fcp_enable_flag(bool enable)
+{
+	pr_info("set fcp enable flag %d\n", enable);
+	g_fcp_enable = enable;
+}
+
+bool charge_fcp_enable(void)
+{
+	return g_fcp_enable;
 }
 
 unsigned int charge_get_wakelock_flag(void)

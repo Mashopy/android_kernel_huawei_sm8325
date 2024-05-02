@@ -345,6 +345,8 @@ extern int g_tskit_pt_station_flag;
 #define MULTI_PANEL_NODE_BUF_LEN 100
 #define TP_TOUCHSCREEN_NODE_NAME "touchscreen"
 #define BOOT_SCREEN_OFF_DONE 1
+#define ENTER_AOD_CONDITION 1
+#define EXIT_AOD_CONDITION 0
 
 #define MAX_APP_INFO_LEN 300
 
@@ -423,6 +425,7 @@ enum thp_status_type {
 	THP_STATUS_APP_INFO = 16,
 	THP_STATUS_STYLUS3_PLAM_SUPPRESSION = 17,
 	THP_STATUS_DAEMON_SLEEP = 18,
+	THP_STATUS_AOD = 20,
 	THP_STATUS_MAX,
 };
 
@@ -866,6 +869,7 @@ struct thp_core_data {
 	struct thp_power_supply thp_powers[THP_POWER_ID_MAX];
 	int project_in_tp;
 	unsigned int lcd_esd_event_upload;
+	unsigned int support_rst_gpio_update;
 	char *project_id_dummy;
 	atomic_t register_flag;
 	u32 status;
@@ -906,7 +910,6 @@ struct thp_core_data {
 	int get_frame_block_flag;
 	short roi_data[ROI_DATA_LENGTH];
 	bool is_udp;
-	unsigned int need_huge_memory_in_spi;
 	unsigned int self_control_power;
 	struct thp_window_info window;
 	struct thp_scene_info scene_info;
@@ -936,6 +939,7 @@ struct thp_core_data {
 	u32 supported_charger;
 	u32 tp_time_sync_support;
 	u32 use_ap_gesture;
+	u32 no_resume_only_stylus;
 	u32 use_aod_power_ctrl_notify;
 	u32 aod_event_report_status;
 	bool aod_window_ready_status;
@@ -1091,6 +1095,11 @@ struct thp_core_data {
 	u32 daemon_flag;
 	u32 notify_daemon_release_lock;
 	struct hw_nve_info_user nv_info;
+	u32 aod_support_on_tddi;
+	u32 support_low_power_mode;
+	u32 tddi_aod_screen_off_flag;
+	struct mutex thp_tp_lowpower_cmd_lock;
+	u32 aod_state_flag;
 };
 
 enum screen_status {

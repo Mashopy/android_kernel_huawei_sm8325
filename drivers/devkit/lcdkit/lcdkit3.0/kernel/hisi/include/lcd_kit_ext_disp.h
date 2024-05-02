@@ -25,16 +25,16 @@
 #define LCD_FOLDER_STR 10
 #define LCD_MAX_PANEL_NUM 2
 
-enum lcd_actvie_panel_id {
-	LCD_MAIN_PANEL,
-	LCD_EXT_PANEL,
-	LCD_ACTIVE_PANEL_BUTT,
-};
-
 enum lcd_product_type {
 	LCD_NORMAL_TYPE,
 	LCD_FOLDER_TYPE,
 	LCD_MULTI_PANEL_BUTT,
+};
+
+enum lcd_actvie_panel_id {
+	LCD_MAIN_PANEL,
+	LCD_EXT_PANEL,
+	LCD_ACTIVE_PANEL_BUTT,
 };
 
 struct lcd_public_config {

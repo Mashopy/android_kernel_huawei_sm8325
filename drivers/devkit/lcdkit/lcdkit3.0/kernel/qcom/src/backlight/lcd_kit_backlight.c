@@ -673,6 +673,22 @@ static void lcd_kit_backlight_parse_backlight_config(struct device_node *np,
 		&pbl_config->bl_disable_cmd);
 	if (ret < 0)
 		LCD_KIT_ERR("parse bl disable cmd fail\n");
+	ret = lcd_kit_parse_backlight_cmd(np, "backlight_ic_vsp_enable_cmd",
+		&pbl_config->vsp_enable_cmd);
+	if (ret < 0)
+		LCD_KIT_ERR("parse vsp enable cmd fail\n");
+	ret = lcd_kit_parse_backlight_cmd(np, "backlight_ic_vsn_enable_cmd",
+		&pbl_config->vsn_enable_cmd);
+	if (ret < 0)
+		LCD_KIT_ERR("parse vsn enable cmd fail\n");
+	ret = lcd_kit_parse_backlight_cmd(np, "backlight_ic_vsp_disable_cmd",
+		&pbl_config->vsp_disable_cmd);
+	if (ret < 0)
+		LCD_KIT_ERR("parse vsp disable cmd fail\n");
+	ret = lcd_kit_parse_backlight_cmd(np, "backlight_ic_vsn_disable_cmd",
+		&pbl_config->vsn_disable_cmd);
+	if (ret < 0)
+		LCD_KIT_ERR("parse vsn disable cmd fail\n");
 	ret = lcd_kit_parse_backlight_cmd(np, "backlight_ic_dev_disable_cmd",
 		&pbl_config->disable_dev_cmd);
 	if (ret < 0)
@@ -1429,6 +1445,24 @@ static void lcd_kit_backlight_ic_fault_check(struct lcd_kit_backlight_device *pc
 }
 #endif
 
+static bool lcd_kit_alpm_mode_judge()
+{
+	struct qcom_panel_info *pinfo = NULL;
+	struct dsi_display *display = NULL;
+	uint32_t panel_id = lcd_get_active_panel_id();
+	pinfo = lcm_get_panel_info(panel_id);
+	if (!pinfo) {
+		LCD_KIT_ERR("pinfo is null!\n");
+		return false;
+	}
+	display = pinfo->display;
+	if (!display) {
+		LCD_KIT_ERR("disp is null!\n");
+		return false;
+	}
+	return (display->panel->power_mode == SDE_MODE_DPMS_LP1 ||
+		display->panel->power_mode == SDE_MODE_DPMS_LP2);
+}
 int lcd_kit_set_backlight(unsigned int bl_level)
 {
 	int ret = LCD_KIT_FAIL;
@@ -1437,6 +1471,10 @@ int lcd_kit_set_backlight(unsigned int bl_level)
 	unsigned char bl_lsb;
 	unsigned int bl_max_level = lcm_get_panel_backlight_max_level();
 
+	if (lcd_kit_alpm_mode_judge()) {
+		LCD_KIT_ERR("in aod state, return!\n");
+		return ret;
+	}
 	if (pbacklight_dev == NULL) {
 		LCD_KIT_ERR("init fail, return\n");
 		return ret;
@@ -1540,8 +1578,111 @@ i2c_error:
 	return ret;
 }
 
+int lcd_kit_backlight_set_aod_dimming()
+{
+	int ret = LCD_KIT_FAIL;
+	if (pbacklight_dev == NULL) {
+		LCD_KIT_ERR("init fail, return\n");
+		return ret;
+	}
+	if (down_trylock(&(pbacklight_dev->sem))) {
+		LCD_KIT_INFO("Now in test mode\n");
+		return ret;
+	}
+	ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+		pbacklight_dev->bl_config.dimming_config_reg,
+		pbacklight_dev->bl_config.bl_dimming_config);
+	if (ret < 0) {
+		LCD_KIT_ERR("set backlight ic brightness lsb failed!\n");
+		goto i2c_error;
+	}
+	up(&(pbacklight_dev->sem));
+	LCD_KIT_INFO("lcd kit set backlight exit succ\n");
+	return ret;
+i2c_error:
+	up(&(pbacklight_dev->sem));
+	LCD_KIT_ERR("lcd kit set backlight exit fail\n");
+	return ret;
+}
+
+int lcd_kit_backlight_set_in_aod(unsigned int bl_lsb, unsigned int bl_msb)
+{
+	int ret = LCD_KIT_FAIL;
+	if (pbacklight_dev == NULL) {
+		LCD_KIT_ERR("init fail, return\n");
+		return ret;
+	}
+	if (down_trylock(&(pbacklight_dev->sem))) {
+		LCD_KIT_INFO("Now in test mode\n");
+		return ret;
+	}
+	ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+		pbacklight_dev->bl_config.bl_lsb_reg_cmd.cmd_reg, bl_lsb);
+	if (ret < 0) {
+		LCD_KIT_ERR("set backlight ic brightness lsb failed!\n");
+		goto i2c_error;
+	}
+	ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+		pbacklight_dev->bl_config.bl_msb_reg_cmd.cmd_reg, bl_msb);
+	if (ret < 0) {
+		LCD_KIT_ERR("set backlight ic brightness msb failed!\n");
+		goto i2c_error;
+	}
+	up(&(pbacklight_dev->sem));
+	LCD_KIT_INFO("lcd kit set backlight exit succ\n");
+	return ret;
+i2c_error:
+	up(&(pbacklight_dev->sem));
+	LCD_KIT_ERR("lcd kit set backlight exit fail\n");
+	return ret;
+}
+static int lcd_kit_backlight_vsp_enable(int val)
+{
+	int ret;
+
+	if (val) {
+		ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+			pbacklight_dev->bl_config.vsp_enable_cmd.cmd_reg, pbacklight_dev->bl_config.vsp_enable_cmd.cmd_val);
+		if (ret < 0) {
+			LCD_KIT_ERR("write vsp_enable failed\n");
+			return ret;
+		}
+	} else {
+		ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+			pbacklight_dev->bl_config.vsp_disable_cmd.cmd_reg, pbacklight_dev->bl_config.vsp_disable_cmd.cmd_val);
+		if (ret < 0) {
+			LCD_KIT_ERR("write vsp_disable failed\n");
+			return ret;
+		}
+	}
+	return ret;
+}
+
+static int lcd_kit_backlight_vsn_enable(int val)
+{
+	int ret;
+
+	if (val) {
+		ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+			pbacklight_dev->bl_config.vsn_enable_cmd.cmd_reg, pbacklight_dev->bl_config.vsn_enable_cmd.cmd_val);
+		if (ret < 0) {
+			LCD_KIT_ERR("write vsn_enable failed\n");
+			return ret;
+		}
+	} else {
+		ret = lcd_kit_backlight_write_byte(pbacklight_dev,
+			pbacklight_dev->bl_config.vsn_disable_cmd.cmd_reg, pbacklight_dev->bl_config.vsn_disable_cmd.cmd_val);
+		if (ret < 0) {
+			LCD_KIT_ERR("write vsp_disable failed\n");
+			return ret;
+		}
+	}
+	return ret;
+}
 static struct lcd_kit_bl_ops bl_ops = {
 	.set_backlight = lcd_kit_set_backlight,
+	.backlight_set_in_aod = lcd_kit_backlight_set_in_aod,
+	.backlight_set_aod_dimming = lcd_kit_backlight_set_aod_dimming,
 	.name = "bl_common",
 };
 
@@ -1549,6 +1690,8 @@ static struct lcd_kit_bias_ops bias_ops = {
 	.set_bias_voltage = lcd_kit_backlight_set_bias,
 	.set_bias_power_down = lcd_kit_backlight_set_bias_power_down,
 	.set_ic_disable = lcd_kit_backlight_set_ic_disable,
+	.set_vsp_enable = lcd_kit_backlight_vsp_enable,
+	.set_vsn_enable = lcd_kit_backlight_vsn_enable,
 };
 
 static bool lcd_kit_backlight_dual_ic_check(void)

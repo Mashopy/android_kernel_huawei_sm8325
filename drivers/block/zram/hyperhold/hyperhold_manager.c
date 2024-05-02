@@ -230,7 +230,7 @@ static bool zram_test_overwrite(struct zram *zram, u32 index, int ext_id)
 
 	return false;
 }
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 static void move_to_hyperhold(struct zram *zram, u32 index,
 	unsigned long eswpentry, struct mem_cgroup *mcg, int ext_id)
 #else
@@ -295,7 +295,7 @@ static void move_to_hyperhold(struct zram *zram, u32 index,
 			pr_info("[%d]:%d\n", i, preempt_cnt[i]);
 		show_stack(current, NULL);
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (ext_to_par_file(ext_id)) {
 		atomic64_add(size, &stat->parfile_stored_size);
 		atomic64_add(size, &mcg->hyperhold_parfile_stored_size);
@@ -341,7 +341,7 @@ static void __move_to_zram(struct zram *zram, u32 index, unsigned long handle,
 		zram_lru_add_tail(zram, index, mcg);
 	zram_set_flag(zram, index, ZRAM_FROM_HYPERHOLD);
 	zram_slot_unlock(zram, index);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	if (ext_to_par_file(io_ext->ext_id)) {
 		atomic64_sub(size, &stat->parfile_stored_size);
 		atomic64_dec(&stat->parfile_stored_pages);
@@ -353,7 +353,7 @@ static void __move_to_zram(struct zram *zram, u32 index, unsigned long handle,
 	atomic_dec(&zram->area->ext_stored_pages[io_ext->ext_id]);
 	atomic64_sub(size, &zram->area->ext_stored_size[io_ext->ext_id]);
 	if (mcg) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		if (ext_to_par_file(io_ext->ext_id)) {
 			atomic64_sub(size, &mcg->hyperhold_parfile_stored_size);
 			atomic64_dec(&mcg->hyperhold_parfile_stored_pages);
@@ -460,7 +460,7 @@ static void extent_unlock(struct io_extent *io_ext)
 		pr_info("hp-points:extent_unlock,%d", io_ext->cnt);
 		show_stack(current, NULL);}
 	eswpentry = ((unsigned long)ext_id) << EXTENT_SHIFT; /*lint !e571*/
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	for (k = 0; k < io_ext->cnt; k++) {
 		zram_slot_lock(zram, io_ext->index[k]);
 		move_to_hyperhold(zram, io_ext->index[k], eswpentry, mcg, ext_id);
@@ -477,7 +477,7 @@ static void extent_unlock(struct io_extent *io_ext)
 #endif
 	put_extent(zram->area, ext_id);
 	io_ext->ext_id = -EINVAL;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE) || !defined(CONFIG_RAMTURBO)
 	for (k = 0; k < io_ext->cnt; k++)
 		zram_slot_unlock(zram, io_ext->index[k]);
 #endif
@@ -804,7 +804,7 @@ bool hyperhold_cache_objs_del(struct zram *zram, u32 index,
 	zram_set_flag(zram, index, ZRAM_FROM_HYPERHOLD);
 
 	if (stat) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		if (ext_to_par_file(ext_id)) {
 			atomic64_sub(size, &stat->parfile_stored_size);
 			atomic64_dec(&stat->parfile_stored_pages);
@@ -816,7 +816,7 @@ bool hyperhold_cache_objs_del(struct zram *zram, u32 index,
 	}
 
 	if (mcg) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		if (ext_to_par_file(ext_id)) {
 			atomic64_sub(size, &mcg->hyperhold_parfile_stored_size);
 			atomic64_dec(&mcg->hyperhold_parfile_stored_pages);
@@ -1121,7 +1121,7 @@ void hyperhold_manager_memcg_init(struct mem_cgroup *mcg, struct zram *zram)
 	atomic64_set(&mcg->zram_page_size, 0);
 	atomic64_set(&mcg->hyperhold_stored_pages, 0);
 	atomic64_set(&mcg->hyperhold_stored_size, 0);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	atomic64_set(&mcg->hyperhold_parfile_stored_pages, 0);
 	atomic64_set(&mcg->hyperhold_parfile_stored_size, 0);
 #endif
@@ -1419,7 +1419,7 @@ void hyperhold_extent_objs_del(struct zram *zram, u32 index)
 	eswpentry = zram_get_handle(zram, index);
 #endif
 	size = zram_get_obj_size(zram, index);
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	ext_id = esentry_extid(eswpentry);
 	if (ext_to_par_file(ext_id)) {
 		atomic64_sub(size, &stat->parfile_stored_size);
@@ -1430,7 +1430,7 @@ void hyperhold_extent_objs_del(struct zram *zram, u32 index)
 	atomic64_dec(&stat->stored_pages);
 	mcg = zram_get_memcg(zram, index);
 	if (mcg) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		if (ext_to_par_file(ext_id)) {
 			atomic64_sub(size, &mcg->hyperhold_parfile_stored_size);
 			atomic64_dec(&mcg->hyperhold_parfile_stored_pages);
@@ -1439,7 +1439,7 @@ void hyperhold_extent_objs_del(struct zram *zram, u32 index)
 		atomic64_sub(size, &mcg->hyperhold_stored_size);
 		atomic64_dec(&mcg->hyperhold_stored_pages);
 	}
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	atomic64_sub(size,
 		&zram->area->ext_stored_size[ext_id]);
 	if (!atomic_dec_and_test(

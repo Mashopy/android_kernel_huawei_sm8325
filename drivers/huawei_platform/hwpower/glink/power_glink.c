@@ -36,6 +36,7 @@
 #include <chipset_common/hwpower/common_module/power_supply_interface.h>
 #include <chipset_common/hwusb/hw_usb.h>
 #include <huawei_platform/hwpower/common_module/power_glink.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
 
 #define HWLOG_TAG power_glink
 HWLOG_REGIST();
@@ -499,6 +500,7 @@ static void power_glink_init_work(struct work_struct *work)
 			if (l_dev->reinit_jeita_flag)
 				data_status |= power_glink_set_property_value(POWER_GLINK_PROP_ID_SET_JEITA_TABLE,
 					l_dev->adsp_jeita_table, ADSP_JEITA_TABLE_LEN);
+			pd_dpm_set_glink_status();
 		}
 		i++;
 	} while ((data_status != 0) && (i < POWER_GLINK_INIT_RETRY_CNT));

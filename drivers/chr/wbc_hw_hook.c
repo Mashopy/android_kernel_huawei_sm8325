@@ -57,6 +57,7 @@ static struct http_return g_rtn_stat_wifi[RNT_STAT_SIZE];
 /* Return the abnomal infomation */
 static struct http_return g_rtn_abn[RNT_STAT_SIZE];
 static struct rtt_from_stack g_stack_rtt[RNT_STAT_SIZE];
+static struct http_return g_tcp_recover;
 static unsigned int g_sleep_flag;
 
 /* The HTTP keyword is used to filter tcp packets */
@@ -1887,6 +1888,25 @@ static void video_chr_stat_report(void)
 	g_rtn_stat[RMNET_INTERFACE].uvod_avg_speed = video_chr.uvod_avg_speed;
 	g_rtn_stat[RMNET_INTERFACE].uvod_freez_num = video_chr.uvod_freez_num;
 	g_rtn_stat[RMNET_INTERFACE].uvod_time = video_chr.uvod_time;
+}
+#endif
+
+#ifdef CONFIG_HW_NETWORK_QOE
+void upload_tcp_recover_info(struct tcp_recover_info *tcp_info)
+{
+	if (tcp_info == NULL)
+		return;
+	g_tcp_recover.tcp_recover.app_uid = tcp_info->app_uid;
+	g_tcp_recover.tcp_recover.tcp_rtt = tcp_info->tcp_rtt;
+	g_tcp_recover.tcp_recover.tcp_mss = tcp_info->tcp_mss;
+	g_tcp_recover.tcp_recover.tcp_seq = tcp_info->tcp_seq;
+	g_tcp_recover.tcp_recover.tcp_ack = tcp_info->tcp_ack;
+	g_tcp_recover.tcp_recover.tcp_unreceived = tcp_info->tcp_unreceived;
+	g_tcp_recover.tcp_recover.estimate_time = tcp_info->estimate_time;
+	if (g_tcp_recover.tcp_recover.app_uid != 0) {
+		chr_notify_event(TCP_RECOVER_HIVIEW_ID, g_user_space_pid, 0, &g_tcp_recover);
+		pr_info("upload_tcp_recover_info");
+	}
 }
 #endif
 #undef DEBUG

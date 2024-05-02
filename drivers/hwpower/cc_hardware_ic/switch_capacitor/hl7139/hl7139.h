@@ -69,6 +69,7 @@ struct hl7139_device_info {
 	int iin_ocp_para;
 	int sc_ibus_ocp;
 	int sc_ibat_ocp;
+	unsigned int back_regd8; /* Saves Reg D8 register. The reference of each hl7139 is different */
 	int check_irq_work_support;
 	int ignore_discharge_flag;
 	int tdie_regulation;
@@ -79,8 +80,13 @@ struct hl7139_device_info {
 	unsigned int scp_isr_backup[2]; /* datasheet:scp_isr1,scp_isr2 */
 	unsigned int close_ibat_ocp;
 	unsigned int mount_on_fake_i2c;
+	unsigned int scp_error_flag;
+	unsigned int slv_norep_cnt;
+	unsigned int crc_err_cnt;
+	bool first_enter_flag;
 };
 
+#define HL7139_OLD_VERSION                             1
 #define HL7139_INIT_FINISH                             1
 #define HL7139_NOT_INIT                                0
 #define HL7139_ENABLE_INT_NOTIFY                       1
@@ -229,7 +235,7 @@ struct hl7139_device_info {
 #define HL7139_VBAT_REG_TH_MIN                         4000
 #define HL7139_VBAT_REG_TH_MAX                         4600
 #define HL7139_VBAT_REG_TH_STEP                        10
-#define HL7139_VBAT_OVP_INIT                           4430
+#define HL7139_VBAT_OVP_INIT                           4600
 
 /* STBY_CTRL reg=0x09 */
 #define HL7139_STBY_CTRL_REG                           0x09
@@ -249,10 +255,16 @@ struct hl7139_device_info {
 #define HL7139_IBAT_REG_IBAT_REG_TH_SHIFT              0
 
 /* IBAT_REG(A) = 2A + DEC[5:0] * 0.1A */
+/* HL7139A IBAT_REG(A) = 4A + DEC[5:0] * 0.1A */
 #define HL7139_IBAT_REG_TH_MIN                         2000
 #define HL7139_IBAT_REG_TH_MAX                         6600
 #define HL7139_IBAT_REG_TH_STEP                        100
 #define HL7139_IBAT_OCP_INIT                           7100
+#define HL7139A_IBAT_REG_TH_MIN                        4000
+#define HL7139A_IBAT_REG_TH_MAX                        8600
+#define HL7139A_IBAT_REG_TH_STEP                       100
+#define HL7139A_IBAT_OCP_INIT                          9100
+#define HL7139A_IBAT_OCP_CP_INIT                       8700
 
 /* VBUS_OVP reg=0x0B */
 #define HL7139_VBUS_OVP_REG                            0x0B
@@ -311,12 +323,14 @@ struct hl7139_device_info {
 #define HL7139_IIN_REG_TH_CP_MAX                       3500
 #define HL7139_IIN_REG_TH_CP_STEP                      50
 #define HL7139_IIN_OCP_CP_INIT                         3100
+#define HL7139A_IIN_OCP_CP_INIT                        4350
 
 /* BPMODE IIN_REG_TH(A) = 2A + DEC[5:0] * 100mA */
 #define HL7139_IIN_REG_TH_BP_MIN                       2000
 #define HL7139_IIN_REG_TH_BP_MAX                       7000
 #define HL7139_IIN_REG_TH_BP_STEP                      100
 #define HL7139_IIN_OCP_BP_INIT                         6100
+#define HL7139A_IIN_OCP_BP_INIT                        7000
 
 /* IIN_OC reg=0x0F */
 #define HL7139_IIN_OC_REG                              0x0F
@@ -325,12 +339,25 @@ struct hl7139_device_info {
 #define HL7139_IIN_OC_IIN_OCP_TH_MASK                  (BIT(6) | BIT(5))
 #define HL7139_IIN_OC_IIN_OCP_TH_SHIFT                 5
 
-/* IIN_OCP(A) = 0.1A + DEC[6:5] * 50mA */
+/* IIN_OCP(A) = 0.15A + DEC[6:5] * 50mA CP */
+/* IIN_OCP(A) = 0.3A + DEC[6:5] * 100mA BP */
+/* HL7139A IIN_OCP(A) = 0.95A + DEC[6:5] * 50mA CP */
+/* HL7139A IIN_OCP(A) = 1.9A + DEC[6:5] * 100mA BP */
 #define HL7139_IIN_OCP_TH_ABOVE_100MA                  100
 #define HL7139_IIN_OCP_TH_ABOVE_150MA                  150
 #define HL7139_IIN_OCP_TH_ABOVE_200MA                  200
 #define HL7139_IIN_OCP_TH_ABOVE_250MA                  250
+#define HL7139_IIN_OCP_TH_ABOVE_300MA                  300
+#define HL7139_IIN_OCP_TH_ABOVE_500MA                  500
 #define HL7139_IIN_OCP_TH_ABOVE_STEP                   50
+#define HL7139_IIN_OCP_TH_ABOVE_BP_STEP                100
+#define HL7139A_IIN_OCP_TH_ABOVE_950MA                 950
+#define HL7139A_IIN_OCP_TH_ABOVE_1000MA                1000
+#define HL7139A_IIN_OCP_TH_ABOVE_1050MA                1050
+#define HL7139A_IIN_OCP_TH_ABOVE_1100MA                1100
+#define HL7139A_IIN_OCP_TH_ABOVE_2100MA                2100
+#define HL7139A_IIN_OCP_TH_ABOVE_STEP                  50
+#define HL7139A_IIN_OCP_TH_ABOVE_BP_STEP               100
 
 /* REG_CTRL_0 reg=0x10 */
 #define HL7139_REG_CTRL0_REG                           0x10
@@ -604,6 +631,17 @@ struct hl7139_device_info {
 #define HL7139_ADC_TDIE_1_REG                          0x4F
 #define HL7139_ADC_TDIE_1_ADC_TDIE_MASK                (BIT(3) | BIT(2) | BIT(1) | BIT(0))
 #define HL7139_ADC_TDIE_1_ADC_TDIE_SHIFT               0
+
+#define HL7139_TEST_MODE_REG                           0xA0
+#define HL7139_TEST_MODE_PASS1                         0xF9
+#define HL7139_TEST_MODE_PASS2                         0x9F
+#define HL7139_TEST_MODE_EXIT                          0x00
+#define HL7139_SCP_DRV_CRL_1_REG                       0xC5
+#define HL7139_SCP_DRV_CRL_2_REG                       0xE4
+#define HL7139_SCP_DRV1_ON_MASK                        0x04
+#define HL7139_SCP_DRV1_ON_SHIFT                       2
+#define HL7139_SCP_DRV2_WEAK_MASK                      0x20
+#define HL7139_SCP_DRV2_WEAK_SHIFT                     5
 
 int hl7139_config_vbuscon_ovp_ref_mv(int ovp_threshold, void *dev_data);
 int hl7139_config_vbus_ovp_ref_mv(int ovp_threshold, void *dev_data);

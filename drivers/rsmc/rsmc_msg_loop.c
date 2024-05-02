@@ -724,14 +724,16 @@ bool rsmc_enable_detect(void)
 {
 	struct device_node *node = of_find_compatible_node(NULL, NULL, DTS_NODE_HUAWEI_RSMC);
 	if (node == NULL) {
-		hwlog_err("%s: no huawei_rsmc", __func__);
+		hwlog_err("%s: x800 driver no huawei_rsmc", __func__);
 		return false;
 	}
+
 	if (of_property_read_bool(node, DTS_PROP_RSMC_ENABLE)) {
-		hwlog_info("%s: rsmc_enable", __func__);
+		hwlog_info("%s: x800 driver, rsmc_enable return true", __func__);
 		return true;
 	}
-	hwlog_info("%s: rsmc_disable", __func__);
+
+	hwlog_info("%s: x800 driver rsmc_disable or driver not match", __func__);
 	return false;
 }
 
@@ -743,10 +745,6 @@ int rsmc_main_thread(void *data)
 
 	hwlog_info("%s: enter", __func__);
 
-	if (!rsmc_enable_detect()) {
-		hwlog_info("%s: not support rsmc", __func__);
-		return -EINVAL;
-	}
 	if (rsmc_netlink_handle_init()) {
 		hwlog_err("%s: init netlink_handle module failed", __func__);
 		g_nl_ctx.chan_state = NETLINK_MSG_LOOP_EXIT;
@@ -788,7 +786,12 @@ int rsmc_main_thread(void *data)
 
 int __init rsmc_netlink_handle_module_init(void)
 {
-	struct task_struct *task = kthread_run(rsmc_main_thread, NULL, "rsmc_main_thread");
+	struct task_struct *task = NULL;
+	if (!rsmc_enable_detect()) {
+		hwlog_info("%s: not support rsmc", __func__);
+		return -EINVAL;
+	}
+	task = kthread_run(rsmc_main_thread, NULL, "rsmc_main_thread");
 	if (IS_ERR(task)) {
 		hwlog_err("%s: failed to create thread", __func__);
 		task = NULL;

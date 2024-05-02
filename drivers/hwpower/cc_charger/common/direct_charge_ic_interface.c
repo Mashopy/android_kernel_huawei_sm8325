@@ -141,6 +141,16 @@ int dc_get_ic_id(int mode, unsigned int index)
 	return -EPERM;
 }
 
+int dc_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
+{
+	struct dc_ic_ops *temp_ops = dc_ic_get_ic_ops(mode, index);
+
+	if (temp_ops && temp_ops->get_max_ibat)
+		return temp_ops->get_max_ibat(temp_ops->dev_data, ibat);
+
+	return -EPERM;
+}
+
 int dc_get_ic_status(int mode, unsigned int index)
 {
 	struct dc_ic_ops *temp_ops = dc_ic_get_ic_ops(mode, index);

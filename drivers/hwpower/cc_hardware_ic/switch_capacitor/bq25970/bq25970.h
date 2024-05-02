@@ -95,6 +95,7 @@ struct bq25970_device_info {
 	int ibus_low_deglitch;
 	int ucp_rise_threshold;
 	int close_vbat_protection;
+	int close_ibat_protection;
 	int reset_ac_ovp;
 	u32 resume_need_wait_i2c;
 	unsigned int mount_on_fake_i2c;
@@ -751,7 +752,7 @@ struct bq25970_device_info {
 
 /* PMID_VOUT_UV_OV reg=0x2f */
 #define HL7130_PMID_VOUT_UV_OV_REG         0x2F
-#define HL7130_PMID_VOUT_UV_OV_INIT        0x0E
+#define HL7130_PMID_VOUT_UV_OV_INIT        0x16
 
 #define NU2105_CHRG_MODE_REG               0x2F
 #define NU2105_CHRG_MODE_MASK              BIT(0)
@@ -768,6 +769,7 @@ struct bq25970_device_info {
 /* CONTROL2 reg=0x30 */
 #define HL7130_CONTROL2_REG                0x30
 #define HL7130_CONTROL2_INIT               0x38
+#define HL7130_CONTROL2_INIT_LVC           0xB8
 
 /* MODE reg=0x31 */
 #define SC8551_CHARGE_MODE_REG             0x31

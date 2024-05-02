@@ -9,3 +9,4 @@ obj-$(CONFIG_CHR_NETLINK_MODULE) += chr_manager.o
 obj-$(CONFIG_APP_ACCELERATOR) += app_accelerator.o
 obj-$(CONFIG_HW_STEADY_SPEED_STATS) += hw_steady_speed.o
 obj-$(CONFIG_STREAM_DETECT) += stream_detect.o
+obj-$(CONFIG_HW_NETWORK_DCP) += app_proxy.o

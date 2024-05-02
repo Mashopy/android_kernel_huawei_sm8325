@@ -18,7 +18,7 @@ endif
 obj-$(CONFIG_HUAWEI_TS_KIT_COMMON) += huawei_tp_common.o
 obj-$(CONFIG_HUAWEI_TP_KIT_COLOR_INFO) += tp_color.o
 obj-$(CONFIG_HUAWEI_TS_KIT)  += panel/
-obj-$(CONFIG_HUAWEI_TS_KIT)  += panel_driver/
+obj-$(CONFIG_HUAWEI_ROTARY_CROWN)  += panel_driver/
 obj-$(CONFIG_HUAWEI_HOST_TS_KIT) += hostprocessing/
 obj-$(CONFIG_MCU_TS)  += mcu/
 obj-$(CONFIG_MCU_TS)  += watch_tp_recovery.o

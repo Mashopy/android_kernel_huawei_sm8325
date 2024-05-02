@@ -107,6 +107,7 @@ struct mt5727_dev_info {
 	int irq_cnt;
 	u32 ept_type;
 	int tx_pocp_th;
+	u16 tx_ping_freq;
 	u16 chip_id;
 };
 

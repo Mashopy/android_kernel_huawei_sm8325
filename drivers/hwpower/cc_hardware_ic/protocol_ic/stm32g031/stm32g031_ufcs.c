@@ -35,6 +35,8 @@ static int stm32g031_ufcs_wait(struct stm32g031_device_info *di, u8 flag)
 	int ret, i;
 
 	for (i = 0; i < STM32G031_UFCS_WAIT_RETRY_CYCLE; i++) {
+		if (!di->plugged_state)
+			break;
 		power_usleep(DT_USLEEP_1MS);
 		ret = stm32g031_read_byte(di, STM32G031_UFCS_ISR1_REG, &reg_val1);
 		ret += stm32g031_read_byte(di, STM32G031_UFCS_ISR2_REG, &reg_val2);
@@ -84,6 +86,45 @@ static int stm32g031_ufcs_wait(struct stm32g031_device_info *di, u8 flag)
 	return -EINVAL;
 }
 
+static int stm32g031_ufcs_handshake_preparation(struct stm32g031_device_info *di)
+{
+	int ret;
+
+	ret = stm32g031_fw_set_hw_config(di);
+	if (ret) {
+		if (di->is_low_power_mode)
+			power_usleep(DT_USLEEP_10MS);
+		else
+			stm32g031_hard_reset(di);
+		ret = stm32g031_fw_set_hw_config(di);
+	}
+
+	power_usleep(DT_USLEEP_20MS);
+	ret += stm32g031_fw_get_hw_config(di);
+	if (ret) {
+		hwlog_err("set hw config fail\n");
+		return -EPERM;
+	}
+
+	/* clear handshake bit */
+	(void)stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
+		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_MASK,
+		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_SHIFT, 0);
+
+	/* waiting for mcu ready */
+	(void)power_usleep(DT_USLEEP_1MS);
+
+	/* start handshake */
+	(void)stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
+		STM32G031_UFCS_CTL1_EN_PROTOCOL_MASK,
+		STM32G031_UFCS_CTL1_EN_PROTOCOL_SHIFT, STM32G031_CTL1_EN_UFCS);
+	(void)stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
+		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_MASK,
+		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_SHIFT, 1);
+	(void)power_usleep(DT_USLEEP_20MS);
+	return 0;
+}
+
 static int stm32g031_ufcs_detect_adapter(void *dev_data)
 {
 	struct stm32g031_device_info *di = dev_data;
@@ -96,38 +137,16 @@ static int stm32g031_ufcs_detect_adapter(void *dev_data)
 	}
 
 	mutex_lock(&di->ufcs_detect_lock);
-
-	ret = stm32g031_fw_set_hw_config(di);
-	if (ret && !di->is_low_power_mode) {
-		stm32g031_hard_reset(di);
-		ret = stm32g031_fw_set_hw_config(di);
-	}
-
-	power_usleep(DT_USLEEP_20MS);
-	ret += stm32g031_fw_get_hw_config(di);
-	if (ret) {
-		hwlog_err("set hw config fail\n");
+	if (stm32g031_ufcs_handshake_preparation(di)) {
 		mutex_unlock(&di->ufcs_detect_lock);
 		return HWUFCS_DETECT_FAIL;
 	}
 
-	/* clear handshake bit */
-	ret = stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
-			STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_MASK,
-			STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_SHIFT, 0);
-	/* waiting for mcu ready */
-	(void)power_usleep(DT_USLEEP_1MS);
-	/* start handshake */
-	ret += stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
-		STM32G031_UFCS_CTL1_EN_PROTOCOL_MASK,
-		STM32G031_UFCS_CTL1_EN_PROTOCOL_SHIFT, STM32G031_CTL1_EN_UFCS);
-	ret += stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
-		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_MASK,
-		STM32G031_UFCS_CTL1_EN_UFCS_HANDSHAKE_SHIFT, 1);
-	(void)power_usleep(DT_USLEEP_20MS);
 	/* waiting for handshake */
 	for (i = 0; i < STM32G031_UFCS_HANDSHARK_RETRY_CYCLE; i++) {
-		(void)power_usleep(DT_USLEEP_2MS);
+		if (!di->plugged_state)
+			break;
+		(void)power_usleep(DT_USLEEP_5MS);
 		ret = stm32g031_read_byte(di, STM32G031_UFCS_ISR1_REG, &reg_val);
 		if (ret) {
 			hwlog_err("read isr reg[%x] fail\n", STM32G031_UFCS_ISR1_REG);
@@ -260,9 +279,8 @@ static int stm32g031_ufcs_soft_reset_master(void *dev_data)
 		return -ENODEV;
 	}
 
-	return stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
-		STM32G031_UFCS_CTL1_EN_PROTOCOL_MASK,
-		STM32G031_UFCS_CTL1_EN_PROTOCOL_SHIFT, STM32G031_CTL1_DISABLE_PROTOCOL);
+	/* Exit UFCS by reading the version number */
+	return stm32g031_fw_get_hw_config(di);
 }
 
 static int stm32g031_ufcs_set_communicating_flag(void *dev_data, bool flag)
@@ -283,6 +301,34 @@ static int stm32g031_ufcs_set_communicating_flag(void *dev_data, bool flag)
 	return 0;
 }
 
+static int stm32g031_ufcs_config_baud_rate(void *dev_data, int baud_rate)
+{
+	struct stm32g031_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	return stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
+		STM32G031_UFCS_CTL1_BAUD_RATE_MASK,
+		STM32G031_UFCS_CTL1_BAUD_RATE_SHIFT, (u8)baud_rate);
+}
+
+static int stm32g031_ufcs_hard_reset_cable(void *dev_data)
+{
+	struct stm32g031_device_info *di = dev_data;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -ENODEV;
+	}
+
+	return stm32g031_write_mask(di, STM32G031_UFCS_CTL1_REG,
+		STM32G031_UFCS_CTL1_CABLE_HARDRESET_MASK,
+		STM32G031_UFCS_CTL1_CABLE_HARDRESET_SHIFT, 1);
+}
+
 static bool stm32g031_ufcs_need_check_ack(void *dev_data)
 {
 	return false;
@@ -298,6 +344,8 @@ static struct hwufcs_ops stm32g031_hwufcs_ops = {
 	.soft_reset_master = stm32g031_ufcs_soft_reset_master,
 	.get_rx_len = stm32g031_ufcs_get_rx_len,
 	.set_communicating_flag = stm32g031_ufcs_set_communicating_flag,
+	.config_baud_rate = stm32g031_ufcs_config_baud_rate,
+	.hard_reset_cable = stm32g031_ufcs_hard_reset_cable,
 	.need_check_ack = stm32g031_ufcs_need_check_ack,
 };
 

@@ -639,7 +639,7 @@ static int bq40z50_dump_log_data(char *buffer, int size, void *dev_data)
 	log_data.soc = bq40z50_get_battery_soc();
 	log_data.fcc = bq40z50_get_battery_fcc();
 
-	snprintf(buffer, size, "%-7d%-7d%-7d%-7d%-7d%-7d%-7d   ",
+	snprintf(buffer, size, "%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
 		log_data.temp, log_data.vbat, log_data.ibat,
 		log_data.avg_ibat, log_data.rm, log_data.soc,
 		log_data.fcc);
@@ -655,7 +655,7 @@ static int bq40z50_get_log_head(char *buffer, int size, void *dev_data)
 		return -EPERM;
 
 	snprintf(buffer, size,
-		"    Temp   Vbat   Ibat   AIbat   Rm   Soc   Fcc");
+		"Temp   Vbat   Ibat   AIbat  Rm     Soc    Fcc    ");
 
 	return 0;
 }

@@ -38,3 +38,5 @@ ccflags-y += -Idrivers/misc/mediatek/sensors-1.0/sensorHub/inc_v1
 ifeq ($(CONFIG_HUAWEI_TS_KIT_TEST_3_0),y)
 EXTRA_CFLAGS += -DHUAWEI_TS_KIT_TEST
 endif
+
+obj-$(CONFIG_LCD_KIT_HYBRID) += hybrid/

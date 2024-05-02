@@ -44,6 +44,9 @@
 #define CHIP_DETECT_RETRY_NUMB 3
 #define DELAY_AFTER_FIRST_BYTE 30
 
+#define POWER_CTRL_DELAY 2
+#define DOUBLE_TAP_FLAG 2
+#define READ_LEN 4
 #define FTS_IC_NAME_LEN 2
 #define FTS_PRODUCT_NAME_LEN 4
 #define FTS_READ_CMD 0xA0
@@ -64,6 +67,7 @@
 #define SPI_RETRY_NUMBER 3
 #define CS_HIGH_DELAY 150
 #define FTS_REG_GESTURE_EN 0xD0
+#define FTS_REG_GESTURE 0xD1
 #define FTS_REG_GESTURE_DATA 0xD3
 #define FTS_REG_LEN 1
 #define FTS_OFF_STS 3
@@ -77,6 +81,11 @@
 #define SLEEP_RETRY_NUM 3
 #define SLEEP_BUF_BIT 3
 #define WAIT_FOR_SPI_BUS_READ_DELAY 5
+#define UDFP_INFO_SIZE 17
+#if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
+static struct udfp_mode_status ud_mode_status;
+#define FTS_UDFP_DATA_LEN (17 * 4)
+#endif
 /*
  * Here we use "fts_ic_type" to identify focal ICs' types:
  * 1.FT8615_SERIES includes ft8615 and ft8719,
@@ -109,12 +118,14 @@ static int touch_driver_spi_transfer(const char *tx_buf,
 		.len = len,
 	};
 	struct spi_transfer xfer[index];
+	unsigned int finger_status = !!(thp_get_status(THP_STATUS_UDFP));
+	unsigned int gesture_status = cd->easy_wakeup_info.sleep_mode;
+	bool no_need_work_in_suspend = cd->suspended && (!cd->need_work_in_suspend)
+		&& !(cd->support_gesture_mode && ((gesture_status == TS_GESTURE_MODE)
+			|| finger_status || cd->aod_touch_status));
 
-	if (cd->suspended && (!cd->need_work_in_suspend) &&
-		(!((cd->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE) &&
-		cd->support_gesture_mode)))
+	if (no_need_work_in_suspend)
 		return 0;
-
 	if (cd->support_vendor_ic_type == FT8720_SERIES) {
 		spi_message_init(&msg);
 		spi_message_add_tail(&xfer1, &msg);
@@ -265,6 +276,33 @@ static int rdata_crc_check(u8 *rdata, u16 rlen)
 	return 0;
 }
 
+static void touch_driver_write_reg(u8 addr, u8 value)
+{
+	int i;
+	int ret;
+	unsigned char w_buf[SPI_DUMMY_BYTE + FTS_REG_LEN];
+	unsigned char r_buf[SPI_DUMMY_BYTE + FTS_REG_LEN];
+	u32 index = 0;
+	u32 txlen;
+
+	thp_log_info("%s: called\n", __func__);
+	w_buf[index++] = addr;
+	w_buf[index++] = FTS_WRITE_CMD;
+	w_buf[index++] = (FTS_REG_LEN >> GET_HIGH_BIT) & 0xFF;
+	w_buf[index++] = FTS_REG_LEN & 0xFF;
+	txlen = SPI_DUMMY_BYTE + FTS_REG_LEN;
+	w_buf[SPI_DUMMY_BYTE] = value;
+	for (i = 0; i < SPI_RETRY_NUMBER; i++) {
+		ret = touch_driver_spi_transfer(w_buf, r_buf, txlen);
+		if ((ret == 0) && ((r_buf[FTS_OFF_STS] & FTS_READ_CMD) == 0))
+			break;
+		thp_log_info("data write addr:%x, status:%x, retry:%d, ret:%d",
+			FTS_REG_GESTURE_EN, r_buf[FTS_OFF_STS], i, ret);
+		ret = -EIO;
+		udelay(CS_HIGH_DELAY);
+	}
+}
+
 static int touch_driver_check_frame_valid(u8 *buf, u16 len)
 {
 	u16 ecc_buf;
@@ -329,6 +367,88 @@ static int thp_parse_extra_config(struct device_node *thp_node,
 	return 0;
 }
 
+static int touch_driver_power_init(void)
+{
+	int ret = thp_power_supply_get(THP_IOVDD);
+	if (ret)
+		thp_log_err("%s: fail to get vcc power\n", __func__);
+	ret = thp_power_supply_get(THP_VCC);
+	if (ret)
+		thp_log_err("%s: fail to get power\n", __func__);
+	return 0;
+}
+
+static int touch_driver_power_release(void)
+{
+	int ret = thp_power_supply_put(THP_VCC);
+	if (ret)
+		thp_log_err("%s: fail to release vcc power\n", __func__);
+	ret = thp_power_supply_put(THP_IOVDD);
+	if (ret)
+		thp_log_err("%s: fail to release power\n", __func__);
+	return ret;
+}
+
+static int touch_driver_power_on(struct thp_device *tdev)
+{
+	int ret;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	thp_log_info("%s:called\n", __func__);
+	gpio_direction_output(tdev->gpios->rst_gpio, GPIO_LOW);
+	if (!cd->not_support_cs_control)
+		gpio_set_value(tdev->gpios->cs_gpio, GPIO_LOW);
+	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_ON,
+		POWER_CTRL_DELAY);
+	if (ret)
+		thp_log_err("%s:power ctrl iovdd fail\n", __func__);
+	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_ON,
+		POWER_CTRL_DELAY);
+	if (ret)
+		thp_log_err("%s:power ctrl vcc fail\n", __func__);
+	if (!cd->not_support_cs_control)
+		gpio_set_value(tdev->gpios->cs_gpio, GPIO_HIGH);
+#ifdef CONFIG_HUAWEI_THP_QCOM
+	if (cd->support_control_cs_off &&
+			(!IS_ERR_OR_NULL(cd->qcom_pinctrl.cs_high))) {
+		pinctrl_select_state(tdev->thp_core->pctrl,
+			tdev->thp_core->qcom_pinctrl.cs_high);
+		thp_log_info("%s: cs to high\n", __func__);
+	}
+#endif
+	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
+	thp_do_time_delay(tdev->timing_config.boot_reset_hi_delay_ms);
+	return ret;
+}
+
+static int touch_driver_power_off(struct thp_device *tdev)
+{
+	int ret;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
+	thp_do_time_delay(tdev->timing_config.suspend_reset_after_delay_ms);
+	ret = thp_power_supply_ctrl(THP_VCC, THP_POWER_OFF,
+		POWER_CTRL_DELAY);
+	if (ret)
+		thp_log_err("%s:power ctrl vcc fail\n", __func__);
+	ret = thp_power_supply_ctrl(THP_IOVDD, THP_POWER_OFF,
+		POWER_CTRL_DELAY);
+	if (ret)
+		thp_log_err("%s:power ctrl fail\n", __func__);
+	if (!cd->not_support_cs_control)
+		gpio_set_value(tdev->gpios->cs_gpio, GPIO_LOW);
+#ifdef CONFIG_HUAWEI_THP_QCOM
+	if (cd->support_control_cs_off &&
+		(!IS_ERR_OR_NULL(cd->qcom_pinctrl.cs_low))) {
+		pinctrl_select_state(tdev->thp_core->pctrl,
+			tdev->thp_core->qcom_pinctrl.cs_low);
+		thp_log_info("%s:cs to low\n", __func__);
+	}
+#endif
+	return ret;
+}
+
 static int touch_driver_init(struct thp_device *tdev)
 {
 	struct thp_core_data *cd = NULL;
@@ -378,6 +498,10 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 	if (!tdev) {
 		thp_log_info("%s: input dev null\n", __func__);
 		return -ENOMEM;
+	}
+	if (tdev->thp_core->self_control_power) {
+		touch_driver_power_init();
+		touch_driver_power_on(tdev);
 	}
 	for (i = 0; i < CHIP_DETECT_RETRY_NUMB; i++) {
 		if (tdev->thp_core->support_vendor_ic_type == FT8720_SERIES) {
@@ -434,7 +558,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			if (rc) {
 				thp_log_err("%s:write 0x90 command fail\n",
 					__func__);
-				return rc;
+				goto exit;
 			}
 			msleep(10); /* 10ms sequential */
 
@@ -446,7 +570,7 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			if (rc) {
 				thp_log_err("%s:read 0x90 data fail\n",
 					__func__);
-				return rc;
+				goto exit;
 			}
 
 			if ((cmd[1] == CHIP_DETECT_FAILE_ONE) ||
@@ -465,6 +589,19 @@ static int touch_driver_chip_detect(struct thp_device *tdev)
 			}
 			msleep(50); /* 50ms sequential */
 		}
+	}
+exit:
+	if (tdev->thp_core->self_control_power) {
+		touch_driver_power_off(tdev);
+		touch_driver_power_release();
+	}
+	if (tdev->thp_core->fast_booting_solution) {
+		kfree(tdev->tx_buff);
+		tdev->tx_buff = NULL;
+		kfree(tdev->rx_buff);
+		tdev->rx_buff = NULL;
+		kfree(tdev);
+		tdev = NULL;
 	}
 	return -EIO;
 }
@@ -546,20 +683,12 @@ static int touch_driver_get_frame(struct thp_device *tdev,
 	return 0;
 }
 
-static int touch_driver_resume(struct thp_device *tdev)
+#ifdef CONFIG_HUAWEI_THP_MTK
+static void touch_driver_pinctrl_resume(struct thp_device *tdev)
 {
-	thp_log_info("%s: called\n", __func__);
-	if (!tdev) {
-		thp_log_info("%s: input dev null\n", __func__);
-		return -ENOMEM;
-	}
-#ifndef CONFIG_HUAWEI_THP_MTK
-	gpio_set_value(tdev->gpios->cs_gpio, GPIO_HIGH);
-	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
-#else
 	if (tdev->thp_core->support_pinctrl == 0) {
 		thp_log_info("%s: not support pinctrl\n", __func__);
-		return -EINVAL;
+		return;
 	}
 	pinctrl_select_state(tdev->thp_core->pctrl,
 		tdev->thp_core->mtk_pinctrl.cs_high);
@@ -568,9 +697,80 @@ static int touch_driver_resume(struct thp_device *tdev)
 	else
 		pinctrl_select_state(tdev->thp_core->pctrl,
 			tdev->thp_core->mtk_pinctrl.reset_high);
-#endif
 	thp_do_time_delay(tdev->timing_config.resume_reset_after_delay_ms);
+}
 
+static void touch_driver_pinctrl_suspend(struct thp_device *tdev)
+{
+	if (tdev->thp_core->support_pinctrl == 0) {
+		thp_log_info("%s: not support pinctrl\n", __func__);
+		return;
+	}
+	if (is_pt_test_mode(tdev)) {
+		thp_log_info("%s: PT sleep mode\n", __func__);
+	} else {
+		if (tdev->thp_core->reset_status_in_suspend_mode)
+			thp_log_info("%s: reset retains high\n", __func__);
+		else
+			pinctrl_select_state(tdev->thp_core->pctrl,
+				tdev->thp_core->mtk_pinctrl.reset_low);
+	}
+	pinctrl_select_state(tdev->thp_core->pctrl,
+		tdev->thp_core->mtk_pinctrl.cs_low);
+	thp_do_time_delay(tdev->timing_config.suspend_reset_after_delay_ms);
+}
+#endif
+
+static void touch_driver_power_on_tddi(struct thp_device *tdev)
+{
+	gpio_set_value(tdev->gpios->cs_gpio, GPIO_HIGH);
+	gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
+	thp_do_time_delay(tdev->timing_config.resume_reset_after_delay_ms);
+}
+
+static void touch_driver_power_off_tddi(struct thp_device *tdev)
+{
+	gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
+	gpio_set_value(tdev->gpios->cs_gpio, GPIO_LOW);
+	thp_do_time_delay(tdev->timing_config.suspend_reset_after_delay_ms);
+}
+
+static int touch_driver_resume(struct thp_device *tdev)
+{
+	unsigned int gesture_status;
+	unsigned int finger_status = !!(thp_get_status(THP_STATUS_UDFP));
+	struct thp_core_data *cd = thp_get_core_data();
+	bool no_power_off_flag;
+	bool error_flag = (!tdev) || (!tdev->thp_core);
+
+	thp_log_info("%s: called\n", __func__);
+	if (error_flag) {
+		thp_log_info("%s: input dev null\n", __func__);
+		return -ENOMEM;
+	}
+	gesture_status = tdev->thp_core->easy_wakeup_info.sleep_mode;
+	no_power_off_flag = (gesture_status == TS_GESTURE_MODE) ||
+		finger_status || cd->aod_touch_status || is_pt_test_mode(tdev);
+#ifndef CONFIG_HUAWEI_THP_MTK
+	if (no_power_off_flag) {
+		thp_log_info("%s: gesture mode in\n", __func__);
+		gpio_set_value(tdev->gpios->cs_gpio, GPIO_HIGH);
+		gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
+		msleep(1);
+		gpio_set_value(tdev->gpios->rst_gpio, GPIO_HIGH);
+	} else {
+		if (tdev->thp_core->self_control_power)
+			touch_driver_power_on(tdev);
+		else
+			touch_driver_power_on_tddi(tdev);
+	}
+#else
+	touch_driver_pinctrl_resume(tdev);
+#endif
+#if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
+	if (tdev->thp_core->use_ap_gesture)
+		ud_mode_status.lowpower_mode = 0; /* clear lowpower status */
+#endif
 	return 0;
 }
 
@@ -622,6 +822,39 @@ static void touch_driver_enter_gesture_mode(struct thp_device *tdev)
 	mutex_lock(&tdev->thp_core->thp_wrong_touch_lock);
 	tdev->thp_core->easy_wakeup_info.off_motion_on = true;
 	mutex_unlock(&tdev->thp_core->thp_wrong_touch_lock);
+}
+
+static void gesture_process_oled(struct thp_device *tdev,
+	unsigned int gesture_status, unsigned int finger_status)
+{
+	u8 reg_value = 0;
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (gesture_status == TS_GESTURE_MODE) {
+		thp_log_info("enable double click");
+		reg_value |= 1 << 1; /* bit1 set to 1 */
+	}
+	if (finger_status) {
+		thp_log_info("enable finger print");
+		reg_value |= 1 << 4; /* bit4 set to 1 */
+	}
+	if (cd->aod_touch_status) {
+		thp_log_info("enable single click");
+		reg_value |= 1 << 0; /* bit0 set to 1 */
+	}
+	thp_log_info("write to reg 0xd1 %x\n", reg_value);
+	touch_driver_write_reg(FTS_REG_GESTURE, reg_value);
+	touch_driver_enter_gesture_mode(tdev);
+}
+
+static void gesture_process_tddi(struct thp_device *tdev,
+	unsigned int gesture_status)
+{
+	if (gesture_status == TS_GESTURE_MODE &&
+		tdev->thp_core->lcd_gesture_mode_support) {
+		thp_log_info("%s: TS_GESTURE_MODE\n", __func__);
+		touch_driver_enter_gesture_mode(tdev);
+	}
 }
 
 static void parse_gesture_info(u8 *gesture_buffer)
@@ -719,47 +952,41 @@ int touch_driver_report_gesture(struct thp_device *tdev,
 
 static int touch_driver_suspend(struct thp_device *tdev)
 {
-	int pt_test_station;
-	int rst_flag = 0;
+	unsigned int gesture_status;
+	struct thp_core_data *cd = thp_get_core_data();
+	unsigned int finger_status = !!(thp_get_status(THP_STATUS_UDFP));
+	bool error_flag = (!tdev) || (!tdev->thp_core);
+	bool gesture_flag;
 
 	thp_log_info("%s: called\n", __func__);
-	if (!tdev) {
+	if (error_flag) {
 		thp_log_info("%s: input dev null\n", __func__);
 		return -ENOMEM;
 	}
-	if (tdev->thp_core->easy_wakeup_info.sleep_mode == TS_GESTURE_MODE &&
-		tdev->thp_core->lcd_gesture_mode_support) {
-		thp_log_info("%s: TS_GESTURE_MODE\n", __func__);
-		touch_driver_enter_gesture_mode(tdev);
+	gesture_status = tdev->thp_core->easy_wakeup_info.sleep_mode;
+	gesture_flag = (gesture_status == TS_GESTURE_MODE) ||
+		finger_status || cd->aod_touch_status;
+	if (gesture_flag) {
+		if (tdev->thp_core->self_control_power)
+			gesture_process_oled(tdev, gesture_status, finger_status);
+		else
+			gesture_process_tddi(tdev, gesture_status);
 		return 0;
 	}
-	pt_test_station = is_pt_test_mode(tdev);
 #ifndef CONFIG_HUAWEI_THP_MTK
-	rst_flag = pt_test_station || (tdev->thp_core->need_set_reset_gpio_high);
-	if (rst_flag)
-		thp_log_info("%s: PT sleep mode or need reset hold high\n", __func__);
-	else
-		gpio_set_value(tdev->gpios->rst_gpio, GPIO_LOW);
-	gpio_set_value(tdev->gpios->cs_gpio, GPIO_LOW);
-#else
-	if (tdev->thp_core->support_pinctrl == 0) {
-		thp_log_info("%s: not support pinctrl\n", __func__);
-		return -EINVAL;
-	}
-	if (pt_test_station) {
+	if (is_pt_test_mode(tdev)) {
 		thp_log_info("%s: PT sleep mode\n", __func__);
+	gpio_set_value(tdev->gpios->cs_gpio, GPIO_LOW);
 	} else {
-		if (tdev->thp_core->reset_status_in_suspend_mode)
-			thp_log_info("%s: reset retains high\n", __func__);
+		if (tdev->thp_core->self_control_power)
+			touch_driver_power_off(tdev);
 		else
-			pinctrl_select_state(tdev->thp_core->pctrl,
-				tdev->thp_core->mtk_pinctrl.reset_low);
+			touch_driver_power_off_tddi(tdev);
 	}
-	pinctrl_select_state(tdev->thp_core->pctrl,
-		tdev->thp_core->mtk_pinctrl.cs_low);
+#else
+	touch_driver_pinctrl_suspend(tdev);
 #endif
-	thp_do_time_delay(tdev->timing_config.suspend_reset_after_delay_ms);
-
+	thp_log_info("%s: called end\n", __func__);
 	return 0;
 }
 
@@ -812,6 +1039,147 @@ static int touch_driver_second_poweroff(void)
 	return ret;
 }
 
+#if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
+static int state_check_for_lowpower_set(struct thp_device *tdev,
+	u8 state)
+{
+	struct thp_core_data *cd = thp_get_core_data();
+
+	if (tdev == NULL) {
+		thp_log_err("%s: tdev null\n", __func__);
+		return -EINVAL;
+	}
+	if (cd->work_status != SUSPEND_DONE) {
+		thp_log_info("%s: resumed, not handle lp\n", __func__);
+		return -EINVAL;
+	}
+	if (ud_mode_status.lowpower_mode == state) {
+		thp_log_info("%s:don't repeat old status %u\n",
+			__func__, state);
+		return -EINVAL;
+	}
+		return 0;
+	}
+
+static int touch_driver_set_cmd(unsigned char *tx_buf,
+	unsigned char *rx_buf, unsigned int len)
+{
+	int ret;
+	int index;
+	for (index = 0; index < SPI_RETRY_NUMBER; index++) {
+		ret = touch_driver_spi_transfer(tx_buf, rx_buf, len);
+		if (ret < 0) {
+			thp_log_info("fts_set_lowpower_state fail");
+			msleep(1);
+			continue;
+		}
+		break;
+	}
+	return ret;
+}
+
+static int touch_driver_set_lowpower_state(struct thp_device *tdev,
+	u8 state)
+{
+	int ret;
+	unsigned char sleep_cmd[] = {0x5B, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01};
+	unsigned char r_buf[READ_LEN] = {0};
+
+	thp_log_info("%s: called state = %u\n", __func__, state);
+	if (state_check_for_lowpower_set(tdev, state))
+		return -EINVAL;
+	ret = touch_driver_set_cmd(sleep_cmd, r_buf, sizeof(sleep_cmd));
+	if (ret < 0)
+		return ret;
+	ud_mode_status.lowpower_mode = state;
+	return 0;
+}
+
+static int touch_driver_set_aod_state(struct thp_device *tdev,
+	u8 state, struct thp_aod_window window)
+{
+	return 0;
+}
+
+static int touch_driver_parse_event_info(struct thp_device *tdev,
+	const char *read_buff, struct thp_udfp_data *udfp_data)
+{
+	int index;
+	struct thp_core_data *cd = NULL;
+	u32 udfp_info_data[UDFP_INFO_SIZE] = {0};
+
+	cd = tdev->thp_core;
+	for (index = 0; index < UDFP_INFO_SIZE; index++)
+		/* Concatenate bytes based on bits. */
+		udfp_info_data[index] = (read_buff[(index * 4)] << 24) +
+		(read_buff[(index * 4) + 1] << 16) + (read_buff[(index * 4) + 2] << 8) +
+		read_buff[(index * 4) + 3];
+	udfp_data->tpud_data.udfp_event = TP_FP_EVENT_MAX;
+	udfp_data->key_event = udfp_info_data[15]; /* gesture event */
+	/* udfp_info_data[8~9] = touch coordinate */
+	udfp_data->tpud_data.tp_x = udfp_info_data[8];
+	udfp_data->tpud_data.tp_y = udfp_info_data[9];
+
+	thp_log_info("tp_x = %d, tp_y = %d",
+		udfp_data->tpud_data.tp_x, udfp_data->tpud_data.tp_y);
+		udfp_data->tpud_data.udfp_event = udfp_info_data[1]; /* finger event */
+	if (udfp_data->key_event == DOUBLE_TAP_FLAG)
+		udfp_data->key_event = TS_DOUBLE_CLICK;
+		udfp_data->aod_event = udfp_info_data[14]; /* aod event */
+	return 0;
+}
+
+static int touch_driver_get_gesture_data(unsigned char *w_buf,
+	unsigned char *r_buf)
+{
+	u32 txlen = 0;
+	int index;
+	int ret;
+
+	w_buf[txlen++] = FTS_REG_GESTURE_DATA;
+	w_buf[txlen++] = FTS_READ_CMD;
+	w_buf[txlen++] = (FTS_UDFP_DATA_LEN >> GET_HIGH_BIT) & 0xFF;
+	w_buf[txlen++] = FTS_UDFP_DATA_LEN & 0xFF;
+	txlen = SPI_DUMMY_BYTE + FTS_UDFP_DATA_LEN + ADDR_OFFSET;
+	for (index = 0; index < SPI_RETRY_NUMBER; index++) {
+		ret = touch_driver_spi_transfer(w_buf, r_buf, txlen);
+		if ((ret == 0) && ((r_buf[FTS_OFF_STS] & FTS_READ_CMD) == 0)) {
+			ret = touch_driver_check_frame_valid(r_buf +
+				SPI_DUMMY_BYTE,
+				txlen - SPI_DUMMY_BYTE - ADDR_OFFSET);
+			if (ret < 0) {
+				thp_log_err("addr:%x crc abnormal, retry:%d",
+					FTS_REG_GESTURE_DATA, index);
+				msleep(WAIT_FOR_SPI_BUS_READ_DELAY);
+				continue;
+			}
+			break;
+		}
+		thp_log_err("addr:%x status:%x, ret:%d",
+			FTS_REG_GESTURE_DATA, r_buf[FTS_OFF_STS], ret);
+		ret = -EIO;
+		msleep(WAIT_FOR_SPI_BUS_READ_DELAY);
+	}
+		return ret;
+	}
+
+static int touch_driver_get_event_info(struct thp_device *tdev,
+	struct thp_udfp_data *udfp_data)
+{
+	int ret;
+	unsigned char *gesture_data = NULL;
+	unsigned char w_buf[SPI_DUMMY_BYTE + FTS_UDFP_DATA_LEN + ADDR_OFFSET] = {0};
+	unsigned char r_buf[SPI_DUMMY_BYTE + FTS_UDFP_DATA_LEN + ADDR_OFFSET] = {0};
+
+	thp_log_info("%s enter\n", __func__);
+	ret = touch_driver_get_gesture_data(w_buf, r_buf);
+	if (ret < 0)
+		return ret;
+	gesture_data = r_buf + SPI_DUMMY_BYTE;
+	ret = touch_driver_parse_event_info(tdev, gesture_data, udfp_data);
+	return ret;
+}
+#endif
 struct thp_device_ops fts_dev_ops = {
 	.init = touch_driver_init,
 	.detect = touch_driver_chip_detect,
@@ -823,6 +1191,11 @@ struct thp_device_ops fts_dev_ops = {
 	.chip_wrong_touch = touch_driver_wrong_touch,
 	.chip_gesture_report = touch_driver_report_gesture,
 	.second_poweroff = touch_driver_second_poweroff,
+	#if (defined(CONFIG_HUAWEI_THP_MTK) || defined(CONFIG_HUAWEI_THP_QCOM))
+	.get_event_info = touch_driver_get_event_info,
+	.tp_lowpower_ctrl = touch_driver_set_lowpower_state,
+	.tp_aod_event_ctrl = touch_driver_set_aod_state,
+	#endif
 };
 
 static int __init touch_driver_module_init(void)
@@ -848,8 +1221,8 @@ static int __init touch_driver_module_init(void)
 	dev->ic_name = FOCALTECH_IC_NAME;
 	dev->ops = &fts_dev_ops;
 	if (cd && cd->fast_booting_solution) {
-		thp_log_err("%s: don't support this solution\n", __func__);
-		goto err;
+		thp_send_detect_cmd(dev, NO_SYNC_TIMEOUT);
+		return 0;
 	}
 	rc = thp_register_dev(dev);
 	if (rc) {

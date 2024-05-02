@@ -12,12 +12,15 @@
 #include <linux/err.h>
 #include <linux/highmem.h>
 #include <linux/ion.h>
+#include <linux/ktime.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/sched.h>
+#include <linux/sched/cputime.h>
+#include <linux/sysfs.h>
 #include <uapi/linux/sched/types.h>
 #include <linux/seq_file.h>
 #include <soc/qcom/secure_buffer.h>
@@ -27,8 +30,18 @@
 #include "ion_system_secure_heap.h"
 #include "ion_secure_util.h"
 
+#define DEFAULT_PREFILL_LOW_PERCENT 40UL
+#define DEFAULT_PREFILL_HIGH_PERCENT 100UL
+#define DEFAULT_ALLOC_WARN_TIME_THRESH 6000
+#define MAX_POOL_PREFILL_PERCENT 500
+#define ION_ALLOC_TIME_THRESH_4MS 4000
+#define ION_ALLOC_TIME_THRESH_6MS 6000
+#define ION_ALLOC_TIME_THRESH_8MS 8000
+#define ION_ALLOC_TIME_THRESH_11MS 11000
+#define ION_ALLOC_TIME_THRESH_16MS 16000
+#define ION_ALLOC_PAGE_THRESH 32
+
 #define MAX_WATER_MARK (SZ_1M * 400) /* 400MB */
-static int ion_msm_system_heap_count(struct ion_msm_system_heap *heap);
 
 static gfp_t high_order_gfp_flags = (GFP_HIGHUSER | __GFP_ZERO | __GFP_NOWARN |
 				     __GFP_NORETRY) & ~__GFP_RECLAIM;
@@ -40,6 +53,39 @@ IS_ENABLED(CONFIG_ION_POOL_AUTO_REFILL);
 static bool valid_vmids[VMID_LAST];
 
 static struct ion_msm_system_heap *internal_msm_system_heap;
+
+static struct ion_msm_system_heap_stats ion_alloc_stats;
+
+static int ion_msm_page_pool_page_count(struct ion_msm_page_pool **pools);
+
+static void get_global_mem_wmarks(unsigned long *low, unsigned long *min,
+				  unsigned long *num_free);
+
+static void ion_alloc_stat(struct ion_msm_system_heap_stats *stats,
+			   unsigned long long alloc_time,
+			   unsigned long from_pool_pages,
+			   unsigned long from_buddy_pages)
+{
+	atomic64_inc(&stats->alloc_total_times);
+	if (alloc_time >= ION_ALLOC_TIME_THRESH_16MS)
+		atomic64_inc(&stats->stat_greater_16ms);
+	else if (alloc_time >= ION_ALLOC_TIME_THRESH_11MS)
+		atomic64_inc(&stats->stat_11to16ms);
+	else if (alloc_time >= ION_ALLOC_TIME_THRESH_8MS)
+		atomic64_inc(&stats->stat_8to11ms);
+	else if (alloc_time >= ION_ALLOC_TIME_THRESH_6MS)
+		atomic64_inc(&stats->stat_6to8ms);
+	else if (alloc_time >= ION_ALLOC_TIME_THRESH_4MS)
+		atomic64_inc(&stats->stat_4to6ms);
+	else
+		atomic64_inc(&stats->stat_less_4ms);
+	if (from_buddy_pages <= ION_ALLOC_PAGE_THRESH)
+		atomic64_inc(&stats->alloc_from_pool_total_times);
+	else if (from_pool_pages <= ION_ALLOC_PAGE_THRESH)
+		atomic64_inc(&stats->alloc_from_buddy_total_times);
+	else
+		atomic64_inc(&stats->alloc_from_pool_and_buddy_total_times);
+}
 
 int order_to_index(unsigned int order)
 {
@@ -339,6 +385,22 @@ static int ion_msm_system_heap_allocate(struct ion_heap *heap,
 	unsigned int max_order = orders[0];
 	unsigned int sz;
 	int vmid = get_secure_vmid(buffer->flags);
+	unsigned long from_pool_pages[NUM_ORDERS] = { 0, 0, 0 };
+	unsigned long from_buddy_pages[NUM_ORDERS] = { 0, 0, 0 };
+	unsigned long long time;
+	unsigned long long run_time;
+	unsigned long long run_delay = 0;
+	unsigned long free_pages = 0;
+	unsigned long num_pages;
+	struct ion_pool_prefetch_ctrl *ctrl = NULL;
+	bool cached = ion_buffer_cached(buffer);
+
+	get_global_mem_wmarks(NULL, NULL, &free_pages);
+	time = ktime_get();
+	run_time = task_sched_runtime(current);
+#ifdef CONFIG_SCHED_INFO
+	run_delay = current->sched_info.run_delay;
+#endif
 
 	if (size / PAGE_SIZE > totalram_pages() / 2)
 		return -ENOMEM;
@@ -391,8 +453,12 @@ static int ion_msm_system_heap_allocate(struct ion_heap *heap,
 
 		if (info->from_pool) {
 			list_add_tail(&info->list, &pages_from_pool);
+			from_pool_pages[order_to_index(info->order)] +=
+				1 << (info->order);
 		} else {
 			list_add_tail(&info->list, &pages);
+			from_buddy_pages[order_to_index(info->order)] +=
+				1 << (info->order);
 			++nents_sync;
 		}
 		size_remaining -= sz;
@@ -468,6 +534,37 @@ static int ion_msm_system_heap_allocate(struct ion_heap *heap,
 	buffer->priv_virt = lock_state;
 
 	ion_prepare_sgl_for_force_dma_sync(buffer->sg_table);
+	time = ktime_us_delta(ktime_get(), time);
+	run_time = ktime_us_delta(task_sched_runtime(current), run_time);
+#ifdef CONFIG_SCHED_INFO
+	run_delay = ktime_us_delta(current->sched_info.run_delay, run_delay);
+#endif
+	if (!cached && run_time >= sys_heap->prefetch_ctrls[ION_POOL_UNCACHED]
+					   .alloc_warn_time_thresh)
+		pr_warn("%s: alloc_size %zu time_cost %lld run_time %llu delay %llu from_pool_pages [%lu %lu %lu] "
+			"from_buddy_pages [%lu %lu %lu] free-pages %lu pool_watermark %lu",
+			__func__, size, time, run_time, run_delay,
+			from_pool_pages[0], from_pool_pages[1],
+			from_pool_pages[2], from_buddy_pages[0],
+			from_buddy_pages[1], from_buddy_pages[2], free_pages,
+			sys_heap->prefetch_ctrls[ION_POOL_UNCACHED].pool_watermark);
+
+	if (!cached) {
+		ion_alloc_stat(&ion_alloc_stats, run_time,
+			       from_pool_pages[0] + from_pool_pages[1] +
+				       from_pool_pages[2],
+			       from_buddy_pages[0] + from_buddy_pages[1] +
+				       from_buddy_pages[2]);
+		num_pages = PAGE_ALIGN(size) / PAGE_SIZE;
+		ctrl = &sys_heap->prefetch_ctrls[ION_POOL_UNCACHED];
+		mutex_lock(&ctrl->pool_watermark_lock);
+		if (ctrl->pool_watermark > num_pages)
+			ctrl->pool_watermark -= num_pages;
+		else
+			ctrl->pool_watermark = 0;
+
+		mutex_unlock(&ctrl->pool_watermark_lock);
+	}
 	return 0;
 
 err_free_sg2:
@@ -563,14 +660,21 @@ static int ion_msm_system_heap_shrink(struct ion_heap *heap, gfp_t gfp_mask,
 								    j, i,
 								    nr_to_scan);
 		}
-
-		pool = sys_heap->uncached_pools[i];
-		nr_freed +=
-			ion_msm_page_pool_shrink(pool, gfp_mask, nr_to_scan);
-
-		if (sys_heap->pool_watermark <= LONG_MAX)
-			gt_wm_count = (long)ion_msm_system_heap_count(sys_heap) -
-					(long)sys_heap->pool_watermark;
+		if (sys_heap->prefetch_ctrls[ION_POOL_UNCACHED].pool_watermark <=
+		    LONG_MAX)
+			gt_wm_count = (long)ion_msm_page_pool_page_count(sys_heap->uncached_pools) -
+				(long)sys_heap->prefetch_ctrls[ION_POOL_UNCACHED].pool_watermark;
+		if (gt_wm_count > 0) {
+			pool = sys_heap->uncached_pools[i];
+			nr_freed +=
+				ion_msm_page_pool_shrink(pool, gfp_mask,
+				(nr_to_scan > gt_wm_count) ? (int)gt_wm_count : nr_to_scan);
+		}
+		gt_wm_count = 0;
+		if (sys_heap->prefetch_ctrls[ION_POOL_CACHED].pool_watermark <=
+		    LONG_MAX)
+			gt_wm_count = (long)ion_msm_page_pool_page_count(sys_heap->cached_pools) -
+				(long)sys_heap->prefetch_ctrls[ION_POOL_CACHED].pool_watermark;
 		if (gt_wm_count > 0) {
 			pool = sys_heap->cached_pools[i];
 			nr_freed +=
@@ -838,12 +942,32 @@ static struct task_struct *ion_create_kworker(struct ion_msm_page_pool **pools,
 	return thread;
 }
 
-static void ion_pool_watermark_wakeup(void)
+static inline bool is_ion_pool_type_valid(enum ion_pool_type type)
 {
-	struct ion_msm_system_heap *heap = internal_msm_system_heap;
+	return (type >= ION_POOL_UNCACHED && type <= ION_POOL_CACHED);
+}
 
-	atomic_set(&heap->wait_flag, 1);
-	wake_up_interruptible(&heap->pool_watermark_wait);
+static inline struct ion_msm_page_pool** ion_msm_get_page_pools(enum ion_pool_type type)
+{
+	struct ion_msm_page_pool** pools = NULL;
+	if (!internal_msm_system_heap || !is_ion_pool_type_valid(type))
+		return NULL;
+	if (type == ION_POOL_UNCACHED)
+		pools = internal_msm_system_heap->uncached_pools;
+	else
+		pools = internal_msm_system_heap->cached_pools;
+	return pools;
+}
+
+static void ion_pool_watermark_wakeup(enum ion_pool_type type)
+{
+	struct ion_pool_prefetch_ctrl *ctrl = NULL;
+	struct ion_msm_system_heap *heap = internal_msm_system_heap;
+	if (!is_ion_pool_type_valid(type))
+		return;
+	ctrl = &heap->prefetch_ctrls[type];
+	atomic_set(&ctrl->wait_flag, 1);
+	wake_up_interruptible(&ctrl->pool_watermark_wait);
 }
 
 static int fill_pool_once(struct ion_msm_page_pool *pool)
@@ -881,42 +1005,49 @@ static void fill_pool_watermark(struct ion_msm_page_pool **pools,
 
 static int pool_watermark_kthread(void *p)
 {
-	struct ion_msm_system_heap *heap = (struct ion_msm_system_heap *)p;
+	struct ion_msm_system_heap *heap = internal_msm_system_heap;
+	struct ion_pool_prefetch_ctrl *ctrl = (struct ion_pool_prefetch_ctrl *)p;
 	int ret;
 	long nr_fill_count = 0;
+	struct ion_msm_page_pool **pools = NULL;
 
-	if (!heap)
+	if (!heap || !ctrl || !is_ion_pool_type_valid(ctrl->type))
+		return -EINVAL;
+	pools = ion_msm_get_page_pools(ctrl->type);
+	if (!pools)
 		return -EINVAL;
 
 	while (!kthread_should_stop()) {
-		ret = wait_event_interruptible(heap->pool_watermark_wait,
-						atomic_read(&heap->wait_flag));
+		ret = wait_event_interruptible(ctrl->pool_watermark_wait,
+						atomic_read(&ctrl->wait_flag));
 		if (ret)
 			continue;
 
-		atomic_set(&heap->wait_flag, 0);
-		if (heap->pool_watermark <= LONG_MAX)
-			nr_fill_count = (long)heap->pool_watermark -
-					(long)ion_msm_system_heap_count(heap);
+		atomic_set(&ctrl->wait_flag, 0);
+		if (ctrl->pool_watermark <= LONG_MAX)
+			nr_fill_count = (long)ctrl->pool_watermark -
+					(long)ion_msm_page_pool_page_count(pools);
 		if (nr_fill_count <= 0)
 			continue;
-		pr_info("pool_watermark_kthread run %lu", heap->pool_watermark);
-		mutex_lock(&heap->pool_watermark_lock);
-		fill_pool_watermark(heap->cached_pools, nr_fill_count);
-		mutex_unlock(&heap->pool_watermark_lock);
+		pr_info("pool_watermark_kthread run %s %lu %lu start",
+			ctrl->type == ION_POOL_UNCACHED ? "uncached" : "cached", ctrl->pool_watermark, nr_fill_count);
+		fill_pool_watermark(pools, nr_fill_count);
+		pr_info("pool_watermark_kthread run %s end",
+			ctrl->type == ION_POOL_UNCACHED ? "uncached" : "cached");
 	}
 
 	return 0;
 }
 
-static int ion_msm_system_heap_count(struct ion_msm_system_heap *heap)
+static int ion_msm_page_pool_page_count(struct ion_msm_page_pool **pools)
 {
 	struct ion_msm_page_pool *pool = NULL;
 	int nr_pool_total = 0;
 	int i;
-
+	if (!pools)
+		return 0;
 	for (i = 0; i < NUM_ORDERS; i++) {
-		pool = heap->cached_pools[i];
+		pool = pools[i];
 		nr_pool_total += ion_msm_page_pool_total(pool, false);
 	}
 
@@ -924,14 +1055,18 @@ static int ion_msm_system_heap_count(struct ion_msm_system_heap *heap)
 }
 
 static bool pool_watermark_check(struct ion_msm_system_heap *heap,
-				     unsigned long nr_watermark)
+					unsigned long nr_watermark, enum ion_pool_type type)
 {
 	unsigned long nr_pool_count = 0;
+	struct ion_msm_page_pool **pools = NULL;
 
 	if (!nr_watermark)
 		return false;
+	pools = ion_msm_get_page_pools(type);
+	if (!pools)
+		return false;
 
-	nr_pool_count = (unsigned long)ion_msm_system_heap_count(heap);
+	nr_pool_count = (unsigned long)ion_msm_page_pool_page_count(pools);
 
 	if (nr_pool_count >= nr_watermark)
 		return false;
@@ -939,28 +1074,32 @@ static bool pool_watermark_check(struct ion_msm_system_heap *heap,
 	return true;
 }
 
-void set_ion_watermark(unsigned long watermark)
+void set_ion_watermark(enum ion_pool_type type, unsigned long watermark)
 {
 	unsigned long nr_watermark = watermark / PAGE_SIZE;
 	bool pool_wakeup = true;
 	struct ion_msm_system_heap *heap = internal_msm_system_heap;
+	struct ion_pool_prefetch_ctrl *ctrl = NULL;
 
-	if (!wq_has_sleeper(&heap->pool_watermark_wait))
+	if (!is_ion_pool_type_valid(type))
+		return;
+	ctrl = &heap->prefetch_ctrls[type];
+
+	if (!wq_has_sleeper(&ctrl->pool_watermark_wait))
 		goto drain_pages;
 
-	pool_wakeup = pool_watermark_check(heap, nr_watermark);
-	mutex_lock(&heap->pool_watermark_lock);
+	pool_wakeup = pool_watermark_check(heap, nr_watermark, type);
 
-	if (!nr_watermark || heap->pool_watermark < nr_watermark)
-		heap->pool_watermark = nr_watermark;
-	mutex_unlock(&heap->pool_watermark_lock);
+	mutex_lock(&ctrl->pool_watermark_lock);
+	if (!nr_watermark || ctrl->pool_watermark < nr_watermark)
+		ctrl->pool_watermark = nr_watermark;
+	mutex_unlock(&ctrl->pool_watermark_lock);
 
 	if (pool_wakeup)
-		ion_pool_watermark_wakeup();
+		ion_pool_watermark_wakeup(type);
 
 drain_pages:
-
-	if (!nr_watermark)
+	if (!nr_watermark && type == ION_POOL_CACHED)
 		ion_heap_freelist_drain(&heap->heap.ion_heap, 0);
 }
 
@@ -979,21 +1118,323 @@ static ssize_t system_watermark_store(struct kobject *kobj,
 		val = MAX_WATER_MARK;
 
 	pr_info("%s :%lu", __func__, val);
-	set_ion_watermark(val);
+	set_ion_watermark(ION_POOL_CACHED, val);
 
 	return size;
 }
 
 static struct kobj_attribute system_watermark = __ATTR_WO(system_watermark);
 
+static void get_global_mem_wmarks(unsigned long *low, unsigned long *min,
+				  unsigned long *free_pages)
+{
+	struct zonelist *zonelist;
+	struct zoneref *z;
+	struct zone *zone;
+	unsigned long wmark_low = 0;
+	unsigned long wmark_min = 0;
+	unsigned long num_free = 0;
+	enum zone_type classzone_idx = gfp_zone(low_order_gfp_flags);
+	zonelist = node_zonelist(numa_node_id(), low_order_gfp_flags);
+
+	for_each_zone_zonelist (zone, z, zonelist, classzone_idx) {
+		wmark_low += low_wmark_pages(zone);
+		wmark_min += min_wmark_pages(zone);
+		num_free += zone_page_state(zone, NR_FREE_PAGES);
+	}
+
+	if (low)
+		*low = wmark_low;
+
+	if (min)
+		*min = wmark_min;
+
+	if (free_pages)
+		*free_pages = num_free;
+}
+
+static bool get_config_watermark(enum ion_pool_type type,
+				 unsigned long *min_wmark,
+				 unsigned long *low_wmark,
+				 unsigned long *free_pages)
+{
+	unsigned long num_min = 0;
+	unsigned long num_low = 0;
+	unsigned long num_free = 0;
+	unsigned long low_percent;
+	unsigned long high_percent;
+	struct ion_pool_prefetch_ctrl *ctrl = NULL;
+	if (!internal_msm_system_heap || !is_ion_pool_type_valid(type))
+		return false;
+	ctrl = &internal_msm_system_heap->prefetch_ctrls[type];
+	low_percent = ctrl->prefill_low_percent;
+	high_percent = ctrl->prefill_high_percent;
+	get_global_mem_wmarks(&num_min, &num_low, &num_free);
+	pr_info("ion_msm_heap mem-info %s: %lu %lu %lu", __func__, num_min,
+		num_low, num_free);
+	if (num_min >= num_low || low_percent > high_percent)
+		return false;
+	if (min_wmark)
+		*min_wmark =
+			num_min + ((num_low - num_min) * low_percent) / 100;
+	if (low_wmark)
+		*low_wmark =
+			num_min + ((num_low - num_min) * high_percent) / 100;
+	if (free_pages)
+		*free_pages = num_free;
+	return true;
+}
+
+static unsigned long
+adjust_dynamic_system_pool_watermark(unsigned long nr_watermark,
+				     enum ion_pool_type type)
+{
+	unsigned long min_wmark = 0;
+	unsigned long low_wmark = 0;
+	unsigned long num_free = 0;
+	unsigned long pages_in_pool;
+	unsigned long max_to_fill;
+	struct ion_msm_page_pool **pools = NULL;
+
+	if (!is_ion_pool_type_valid(type))
+		return nr_watermark;
+	pools = ion_msm_get_page_pools(type);
+	if (!pools)
+		return nr_watermark;
+	pages_in_pool = ion_msm_page_pool_page_count(pools);
+	pr_info("ion_msm_heap mem-info %s pages-pool: %lu", __func__,
+		pages_in_pool);
+	if (pages_in_pool >= nr_watermark)
+		return nr_watermark;
+	if (!get_config_watermark(type, &min_wmark, &low_wmark, &num_free))
+		return nr_watermark;
+
+	if (num_free <= low_wmark)
+		return pages_in_pool;
+
+	max_to_fill = num_free - min_wmark;
+	if (max_to_fill <= nr_watermark - pages_in_pool)
+		nr_watermark = pages_in_pool + max_to_fill;
+
+	return nr_watermark;
+}
+
+static ssize_t
+sys_pool_dynamic_watermark_bytes_show(struct kobject *kobj,
+				      struct kobj_attribute *attr, char *buf)
+{
+	u64 nr_pages = 0;
+	if (internal_msm_system_heap)
+		nr_pages = (u64)(internal_msm_system_heap
+					 ->prefetch_ctrls[ION_POOL_UNCACHED]
+					 .pool_watermark);
+	return sprintf(buf, "%llu\n", nr_pages << PAGE_SHIFT);
+}
+
+static ssize_t
+sys_pool_dynamic_watermark_bytes_store(struct kobject *kobj,
+				       struct kobj_attribute *attr,
+				       const char *buf, size_t size)
+{
+	unsigned long val = 0;
+	int ret = 0;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+	if (!internal_msm_system_heap)
+		return ret;
+
+	if (val > MAX_WATER_MARK)
+		val = MAX_WATER_MARK;
+
+	val = adjust_dynamic_system_pool_watermark(val, ION_POOL_UNCACHED);
+	pr_info("ion_msm_heap %s: %lu", __func__, val);
+	set_ion_watermark(ION_POOL_UNCACHED, val);
+
+	return size;
+}
+static struct kobj_attribute sys_pool_dynamic_watermark_bytes =
+	__ATTR_RW(sys_pool_dynamic_watermark_bytes);
+
+static ssize_t sys_pool_prefill_low_percent_store(struct kobject *kobj,
+						  struct kobj_attribute *attr,
+						  const char *buf, size_t size)
+{
+	unsigned long val = 0;
+	int ret = 0;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > MAX_POOL_PREFILL_PERCENT)
+		val = MAX_POOL_PREFILL_PERCENT;
+	if (internal_msm_system_heap)
+		internal_msm_system_heap->prefetch_ctrls[ION_POOL_UNCACHED]
+			.prefill_low_percent = val;
+	pr_info("ion_msm_heap %s: new prefill_low_percent %lu", __func__, val);
+
+	return size;
+}
+
+static ssize_t sys_pool_prefill_low_percent_show(struct kobject *kobj,
+						 struct kobj_attribute *attr,
+						 char *buf)
+{
+	unsigned long val = 0;
+	if (internal_msm_system_heap)
+		val = internal_msm_system_heap
+			      ->prefetch_ctrls[ION_POOL_UNCACHED]
+			      .prefill_low_percent = val;
+	return sprintf(buf, "%lu\n", val);
+}
+
+static struct kobj_attribute sys_pool_prefill_low_percent =
+	__ATTR_RW(sys_pool_prefill_low_percent);
+
+static ssize_t sys_pool_prefill_high_percent_store(struct kobject *kobj,
+						   struct kobj_attribute *attr,
+						   const char *buf, size_t size)
+{
+	unsigned long val = 0;
+	int ret = 0;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > MAX_POOL_PREFILL_PERCENT)
+		val = MAX_POOL_PREFILL_PERCENT;
+	if (internal_msm_system_heap)
+		internal_msm_system_heap->prefetch_ctrls[ION_POOL_UNCACHED]
+			.prefill_high_percent = val;
+	pr_info("dma_heap %s: new prefill_high_percent %lu", __func__, val);
+
+	return size;
+}
+
+static ssize_t sys_pool_prefill_high_percent_show(struct kobject *kobj,
+						  struct kobj_attribute *attr,
+						  char *buf)
+{
+	unsigned long val = 0;
+	if (internal_msm_system_heap)
+		val = internal_msm_system_heap
+			      ->prefetch_ctrls[ION_POOL_UNCACHED]
+			      .prefill_high_percent;
+	return sprintf(buf, "%lu\n", val);
+}
+
+static struct kobj_attribute sys_pool_prefill_high_percent =
+	__ATTR_RW(sys_pool_prefill_high_percent);
+
+static ssize_t
+sys_heap_alloc_warn_time_thresh_store(struct kobject *kobj,
+				      struct kobj_attribute *attr,
+				      const char *buf, size_t size)
+{
+	unsigned long val = 0;
+	int ret = 0;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
+	if (internal_msm_system_heap)
+		internal_msm_system_heap->prefetch_ctrls[ION_POOL_UNCACHED]
+			.alloc_warn_time_thresh = val;
+	pr_info("dma_heap %s: new alloc_warn_time_thresh %lu", __func__, val);
+
+	return size;
+}
+
+static ssize_t sys_heap_alloc_warn_time_thresh_show(struct kobject *kobj,
+						    struct kobj_attribute *attr,
+						    char *buf)
+{
+	unsigned long val = 0;
+	if (internal_msm_system_heap)
+		val = internal_msm_system_heap
+			      ->prefetch_ctrls[ION_POOL_UNCACHED]
+			      .alloc_warn_time_thresh;
+	return sprintf(buf, "%lu\n", val);
+}
+
+static struct kobj_attribute sys_heap_alloc_warn_time_thresh =
+	__ATTR_RW(sys_heap_alloc_warn_time_thresh);
+
+static ssize_t sys_heap_alloc_stats_show(struct kobject *kobj,
+					 struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(
+		buf, "%llu %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
+		atomic64_read(&ion_alloc_stats.alloc_total_times),
+		atomic64_read(&ion_alloc_stats.alloc_from_pool_total_times),
+		atomic64_read(&ion_alloc_stats.alloc_from_buddy_total_times),
+		atomic64_read(&ion_alloc_stats.alloc_from_pool_and_buddy_total_times),
+		atomic64_read(&ion_alloc_stats.stat_less_4ms),
+		atomic64_read(&ion_alloc_stats.stat_4to6ms),
+		atomic64_read(&ion_alloc_stats.stat_6to8ms),
+		atomic64_read(&ion_alloc_stats.stat_8to11ms),
+		atomic64_read(&ion_alloc_stats.stat_11to16ms),
+		atomic64_read(&ion_alloc_stats.stat_greater_16ms));
+}
+
+static struct kobj_attribute sys_heap_alloc_stats =
+	__ATTR_RO(sys_heap_alloc_stats);
+
 static struct attribute *system_watermark_attrs[] = {
 	&system_watermark.attr,
+	&sys_pool_dynamic_watermark_bytes.attr,
+	&sys_pool_prefill_low_percent.attr,
+	&sys_pool_prefill_high_percent.attr,
+	&sys_heap_alloc_warn_time_thresh.attr,
+	&sys_heap_alloc_stats.attr,
 	NULL,
 };
 
 static const struct attribute_group system_watermark_group = {
 	.attrs = system_watermark_attrs,
 };
+
+static int
+ion_msm_system_heap_create_prefetch_thread(struct ion_pool_prefetch_ctrl *ctrl,
+					   enum ion_pool_type type)
+{
+	if (!ctrl || !is_ion_pool_type_valid(type))
+		return -1;
+
+	atomic_set(&ctrl->wait_flag, 0);
+	ctrl->type = type;
+	ctrl->pool_watermark = 0;
+	ctrl->prefill_low_percent = DEFAULT_PREFILL_LOW_PERCENT;
+	ctrl->prefill_high_percent = DEFAULT_PREFILL_HIGH_PERCENT;
+	ctrl->alloc_warn_time_thresh = DEFAULT_ALLOC_WARN_TIME_THRESH;
+
+	init_waitqueue_head(&ctrl->pool_watermark_wait);
+	mutex_init(&ctrl->pool_watermark_lock);
+	ctrl->pool_watermark_kthread =
+		kthread_run(pool_watermark_kthread, ctrl,
+			    ctrl->type == ION_POOL_CACHED ?
+				    "sysmtem_watermark" :
+					  "system_uncached_watermark");
+	if (IS_ERR(ctrl->pool_watermark_kthread)) {
+		pr_err("%s: kthread_create failed!\n", __func__);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void
+ion_msm_system_heap_destroy_prefetch_thread(struct ion_pool_prefetch_ctrl *ctrl)
+{
+	if (!IS_ERR_OR_NULL(ctrl->pool_watermark_kthread)) {
+		kthread_stop(ctrl->pool_watermark_kthread);
+		ctrl->type = ION_MAX_NUM_POOLS;
+		ctrl->pool_watermark_kthread = NULL;
+	}
+}
 
 struct ion_heap *ion_msm_system_heap_create(struct ion_platform_heap *data)
 {
@@ -1048,20 +1489,19 @@ struct ion_heap *ion_msm_system_heap_create(struct ion_platform_heap *data)
 		goto destroy_pools;
 	}
 
-	atomic_set(&heap->wait_flag, 0);
-	init_waitqueue_head(&heap->pool_watermark_wait);
-	heap->pool_watermark_kthread = kthread_run(pool_watermark_kthread, heap,
-						"sysmtem_watermark");
-	if (IS_ERR(heap->pool_watermark_kthread)) {
-		pr_err("%s: kthread_create failed!\n", __func__);
-		goto destroy_pools;
-	}
-	mutex_init(&heap->pool_watermark_lock);
-	heap->pool_watermark = 0;
-
 	internal_msm_system_heap = heap;
+	if (ion_msm_system_heap_create_prefetch_thread(
+		    &heap->prefetch_ctrls[ION_POOL_CACHED], ION_POOL_CACHED) < 0)
+		goto destroy_prefetch;
+	if (ion_msm_system_heap_create_prefetch_thread(
+		    &heap->prefetch_ctrls[ION_POOL_UNCACHED], ION_POOL_UNCACHED) < 0)
+		goto destroy_uncached_prefetch;
 
 	return &heap->heap.ion_heap;
+destroy_prefetch:
+	ion_msm_system_heap_destroy_prefetch_thread(&heap->prefetch_ctrls[ION_POOL_CACHED]);
+destroy_uncached_prefetch:
+	ion_msm_system_heap_destroy_prefetch_thread(&heap->prefetch_ctrls[ION_POOL_UNCACHED]);
 destroy_pools:
 	ion_msm_system_heap_destroy_pools(heap->cached_pools);
 destroy_uncached_pools:

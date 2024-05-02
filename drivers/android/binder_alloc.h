@@ -113,6 +113,9 @@ struct binder_alloc {
 	int pid;
 	size_t pages_high;
 	bool oneway_spam_detected;
+#ifdef CONFIG_DFX_BINDER
+	bool buffer_print_noticed;
+#endif
 };
 
 #ifdef CONFIG_ANDROID_BINDER_IPC_SELFTEST
@@ -181,6 +184,13 @@ int binder_alloc_copy_from_buffer(struct binder_alloc *alloc,
 				  struct binder_buffer *buffer,
 				  binder_size_t buffer_offset,
 				  size_t bytes);
+
+#ifdef CONFIG_DFX_BINDER
+pid_t get_noticed_tgid(void);
+bool check_buffer_print_task(void);
+void print_binder_allocated_buffer(struct binder_alloc *alloc, bool is_async);
+size_t get_buffer_size(struct binder_alloc *alloc, struct binder_buffer *buffer);
+#endif
 
 #endif /* _LINUX_BINDER_ALLOC_H */
 

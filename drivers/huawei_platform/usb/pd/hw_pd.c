@@ -82,6 +82,10 @@ struct cc_check_ops* g_cc_check_ops;
 #define WAIT_DEIAY_QUEUES                      1000 /* 1000 ms */
 #define WAIT_DEIAY_SECONDARY_IDENTIFICATION    5000 /* 5000 ms */
 
+#define PD_MISC_GET_CC_STATUS                  0xEE
+#define PD_MISC_DATA_CUT_OFF                   0xFF
+#define PD_MISC_GET_PROPERTY_VALUE             0xFFFFFFFF
+
 #ifndef HWLOG_TAG
 #define HWLOG_TAG huawei_pd
 HWLOG_REGIST();
@@ -144,9 +148,6 @@ void pd_dpm_set_typec_state(int typec_state)
 void pd_dpm_set_glink_status(void)
 {
 	struct pd_dpm_info *di = g_pd_di;
-
-	if (g_pd_glink_status)
-		return;
 
 	g_pd_glink_status = true;
 	if (!di)
@@ -285,11 +286,17 @@ void pd_dpm_cc_dynamic_protect(void)
 static void pd_dpm_sent_otg_src_type(struct pd_dpm_info *di)
 {
 	u32 otg_src[PD_OTG_SRC_TYPE_LEN];
+	int status = -EINVAL;
+	int retry_count = 0;
 
 	otg_src[PD_OTG_SRC_VCONN] = di->src_vconn;
 	otg_src[PD_OTG_SRC_VBUS] = di->src_vbus;
-	power_glink_set_property_value(POWER_GLINK_PROP_ID_SET_OTG, otg_src,
-		PD_OTG_SRC_TYPE_LEN);
+
+	do {
+		msleep(500); /* wait 500ms for adsp init done */
+		status = power_glink_set_property_value(POWER_GLINK_PROP_ID_SET_OTG, otg_src,
+			PD_OTG_SRC_TYPE_LEN);
+	} while ((status != 0) && (retry_count++ < 10)); /* max retry count is 10 */
 }
 
 static void pd_dpm_ctrl_vconn(void *data)
@@ -499,6 +506,22 @@ void pd_dpm_set_is_direct_charge_cable(int ret)
 
 static int direct_charge_cable_detect(void)
 {
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	unsigned int ret;
+	unsigned int cab_flag = 0;
+
+	hwlog_info("direct_charge_cable_detect %d\n", g_is_direct_charge_cable);
+	if (g_is_direct_charge_cable) {
+		ret = power_glink_get_property_value(POWER_GLINK_PROP_ID_SET_MISC_CMD,
+			&cab_flag, 1);
+		hwlog_info("%s get cable value is %x", __func__, cab_flag);
+		if ((cab_flag & PD_MISC_DATA_CUT_OFF) == PD_MISC_GET_CC_STATUS) {
+			hwlog_info("redetect charger cable\n");
+			g_is_direct_charge_cable = 0;
+	}
+}
+#endif
+
 	return g_is_direct_charge_cable;
 }
 #else

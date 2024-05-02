@@ -683,7 +683,7 @@ static int bq25970_get_register_head(char *buffer, int size, void *dev_data)
 		return -EPERM;
 
 	snprintf(buffer, size,
-		"dev        Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp");
+		"dev       Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp   ");
 
 	return 0;
 }
@@ -709,7 +709,7 @@ static int bq25970_value_dump(char *buffer, int size, void *dev_data)
 	bq25970_get_device_temp(&temp, dev_data);
 
 	snprintf(buffer, size,
-		"%s %-7d%-7d%-7d%-7d%-7d%-7d%-7d",
+		"%-10s%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
 		di->name, ibus, vbus, ibat, vusb, vout,
 		bq25970_get_vbat_mv(dev_data), temp);
 
@@ -1103,6 +1103,15 @@ static void bq25970_close_vbat_protection(struct bq25970_device_info *di)
 		BQ2597X_BAT_OVP_FLT_MASK_MASK, BQ2597X_BAT_OVP_FLT_MASK_SHIFT, 1);
 }
 
+static void bq25970_close_ibat_protection(struct bq25970_device_info *di)
+{
+	/* 1: disable IBAT_OCP */
+	bq25970_write_mask(di, BQ2597X_BAT_OCP_REG,
+		BQ2597X_BAT_OCP_DIS_MASK, BQ2597X_BAT_OCP_DIS_SHIFT, 1);
+	bq25970_write_mask(di, BQ2597X_FLT_MASK_REG,
+		BQ2597X_BAT_OCP_FLT_MASK_MASK, BQ2597X_BAT_OCP_FLT_MASK_SHIFT, 1);
+}
+
 static int bq25970_get_config_freq(struct bq25970_device_info *di)
 {
 	int i;
@@ -1123,12 +1132,10 @@ static int bq25970_get_config_freq(struct bq25970_device_info *di)
 	return freq;
 }
 
-static int bq25970_reg_lvc_init(struct bq25970_device_info *di)
+static int bq25970_reg_lvc_charge_mode(struct bq25970_device_info *di)
 {
-	int ret;
+	int ret = 0;
 
-	ret = bq25970_write_byte(di, BQ2597X_CONTROL_REG,
-		BQ2597X_CONTROL_REG_INIT);
 	if (di->device_id == SWITCHCAP_SC8551) {
 		ret += bq25970_write_byte(di, BQ2597X_ADC_ACCU_REG,
 			BQ2597X_ADC_ACCU_REG_INIT);
@@ -1142,7 +1149,26 @@ static int bq25970_reg_lvc_init(struct bq25970_device_info *di)
 		ret += bq25970_write_mask(di, NU2105_CHRG_MODE_REG,
 			NU2105_CHRG_MODE_MASK, NU2105_CHRG_MODE_SHIFT,
 			NU2105_CHRG_MODE_REG_LVC);
+	} else if (di->device_id == SWITCHCAP_HL7130) {
+		ret += bq25970_write_byte(di, HL7130_PMID_VOUT_UV_OV_REG,
+			HL7130_PMID_VOUT_UV_OV_INIT);
+		ret += bq25970_write_byte(di, HL7130_CONTROL2_REG,
+			HL7130_CONTROL2_INIT_LVC);
+		ret += bq25970_write_byte(di, HL7130_ADC_CTL1_REG,
+			HL7130_ADC_CTL1_INIT);
 	}
+
+	return ret;
+}
+
+static int bq25970_reg_lvc_init(struct bq25970_device_info *di)
+{
+	int ret;
+
+	ret = bq25970_write_byte(di, BQ2597X_CONTROL_REG,
+		BQ2597X_CONTROL_REG_INIT);
+
+	ret += bq25970_reg_lvc_charge_mode(di);
 
 	ret += bq25970_write_mask(di, BQ2597X_BAT_OVP_ALM_REG,
 		BQ2597X_BAT_OVP_ALM_DIS_MASK, BQ2597X_BAT_OVP_ALM_DIS_SHIFT,
@@ -1174,6 +1200,9 @@ static int bq25970_reg_lvc_init(struct bq25970_device_info *di)
 
 	if (di->close_vbat_protection)
 		bq25970_close_vbat_protection(di);
+
+	if (di->close_ibat_protection)
+		bq25970_close_ibat_protection(di);
 
 	return ret;
 }
@@ -1266,6 +1295,9 @@ static int bq25970_reg_init(struct bq25970_device_info *di)
 
 	if (di->close_vbat_protection)
 		bq25970_close_vbat_protection(di);
+
+	if (di->close_ibat_protection)
+		bq25970_close_ibat_protection(di);
 
 	return ret;
 }
@@ -1664,6 +1696,8 @@ static void bq25970_parse_dts(struct device_node *np,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"close_vbat_protection", &di->close_vbat_protection, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"close_ibat_protection", &di->close_ibat_protection, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"reset_ac_ovp", &di->reset_ac_ovp, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"mount_on_fake_i2c", &di->mount_on_fake_i2c,
@@ -1754,7 +1788,8 @@ static void bq25970_ops_register(struct bq25970_device_info *di)
 	int ret;
 
 	bq25970_init_ops_dev_data(di);
-	if ((di->device_id == SWITCHCAP_SC8551) || (di->device_id == SWITCHCAP_NU2105)) {
+	if ((di->device_id == SWITCHCAP_SC8551) || (di->device_id == SWITCHCAP_NU2105) ||
+		(di->device_id == SWITCHCAP_HL7130)) {
 		if (dc_ic_ops_register(LVC_MODE, di->ic_role, &di->lvc_ops)) {
 			hwlog_err("lvc ops register fail\n");
 			return;

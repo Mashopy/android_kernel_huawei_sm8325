@@ -611,6 +611,11 @@ void stwlc88_fw_ftp_check_work(struct work_struct *work)
 	if (!di)
 		return;
 
+	if (!power_cmdline_is_factory_mode() && stwlc88_rx_is_tx_exist(di)) {
+		hwlog_info("[mtp_check_work] tx exist\n");
+		return;
+	}
+
 	di->g_val.ftp_chk_complete = false;
 	ret = stwlc88_fw_check_ftp(di);
 	if (!ret) {

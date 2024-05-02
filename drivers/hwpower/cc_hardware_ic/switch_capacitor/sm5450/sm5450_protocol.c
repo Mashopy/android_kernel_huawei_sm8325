@@ -587,7 +587,10 @@ static int sm5450_fcp_adapter_detect(struct sm5450_device_info *di)
 	/* waiting for scp set */
 	for (i = 0; i < SM5450_SCP_DETECT_MAX_COUT; i++) {
 		ret = sm5450_read_byte(di, SM5450_SCP_STATUS_REG, &reg_val);
-		vbus_uvp = 0;
+		if (di->device_id == SWITCHCAP_SM5450)
+			vbus_uvp = sm5450_get_vbus_uvp_status(di);
+		else
+			vbus_uvp = 0;
 		hwlog_info("SM5450_SCP_STATUS_REG 0x%x\n", reg_val);
 		ret1 = sm5450_read_byte(di, SM5450_SCP_ISR1_REG, &reg_val2);
 		hwlog_info("SM5450_SCP_ISR1_REG 0x%x\n", reg_val2);

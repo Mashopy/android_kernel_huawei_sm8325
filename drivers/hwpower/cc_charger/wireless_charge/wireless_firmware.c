@@ -51,7 +51,7 @@ int wireless_fw_ops_register(struct wireless_fw_ops *ops, unsigned int ic_type)
 	list_add_tail(&ops->fw_node, &wireless_fw_list);
 	++g_total_fw;
 
-	snprintf(fw_name, WIRELESS_FW_TMP_STR_LEN - 1, "%s_%d", ops->ic_name, ic_type);
+	snprintf(fw_name, WIRELESS_FW_TMP_STR_LEN - 1, "%s_%u", ops->ic_name, ic_type);
 	power_fw_ops_register(fw_name, ops->dev_data, (power_fw_read)ops->read_fw,
 		(power_fw_write)ops->write_fw);
 

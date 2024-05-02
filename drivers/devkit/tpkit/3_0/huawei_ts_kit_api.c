@@ -1122,6 +1122,9 @@ static bool need_process_in_sleep(struct ts_cmd_node *cmd)
 	case TS_GET_CHIP_INFO:
 		is_need_process = true;
 		break;
+	case TS_HYBRID_SWITCH_CONTROL:
+		is_need_process = true;
+		break;
 	default:
 		is_need_process = false;
 		break;

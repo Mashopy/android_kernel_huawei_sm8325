@@ -66,6 +66,11 @@ struct smc_device {
 	void *private_data;
 };
 
+struct smc_feature_config {
+	u32 cpu_affinity_offset;
+	u32 cpu_affinity_mask;
+};
+
 struct smc_core_data {
 	struct spi_transfer t;
 	struct spi_message msg;
@@ -73,6 +78,7 @@ struct smc_core_data {
 	u8 rx_buff[4];
 	struct spi_device *sdev;
 	struct smc_device *smc_dev;
+	struct smc_feature_config feature_config;
 	struct device_node *smc_node;
 	struct smc_spi_config spi_config;
 	struct mutex spi_mutex;

@@ -433,6 +433,7 @@ struct sm5450_device_info {
 #define SM5450_FLAG3_ADCDONE_FLAG_SHIFT                1
 #define SM5450_FLAG3_FCAP_SCP_FLAG_MASK                BIT(0)
 #define SM5450_FLAG3_FCAP_SCP_FLAG_SHIFT               0
+#define SM5450_FLAG3_UVP_MODE                          1
 
 /* FLAG_MASK3 reg=0x10 */
 #define SM5450_FLAG_MASK3_REG                          0x10
@@ -537,5 +538,6 @@ int sm5450_config_vbuscon_ovp_ref_mv(int ovp_threshold, void *dev_data);
 int sm5450_config_vbus_ovp_ref_mv(int ovp_threshold, void *dev_data);
 int sm5450_get_vbus_mv(int *vbus, void *dev_data);
 int sm5450_is_support_fcp(void *dev_data);
+int sm5450_get_vbus_uvp_status(void *dev_data);
 
 #endif /* _SM5450_H_ */

@@ -104,6 +104,17 @@ typedef struct gpio_data {
 	struct list_head list;
 } gpio_data_t;
 
+#ifdef CONFIG_HUAWEI_DSM
+static struct dsm_dev dsm_hall = {
+	.name = "dsm_hall",
+	.device_name = "hal",
+	.ic_name = NULL,
+	.module_name = NULL,
+	.fops = NULL,
+	.buff_size = 1024, // hall dsm buf size
+};
+#endif
+
 struct hall_dev {
 	struct regulator *vdd_ldo;
 	struct pinctrl *pinctrl;
@@ -116,6 +127,9 @@ struct hall_dev {
 	unsigned int ext_hall_type;
 	unsigned int data_comp_type;
 	unsigned int ext_hall_boot_notify;
+#ifdef CONFIG_HUAWEI_DSM
+	struct dsm_client *hall_dclient;
+#endif
 };
 
 static atomic_t hall_enable_status = ATOMIC_INIT(0);
@@ -145,9 +159,12 @@ static struct hall_dev hw_hall_dev = {
 	.ext_hall_type = 0,
 	.data_comp_type = 0,
 	.ext_hall_boot_notify = 0,
+#ifdef CONFIG_HUAWEI_DSM
+	.hall_dclient = NULL,
+#endif
 };
 
-static void process_pen_irq(int value)
+static void process_pen_irq(unsigned int value)
 {
 	struct timespec64 cur_ts;
 	struct timespec64 sub_ts;
@@ -194,6 +211,9 @@ static void process_pen_irq(int value)
 			is_pen_irq_disable = true;
 		}
 		spin_unlock_irqrestore(&irq_lock, irq_flag);
+#ifdef CONFIG_HUAWEI_DSM
+		hall_report_dsm_info(hw_hall_dev.hall_dclient, true);
+#endif
 	}
 
 	AK8789_INFOMSG("sub_ts:%ld, pen_irq_cnt:%d, pen_both_on_cnt:%d, is_pen_irq_disable:%d\n",
@@ -381,8 +401,12 @@ static void hall_work_func(struct work_struct *work)
 	if (atomic_read(&hall_enable_status))
 		hall_report_value(value);
 
+#ifdef CONFIG_HUAWEI_DSM
+	hall_set_irq_info(hw_hall_dev.hall_dclient, (unsigned int)value);
+#endif
+
 	if (workaround_is_support)
-		process_pen_irq(value);
+		process_pen_irq((unsigned int)value);
 
 	usleep_range(1000, 1500);
 	if (atomic_read(&ext_hall_enable_status))
@@ -800,6 +824,13 @@ static int hall_probe(struct platform_device *pdev)
 
 	atomic_set(&hall_enable_status, AK8789_DISABLE);
 	atomic_set(&ext_hall_enable_status, AK8789_DISABLE);
+
+#ifdef CONFIG_HUAWEI_DSM
+	hw_hall_dev.hall_dclient = dsm_register_client(&dsm_hall);
+	if (!hw_hall_dev.hall_dclient) {
+		AK8789_ERRMSG("hall dsm register err\n");
+	}
+#endif
 
 	err = sysfs_create_group(&pdev->dev.kobj, &ak8789_attr_group);
 	if (err) {

@@ -57,3 +57,11 @@ config MEMCG_SKIP_RECLAIM
 	default n
 	help
 	 Allow kswapd & zswapd to skip the specified memcg when reclaiming anon memory.
+
+config HYPERHOLD_DYNAMIC_SPACE
+	bool "Hyperhold dynamic space"
+	depends on HYPERHOLD
+	default n
+	help
+	  Say Y here if you want to use interfaces
+	  provided by the storage

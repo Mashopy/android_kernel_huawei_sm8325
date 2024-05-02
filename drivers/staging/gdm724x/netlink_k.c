@@ -52,6 +52,11 @@ static void netlink_rcv_cb(struct sk_buff *skb)
 		return;
 	}
 
+	if (nlh->nlmsg_len < NLMSG_LENGTH(ND_IFINDEX_LEN)) {
+		pr_err("nl cb - invalid nlmsg_len length\n");
+		return;
+	}
+
 	memcpy(&ifindex, ND_NLMSG_IFIDX(nlh), ND_IFINDEX_LEN);
 	msg = ND_NLMSG_DATA(nlh);
 	mlen = ND_NLMSG_R_LEN(nlh);

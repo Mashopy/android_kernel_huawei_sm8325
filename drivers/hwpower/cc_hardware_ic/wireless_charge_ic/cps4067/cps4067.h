@@ -27,6 +27,7 @@
 #include <chipset_common/hwpower/wireless_charge/wireless_firmware.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_test_hw.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_tx_client.h>
+#include <huawei_platform/power/wireless/wireless_charger.h>
 #include <chipset_common/hwpower/protocol/wireless_protocol_qi.h>
 #include <chipset_common/hwpower/hardware_ic/wireless_ic_iout.h>
 #include <chipset_common/hwpower/hardware_ic/wireless_ic_fod.h>
@@ -42,6 +43,7 @@
 #include <chipset_common/hwpower/common_module/power_pinctrl.h>
 #include <chipset_common/hwpower/common_module/power_wakeup.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
+#include <chipset_common/hwpower/common_module/power_time.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/device.h>
@@ -52,10 +54,10 @@
 #define CPS4067_PINCTRL_LEN                   2
 
 /* for coil test */
-#define CPS4067_COIL_TEST_PING_INTERVAL       0
+#define CPS4067_COIL_TEST_PING_INTERVAL       1
 #define CPS4067_COIL_TEST_PING_FREQ           115
 /* for battery heating */
-#define CPS4067_BAT_HEATING_PING_INTERVAL     0
+#define CPS4067_BAT_HEATING_PING_INTERVAL     1
 #define CPS4067_BAT_HEATING_PING_FREQ         100
 
 struct cps4067_chip_info {
@@ -120,6 +122,7 @@ struct cps4067_rx_ldo_cfg {
 struct cps4067_tx_init_para {
 	u16 ping_interval;
 	u16 ping_freq;
+	u32 ocp_th;
 };
 
 struct cps4067_mtp_check_delay {
@@ -141,6 +144,7 @@ struct cps4067_dev_info {
 	struct cps4067_tx_init_para tx_init_para;
 	struct cps4067_tx_fod_para tx_fod;
 	struct cps4067_mtp_check_delay mtp_check_delay;
+	struct wakeup_source *fw_wakelock;
 	unsigned int ic_type;
 	int rx_ss_good_lth;
 	int gpio_en;
@@ -150,6 +154,7 @@ struct cps4067_dev_info {
 	int gpio_pwr_good;
 	int irq_int;
 	bool irq_active;
+	bool irq_awake;
 	int irq_cnt;
 	u32 irq_val;
 	u16 tx_ept_type;
@@ -182,6 +187,8 @@ int cps4067_get_chip_info_str(char *info_str, int len, void *dev_data);
 void cps4067_enable_irq(struct cps4067_dev_info *di);
 void cps4067_disable_irq_nosync(struct cps4067_dev_info *di);
 void cps4067_chip_enable(bool enable, void *dev_data);
+void cps4067_enable_irq_wake(struct cps4067_dev_info *di);
+void cps4067_disable_irq_wake(struct cps4067_dev_info *di);
 bool cps4067_is_chip_enable(void *dev_data);
 struct device_node *cps4067_dts_dev_node(void *dev_data);
 bool cps4067_is_pwr_good(struct cps4067_dev_info *di);
@@ -205,8 +212,8 @@ int cps4067_tx_ops_register(struct wltrx_ic_ops *ops, struct cps4067_dev_info *d
 /* cps4067 fw */
 int cps4067_fw_sram_update(void *dev_data);
 int cps4067_fw_get_mtp_ver(struct cps4067_dev_info *di, u16 *fw);
-void cps4067_fw_mtp_check_work(struct work_struct *work);
 int cps4067_fw_ops_register(struct wltrx_ic_ops *ops, struct cps4067_dev_info *di);
+void cps4067_fw_mtp_check(struct cps4067_dev_info *di);
 
 /* cps4067 qi */
 int cps4067_qi_ops_register(struct wltrx_ic_ops *ops, struct cps4067_dev_info *di);

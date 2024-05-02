@@ -52,6 +52,7 @@
 		<lcd>310-c06-6p57-qcom,                         0x09,   6001,    nth,    nth,  def     </lcd>
 		<lcd>190-c06-6p57-qcom,                         0x00,   6001,    nth,    nth,  def     </lcd>
 		<lcd>350-c00-12p6-qcom,                         0x08,   7100,    got,    got,  def     </lcd>
+		<lcd>350-h01-12p6-qcom,                         0x08,   7100,    got,    got,  def     </lcd>
 		<lcd>auo-otm3501a-5p2-1600p-video-default,      0x0A,   7100,    got,    got,  def     </lcd>
 		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   6001,    nth,    nth,  def     </lcd>
 		<lcd>190-c06-6p57-qcom,                         0x04,   6003,    nth,    nth,  def     </lcd>
@@ -84,6 +85,18 @@
 		<lcd>290-20d-10p3-qcom,                         0x05,   9000,    bah4,   bah4, def     </lcd>
 		<lcd>120-20d-10p3-qcom,                         0x08,   9000,    bah4,   bah4, def     </lcd>
 		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   9000,    bah4,   bah4, def     </lcd>
+		<lcd>310-106-1-6p78-qcom,                       0x08,   15000,   goa,    goa,  def     </lcd>
+		<lcd>190-20f-1-6p78-qcom,                       0x00,   15000,   goa,    goa,  def     </lcd>
+		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   15000,   goa,    goa,  def     </lcd>
+		<lcd>310-c06-1-6p67-qcom,                       0x00,   15001,   foa,    foa,  def     </lcd>
+		<lcd>290-f00-1-6p67-qcom,                       0x04,   15001,   foa,    foa,  def     </lcd>
+		<lcd>310-d06-6p67-qcom,                         0x05,   15001,   foa,    foa,  def     </lcd>
+		<lcd>190-c07-6p67-qcom,                         0x02,   15001,   foa,    foa,  def     </lcd>
+		<lcd>auo-otm1901a-5p2-1080p-video-default,      0x0A,   15001,   foa,    foa,  def     </lcd>
+		<lcd>290-20d-11p5-qcom,                         0x00,   9100,    dby2,   dby2, def     </lcd>
+		<lcd>190-20d-11p5-qcom,                         0x04,   9100,    dby2,   dby2, def     </lcd>
+		<lcd>290-20d-11p5-qcom,                         0x05,   9100,    dby2,   dby2, def     </lcd>
+		<lcd>Dual-nt36523-video-mode-default,           0x0A,   9100,    dby2,   dby2, def     </lcd>
 	</lcdlist>
 
 	<PanelEntry>

@@ -256,7 +256,7 @@ static int bat_bal_get_log_head(char *buffer, int size, void *dev_data)
 	if (!di || !buffer)
 		return -EPERM;
 
-	snprintf(buffer, size, " bal_cur req_cur0 req_cur1 ");
+	snprintf(buffer, size, "bal_cur  req_cur0 req_cur1 ");
 
 	return 0;
 }
@@ -268,7 +268,7 @@ static int bat_bal_dump_log_data(char *buffer, int size, void *dev_data)
 	if (!di || !buffer)
 		return -EPERM;
 
-	snprintf(buffer, size, "  %-8d%-9d%-10d ",
+	snprintf(buffer, size, "%-9d%-9d%-9d",
 		di->bal_cur, di->req_cur[BAT_MAIN], di->req_cur[BAT_AUX]);
 
 	return 0;

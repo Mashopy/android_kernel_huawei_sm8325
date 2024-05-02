@@ -381,6 +381,8 @@ static int stwlc33_irq_init(struct stwlc33_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, stwlc33_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "stwlc33_int", &di->gpio_int, &di->irq_int)) {
 		ret = -EINVAL;
@@ -395,7 +397,6 @@ static int stwlc33_irq_init(struct stwlc33_dev_info *di, struct device_node *np)
 	}
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, stwlc33_irq_work);
 
 	return 0;
 

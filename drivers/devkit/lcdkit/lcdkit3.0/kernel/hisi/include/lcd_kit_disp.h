@@ -66,7 +66,7 @@
 #define LCD_NO_NEED_ULPS 0
 
 struct lcd_kit_disp_info *lcd_kit_get_disp_info(void);
-#define disp_info lcd_kit_get_disp_info()
+#define DISP_INFO lcd_kit_get_disp_info()
 struct lcd_kit_disp_lock *lcd_kit_get_disp_lock(void);
 #define DISP_LOCK lcd_kit_get_disp_lock()
 
@@ -209,6 +209,12 @@ struct lcd_kit_disp_info {
 	struct lcd_kit_transmission transmission;
 	/* end */
 };
+
+typedef struct {
+	int feature_item;
+	int (*func_ptr)(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+		struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops);
+} lcd_kit_dis_event_handle;
 
 /*
  * variable declaration

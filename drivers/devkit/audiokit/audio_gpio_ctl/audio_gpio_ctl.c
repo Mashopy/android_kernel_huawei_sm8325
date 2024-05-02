@@ -32,8 +32,11 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/workqueue.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
+#include "huawei_platform/log/imonitor.h"
+#include "huawei_platform/log/imonitor_keys.h"
 
 #define ANAHS_EVENT_SIZE 64
+#define DMD_ID 916019302
 
 static struct audio_gpio_ctrl_priv *g_audio_gpio_priv = NULL;
 static int g_support_tdd = 0;
@@ -149,6 +152,24 @@ static int parse_dts_config(struct device_node *node, struct audio_gpio_ctrl_pri
 	return ret;
 }
 
+static void anahs_dmd_report()
+{
+	struct imonitor_eventobj *obj = NULL;
+	int ret;
+
+	obj = imonitor_create_eventobj(DMD_ID);
+	if (!obj) {
+		pr_err("%s: create eventobj is NULL\n", __func__);
+		return;
+	}
+
+	ret = imonitor_send_event(obj);
+	if (ret <= 0)
+		pr_err("%s: anahs dmd sent fail\n", __func__);
+
+	imonitor_destroy_eventobj(obj);
+}
+
 static int anahs_status_report(struct notifier_block *nb, unsigned long event, void *data)
 {
 	char kdata[ANAHS_EVENT_SIZE];
@@ -161,6 +182,7 @@ static int anahs_status_report(struct notifier_block *nb, unsigned long event, v
 	switch (event) {
 	case POWER_NE_HW_USB_HEADPHONE:
 		snprintf(kdata, sizeof(kdata), "ANAHS=INSERT");
+		anahs_dmd_report();
 		break;
 	case POWER_NE_HW_USB_HEADPHONE_OUT:
 		snprintf(kdata, sizeof(kdata), "ANAHS=REMOVE");

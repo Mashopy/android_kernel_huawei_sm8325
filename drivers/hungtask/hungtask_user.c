@@ -41,6 +41,7 @@
 
 #define CMD_MIN_LEN 3
 #define CMD_MAX_LEN 20
+#define PID_INIT 1
 #define SIG_TO_INIT 40
 #define SIG_INT_VALUE 1234
 #define USERLIST_NUM 10
@@ -113,7 +114,7 @@ static void htuser_show_task(int pid)
 	}
 
 	if (p->flags & PF_FROZEN) {
-		pr_info("process %d is frozen\n");
+		pr_info("process %d is frozen\n", pid);
 		return;
 	}
 
@@ -188,7 +189,7 @@ static void htuser_list_update(void)
 			if (userlist[i].pid == PID_INIT)
 				is_init = true;
 		}
-		if (userlist[i].cur_cnt == userlist[i].panic_cnt) {
+		if (!(userlist[i].cur_cnt % userlist[i].panic_cnt)) {
 			need_dump = true;
 			block_time = userlist[i].cur_cnt * HEARTBEAT_TIME;
 			block_pid = userlist[i].pid;
@@ -220,7 +221,7 @@ void htuser_post_process_userlist(void)
 {
 	htuser_list_update();
 	if (is_init && !is_kernel_stuck && need_dump) {
-		send_signal_to_user(SIG_TO_INIT);
+		send_signal_to_user(PID_INIT);
 		pr_err("init process blocked for long time\n");
 		if (snprintf_s(block_msg, MAX_BLOCK_MSG_LEN,
 			       MAX_BLOCK_MSG_LEN - 1,
@@ -312,9 +313,9 @@ static int htuser_list_store_on(char *tmp, size_t len, int pid)
 	if (pid == PID_INIT)
 		sec = sec * 3;
 #endif
-	if ((sec > MAX_USER_TIMEOUT) || !sec) {
-		pr_err("invalid timeout value, should be in 0-%d\n",
-		       MAX_USER_TIMEOUT);
+	if ((sec > MAX_USER_TIMEOUT) || sec < HEARTBEAT_TIME) {
+		pr_err("invalid timeout value, should be in %d-%d\n",
+		       HEARTBEAT_TIME, MAX_USER_TIMEOUT);
 		return -EINVAL;
 	}
 	if (sec % HEARTBEAT_TIME) {
@@ -340,7 +341,7 @@ ssize_t htuser_list_store(struct kobject *kobj,
 	char tmp[CMD_MAX_LEN];
 	size_t len;
 	char *p = NULL;
-	int pid = current->tgid;
+	int pid = current->pid;
 	int uid = current->cred->euid.val;
 
 	if (uid >= 10000)

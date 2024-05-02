@@ -3,6 +3,8 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/seq_file.h>
@@ -18,6 +20,7 @@
 #define WIFI_CN_CUST      0
 #define WIFI_OVS_CUST     1
 #define CMD_LINE_LENGTH   4096
+#define INVALID_WIFI_IPA_GPIO (-1)
 
 static struct proc_dir_entry *wlan_dir = NULL;
 
@@ -551,6 +554,40 @@ int hw_wlan_get_cust_ini_path(char *ini_path, size_t len)
 }
 
 EXPORT_SYMBOL(hw_wlan_get_cust_ini_path);
+
+static int get_wifi_ipa_gpio()
+{
+	int wifi_ipa_gpio;
+	struct device_node *dp = NULL;
+
+	dp = of_find_node_by_path("/huawei_wifi_info");
+	if (dp == NULL) {
+		pr_err("get_wifi_ipa_gpio:device is not available!\n");
+		return INVALID_WIFI_IPA_GPIO;
+	}
+	wifi_ipa_gpio = of_get_named_gpio(dp, "wifi,ipa_gpio", 0);
+	if (!gpio_is_valid(wifi_ipa_gpio)) {
+		pr_err("%s: fail to get wifi_ipa_gpio is %d\n", __func__, wifi_ipa_gpio);
+		return INVALID_WIFI_IPA_GPIO;
+	}
+	pr_err("wifi_ipa_gpio is %d\n", wifi_ipa_gpio);
+	return wifi_ipa_gpio;
+}
+
+void hw_wlan_set_ipa_enable(bool enable)
+{
+	int ret;
+	int wifi_ipa_gpio = get_wifi_ipa_gpio();
+	int gpio_state = enable ? GPIOF_OUT_INIT_HIGH : GPIOF_OUT_INIT_LOW;
+	if (wifi_ipa_gpio == INVALID_WIFI_IPA_GPIO) {
+		pr_err("no valid wifi ipa gpio configured\n");
+		return;
+	}
+	ret = gpio_request_one(wifi_ipa_gpio, gpio_state, NULL);
+	gpio_free(wifi_ipa_gpio);
+	pr_err("hw_wlan_set_ipa_enable ret is %d\n", ret);
+}
+EXPORT_SYMBOL(hw_wlan_set_ipa_enable);
 
 bool hw_wlan_is_driver_match(const char *driver_module_name)
 {

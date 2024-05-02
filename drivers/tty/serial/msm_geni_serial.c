@@ -28,10 +28,18 @@
 #include <uapi/linux/msm_geni_serial.h>
 #include <soc/qcom/boot_stats.h>
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#include <chipset_common/hwpower/common_module/power_dts.h>
+#include <chipset_common/hwpower/common_module/power_debug.h>
+#include <chipset_common/hwpower/common_module/power_printk.h>
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 #ifdef CONFIG_BLACKBOX
 #include <platform/linux/rainbow.h>
 #endif
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#define DEFAULT_CUST_LINE_VALUE -1
+#endif
 /* UART specific GENI registers */
 #define SE_UART_LOOPBACK_CFG		(0x22C)
 #define SE_GENI_CFG_REG80		(0x240)
@@ -276,6 +284,10 @@ static void msm_geni_serial_handle_isr(struct uart_port *uport,
 #ifdef CONFIG_DFX_RAINBOW_HIMNTN
 static bool himntn_switch;
 #endif
+
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static u32 custom_line = DEFAULT_CUST_LINE_VALUE;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 /*
  * The below API is required to check if uport->lock (spinlock)
@@ -3397,6 +3409,12 @@ static int msm_geni_serial_probe(struct platform_device *pdev)
 				line = uart_line_id++;
 			else
 				uart_line_id++;
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+			power_dts_read_u32(power_dts_tag(HWLOG_TAG), pdev->dev.of_node,
+				"custom_line", &custom_line, DEFAULT_CUST_LINE_VALUE);
+			if (custom_line != DEFAULT_CUST_LINE_VALUE)
+				line = custom_line;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 		}
 	} else {
 		line = pdev->id;

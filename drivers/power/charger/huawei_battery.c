@@ -553,6 +553,7 @@ int battery_health_handler(void)
 ***************************************************/
 #define MONITOR_CHARGING_DELAY_TIME 30000
 #define MONITOR_CHARGING_QUICKEN_DELAY_TIME 1000
+#define MONITOR_CHARGING_DELAY_3000MS 3000
 #define MONITOR_CHARGING_QUICKEN_TIMES      1
 
 #define VBAT_LOW_TH     3400000
@@ -600,7 +601,8 @@ static void battery_monitor_charging_work(struct work_struct *work)
 			direct_charge_check(info->enable_hv_charging);
 
 		if (direct_charge_get_stop_charging_complete_flag() &&
-			(charge_get_quicken_work_flag() != MONITOR_CHARGING_QUICKEN_TIMES)) {
+			(charge_get_quicken_work_flag() != MONITOR_CHARGING_QUICKEN_TIMES) &&
+			charge_fcp_enable()) {
 			pr_info("%s begin fcp check\n", __func__);
 			fcp_charge_check(info);
 		}
@@ -612,6 +614,9 @@ static void battery_monitor_charging_work(struct work_struct *work)
 	if (charge_get_quicken_work_flag() == MONITOR_CHARGING_QUICKEN_TIMES)
 		queue_delayed_work(system_power_efficient_wq, &info->monitor_charging_work,
 			msecs_to_jiffies(MONITOR_CHARGING_QUICKEN_DELAY_TIME));
+	else if (direct_charge_in_stop_charging())
+		queue_delayed_work(system_power_efficient_wq, &info->monitor_charging_work,
+			msecs_to_jiffies(MONITOR_CHARGING_DELAY_3000MS));
 	else
 		queue_delayed_work(system_power_efficient_wq, &info->monitor_charging_work,
 			msecs_to_jiffies(MONITOR_CHARGING_DELAY_TIME));

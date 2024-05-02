@@ -24,6 +24,7 @@
 #include <chipset_common/hwpower/common_module/power_common_macro.h>
 #include <chipset_common/hwpower/common_module/power_delay.h>
 #include <chipset_common/hwpower/common_module/power_dsm.h>
+#include <chipset_common/hwpower/common_module/power_interface.h>
 #include <chipset_common/hwpower/common_module/power_time.h>
 #include <chipset_common/hwpower/common_module/power_wakeup.h>
 #include <chipset_common/hwpower/common_module/power_supply_application.h>
@@ -351,7 +352,7 @@ int direct_charge_get_info(enum direct_charge_info_type type, int *value)
 	switch (type) {
 	case CC_CABLE_DETECT_OK:
 		if (l_di->cc_cable_detect_enable &&
-			l_di->cc_cable_detect_ok == 0)
+			(dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_NOK))
 			*value = 0;
 		else
 			*value = 1;
@@ -846,8 +847,13 @@ fail_open:
 
 int direct_charge_detect_adapter(void)
 {
-	unsigned int prot_type = adapter_detect_ping_protocol_type();
-	int ret = dc_select_adapter_protocol_type(prot_type);
+	unsigned int prot_type;
+	int ret;
+
+	prot_type = adapter_detect_ping_protocol_type();
+	ret = dc_select_adapter_protocol_type(prot_type);
+	if (ret != 0)
+		power_event_bnc_notify(POWER_BNT_DC, POWER_NE_DC_PING_FAIL, NULL);
 
 	hwlog_info("adapter detect: prot_type=%x ret=%d\n", prot_type, ret);
 	return ret;
@@ -944,13 +950,16 @@ static int direct_charge_redetect_adapter_by_voltage(unsigned int mode)
 unsigned int direct_charge_detect_adapter_support_mode(void)
 {
 	unsigned int adp_mode = ADAPTER_SUPPORT_UNDEFINED;
+	unsigned int adp_update_mode;
 	struct direct_charge_device *l_di = direct_charge_get_di();
 
 	if (!l_di)
 		return adp_mode;
 
 	adp_mode = dc_get_adapter_support_mode();
-	adp_mode &= dc_update_adapter_support_mode();
+	adp_update_mode = dc_update_adapter_support_mode();
+	if (adp_update_mode != ADAPTER_SUPPORT_UNDEFINED)
+		adp_mode &= adp_update_mode;
 
 	if (l_di->adaptor_detect_by_voltage)
 		return direct_charge_redetect_adapter_by_voltage(adp_mode);
@@ -993,13 +1002,10 @@ static void direct_charge_reset_para_in_stop(struct direct_charge_device *di)
 	dc_mmi_set_succ_flag(di->working_mode, DC_ERROR_ADAPTER_DETECT);
 	dc_mmi_set_test_flag(false);
 	di->dc_succ_flag = DC_ERROR;
-	di->cc_cable_detect_ok = 0;
 	di->dc_err_report_flag = FALSE;
 	di->sc_conv_ocp_count = 0;
 	di->low_temp_hysteresis = 0;
 	di->high_temp_hysteresis = 0;
-	di->cable_type = DC_UNKNOWN_CABLE;
-	di->orig_cable_type = DC_UNKNOWN_CABLE;
 	di->max_pwr = 0;
 	di->pri_inversion = false;
 	di->adp_antifake_failed_cnt = 0;
@@ -1012,8 +1018,6 @@ static void direct_charge_reset_para_in_stop(struct direct_charge_device *di)
 
 static void direct_charge_reset_para_in_exit(struct direct_charge_device *di)
 {
-	int i;
-
 	if (!di)
 		return;
 
@@ -1034,7 +1038,7 @@ static void direct_charge_reset_para_in_exit(struct direct_charge_device *di)
 	di->ls_vbus = 0;
 	di->ls_ibus = 0;
 	di->compensate_v = 0;
-	di->cc_cable_detect_ok = 0;
+	dc_clear_cable_type_info();
 	di->ibat_abnormal_cnt = 0;
 	di->max_adaptor_cur = 0;
 	di->dc_open_retry_cnt = 0;
@@ -1045,19 +1049,16 @@ static void direct_charge_reset_para_in_exit(struct direct_charge_device *di)
 	di->cc_safe = true;
 	di->low_temp_hysteresis = 0;
 	di->high_temp_hysteresis = 0;
-	di->cable_type = DC_UNKNOWN_CABLE;
-	di->orig_cable_type = DC_UNKNOWN_CABLE;
 	di->max_pwr = 0;
 	di->bat_temp_err_flag = false;
 	di->pri_inversion = false;
-	di->cable_type_send_flag = false;
+	di->cable_info.cable_type_send_flag = false;
 	di->multi_ic_check_info.limit_current = di->iin_thermal_default;
 	di->multi_ic_error_cnt = 0;
 	di->lvc_mos_dts.err_cnt = 0;
-	for (i = 0; i < DC_MODE_TOTAL; i++)
-		di->rt_test_para[i].rt_test_result = false;
 	direct_charge_set_abnormal_adp_flag(false);
 	dc_clean_eh_buf(di->dsm_buff, sizeof(di->dsm_buff));
+	power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ADAPTER_PROTOCOL, POWER_IF_SYSFS_ADAPTER_PROTOCOL, 0);
 	memset(di->multi_ic_check_info.report_info, 0,
 		sizeof(di->multi_ic_check_info.report_info));
 	memset(di->multi_ic_check_info.ibus_error_num, 0,
@@ -1445,11 +1446,11 @@ void direct_charge_select_charging_param(void)
 		l_di->dc_volt_ratio * adp_max_cur : cur_th_high;
 
 	/* step-3: get max current with cable type */
-	cable_max_cur = dc_get_cable_max_current();
+	cable_max_cur = dc_get_cable_max_current(l_di->working_mode);
 	if (l_di->cc_cable_detect_enable && cable_max_cur)
 		cur_th_high = (cur_th_high > cable_max_cur) ? cable_max_cur : cur_th_high;
 	hwlog_info("cc_cable=%d, cable_max_cur=%d, cur_th_high=%d\n",
-		l_di->cc_cable_detect_ok, cable_max_cur, cur_th_high);
+		dc_get_cable_type_info(DC_CABLE_DETECT_OK), cable_max_cur, cur_th_high);
 
 	/* step-4: get max current with specified resist */
 	path_resist = l_di->full_path_resistance;
@@ -1670,12 +1671,6 @@ static int direct_charge_get_vstep(struct direct_charge_device *di)
 	if (direct_charge_get_bat_current(&ibat))
 		return di->vstep;
 
-	/* only new adapter and not factory version support increase vstep */
-	if (!power_cmdline_is_factory_mode() &&
-		(dc_get_adapter_type() != ADAPTER_TYPE_11V6A) &&
-		(dc_get_adapter_type() != ADAPTER_TYPE_YLR_20V5A_CAR))
-		return di->vstep;
-
 	for (i = 0; i < DC_VSTEP_PARA_LEVEL; i++) {
 		if (di->vstep_para[i].curr_gap == 0)
 			break;
@@ -1686,87 +1681,50 @@ static int direct_charge_get_vstep(struct direct_charge_device *di)
 	return di->vstep;
 }
 
-static void direct_charge_set_multi_sc_result(int ibat,
-	struct direct_charge_device *di)
-{
-	unsigned int mode = di->cur_mode;
-
-	if (mode & CHARGE_IC_MAIN) {
-		if (ibat > (int)di->rt_test_para[DC_NORMAL_MODE].rt_curr_th)
-			di->rt_test_para[DC_NORMAL_MODE].rt_test_result = true;
-		if (ibat > (int)di->rt_test_para[DC_CHAN1_MODE].rt_curr_th)
-			di->rt_test_para[DC_CHAN1_MODE].rt_test_result = true;
-	}
-	if (mode & CHARGE_IC_AUX) {
-		if (ibat > (int)di->rt_test_para[DC_CHAN2_MODE].rt_curr_th)
-			di->rt_test_para[DC_CHAN2_MODE].rt_test_result = true;
-	}
-}
-
-static void direct_charge_set_rt_test_result(int ibat,
-	struct direct_charge_device *di)
-{
-	if (!di || !power_cmdline_is_factory_mode())
-		return;
-
-	if (di->multi_ic_mode_para.support_multi_ic) {
-		direct_charge_set_multi_sc_result(ibat, di);
-	} else {
-		if (ibat > (int)di->rt_test_para[DC_NORMAL_MODE].rt_curr_th)
-			di->rt_test_para[DC_NORMAL_MODE].rt_test_result = true;
-	}
-}
-
 void direct_charge_regulation(void)
 {
-	int ret;
-	int iadp = 0;
 	int iadp_set = 0;
-	int vbat;
 	int ibat = 0;
-	int vbat_th;
 	int ibat_th_high;
-	int ibat_th_low;
 	int ratio;
 	int delta_err;
 	int vstep;
+	unsigned int flag;
 	char tmp_buf[ERR_NO_STRING_SIZE] = { 0 };
 	struct direct_charge_device *l_di = direct_charge_get_di();
+	struct adapter_source_info data = { 0 };
 
 	if (!l_di)
 		return;
 
-	dc_get_adapter_current(&iadp);
+	flag = BIT(ADAPTER_OUTPUT_VOLT) | BIT(ADAPTER_OUTPUT_CURR) | BIT(ADAPTER_DEV_TEMP);
+	dc_get_adapter_source_info(flag, &data);
+	l_di->iadapt = data.output_curr;
+	l_di->vadapt = data.output_volt;
+	l_di->tadapt = data.dev_temp;
+
 	dc_get_adapter_current_set(&iadp_set);
-	dc_get_adapter_voltage(&l_di->vadapt);
-	dc_get_adapter_temp(&l_di->tadapt);
 	direct_charge_get_device_ibus(&l_di->ls_ibus);
 	direct_charge_get_device_vbus(&l_di->ls_vbus);
 	direct_charge_get_device_temp(&l_di->tls);
 	vstep = direct_charge_get_vstep(l_di);
 	direct_charge_get_bat_current(&ibat);
-
 	delta_err = direct_charge_get_device_delta_err(l_di);
-	l_di->iadapt = iadp;
-	vbat = l_di->vbat;
-	vbat_th = l_di->cur_vbat_th;
+
 	ibat_th_high = l_di->cur_ibat_th_high;
-	ibat_th_low = l_di->cur_ibat_th_low;
 
 	hwlog_info("cur_stage[%d]: vbat=%d vbat_th=%d\t"
 		"ibat=%d ibat_th_high=%d ibat_th_low=%d\t"
 		"vadp=%d iadp=%d iadp_set=%d\t"
 		"ls_vbus=%d ls_ibus=%d tadp=%d tls=%d\n",
-		l_di->cur_stage, vbat, vbat_th,
-		ibat, ibat_th_high, ibat_th_low,
-		l_di->vadapt, iadp, iadp_set,
+		l_di->cur_stage, l_di->vbat, l_di->cur_vbat_th,
+		ibat, ibat_th_high, l_di->cur_ibat_th_low,
+		l_di->vadapt, l_di->iadapt, iadp_set,
 		l_di->ls_vbus, l_di->ls_ibus, l_di->tadapt, l_di->tls);
 
-	/* record rt adapter test result when test succ */
-	direct_charge_set_rt_test_result(ibat, l_di);
-
 	/* secondary resistance check */
-	if (l_di->second_resist_check_en && l_di->cc_cable_detect_ok &&
+	if (l_di->second_resist_check_en &&
+		(dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_OK) &&
 		(l_di->second_resist_check_ok == false))
 		dc_calculate_second_path_resistance();
 
@@ -1801,8 +1759,7 @@ void direct_charge_regulation(void)
 	}
 
 	/* keep communication with device within 1 second */
-	ret = direct_charge_get_device_close_status();
-	if (ret)
+	if (direct_charge_get_device_close_status())
 		return;
 
 	ratio = l_di->dc_volt_ratio;
@@ -1813,13 +1770,13 @@ void direct_charge_regulation(void)
 
 	/* 2: cc and cv stage */
 	if (l_di->cur_stage % 2) {
-		if (vbat > vbat_th) {
-			l_di->adaptor_vset += ratio * (vbat_th - vbat);
+		if (l_di->vbat > l_di->cur_vbat_th) {
+			l_di->adaptor_vset += ratio * (l_di->cur_vbat_th - l_di->vbat);
 			dc_set_adapter_voltage(l_di->adaptor_vset);
 			return;
 		}
 
-		if (iadp > ibat_th_high / ratio) {
+		if (l_di->iadapt > ibat_th_high / ratio) {
 			l_di->adaptor_vset -= vstep;
 			dc_set_adapter_voltage(l_di->adaptor_vset);
 			return;
@@ -1845,13 +1802,13 @@ void direct_charge_regulation(void)
 			l_di->adaptor_iset = ibat_th_high / ratio;
 			dc_set_adapter_current(l_di->adaptor_iset);
 			return;
-		} else if (iadp < (ibat_th_high - delta_err) / ratio) {
+		} else if (l_di->iadapt < (ibat_th_high - delta_err) / ratio) {
 			l_di->adaptor_vset += vstep;
 			dc_set_adapter_voltage(l_di->adaptor_vset);
 			return;
 		}
 	} else {
-		if (iadp > ibat_th_high / ratio) {
+		if (l_di->iadapt > ibat_th_high / ratio) {
 			l_di->adaptor_vset -= vstep;
 			dc_set_adapter_voltage(l_di->adaptor_vset);
 			return;
@@ -1877,7 +1834,7 @@ void direct_charge_regulation(void)
 			l_di->adaptor_iset = ibat_th_high / ratio;
 			dc_set_adapter_current(l_di->adaptor_iset);
 			return;
-		} else if (iadp < (ibat_th_high - delta_err) / ratio) {
+		} else if (l_di->iadapt < (ibat_th_high - delta_err) / ratio) {
 			l_di->adaptor_vset += vstep;
 			dc_set_adapter_voltage(l_di->adaptor_vset);
 			return;
@@ -1924,7 +1881,8 @@ static bool direct_charge_mode_judge(int mode, unsigned int orientation)
 
 		if (other->sysfs_iin_thermal && l_di->sysfs_iin_thermal >= other->sysfs_iin_thermal)
 			return false;
-		if (!l_di->cc_cable_detect_ok && l_di->sysfs_iin_thermal > other->max_current_for_nonstd_cable)
+		if ((dc_get_cable_type_info(DC_CABLE_DETECT_OK) == CABLE_DETECT_NOK) &&
+			l_di->sysfs_iin_thermal > other->max_current_for_nonstd_cable)
 			return false;
 		r_cur = dc_resist_handler(mode, abs(other->full_path_resistance));
 		if (r_cur && l_di->sysfs_iin_thermal > r_cur)
@@ -2006,6 +1964,7 @@ int direct_charge_fault_notifier_call(struct notifier_block *nb,
 	unsigned long event, void *data)
 {
 	struct direct_charge_device *di = NULL;
+	int mode = direct_charge_get_working_mode();
 	unsigned int stage = direct_charge_get_stage_status();
 
 	if (!nb) {
@@ -2019,7 +1978,8 @@ int direct_charge_fault_notifier_call(struct notifier_block *nb,
 		return NOTIFY_OK;
 	}
 
-	if ((stage < DC_STAGE_SECURITY_CHECK) || (stage == DC_STAGE_CHARGE_DONE)) {
+	if ((di->working_mode != mode) ||
+		(stage < DC_STAGE_SECURITY_CHECK) || (stage == DC_STAGE_CHARGE_DONE)) {
 		hwlog_err("ignore notifier when not in direct charging\n");
 		return NOTIFY_OK;
 	}
@@ -2175,9 +2135,19 @@ static bool direct_charge_adapter_plugout_msleep_exit(void)
 	return false;
 }
 
+bool direct_charge_in_stop_charging(void)
+{
+	struct direct_charge_device *l_di = direct_charge_get_di();
+
+	if (!l_di)
+		return false;
+
+	return l_di->in_stop_charging;
+}
+
 void direct_charge_stop_charging(void)
 {
-	int i, ret;
+	int ret;
 	int vbus = 0;
 	int vbat = 0;
 	int vadp = 0;
@@ -2200,6 +2170,8 @@ void direct_charge_stop_charging(void)
 		hwlog_info("local not support direct_charge");
 		return;
 	}
+
+	l_di->in_stop_charging = true;
 
 	if (dc_get_stop_charging_flag() &&
 		l_di->hv_flag == 0) /* ignore error */
@@ -2330,6 +2302,7 @@ void direct_charge_stop_charging(void)
 	dc_close_lvc_mos_channel();
 	dc_set_stop_charging_flag(false);
 	dc_mmi_set_test_flag(false);
+	dc_clear_cable_type_info();
 	l_di->scp_stop_charging_flag_info = 0;
 	l_di->cur_stage = 0;
 	l_di->pre_stage = 0;
@@ -2352,8 +2325,7 @@ void direct_charge_stop_charging(void)
 	l_di->cur_mode = CHARGE_IC_MAIN;
 	if (l_di->multi_ic_check_info.limit_current < 0)
 		l_di->multi_ic_check_info.limit_current = l_di->iin_thermal_default;
-	for (i = 0; i < DC_MODE_TOTAL; i++)
-		l_di->rt_test_para[i].rt_test_result = false;
+	power_if_kernel_sysfs_set(POWER_IF_OP_TYPE_ADAPTER_PROTOCOL, POWER_IF_SYSFS_ADAPTER_PROTOCOL, 0);
 
 	power_event_bnc_notify(POWER_BNT_DC, POWER_NE_DC_STOP_CHARGE, NULL);
 	if (l_di->pri_inversion || direct_charge_check_switch_sc4_to_sc_mode()) {
@@ -2361,6 +2333,8 @@ void direct_charge_stop_charging(void)
 			direct_charge_set_stage_status(DC_STAGE_DEFAULT);
 		charge_request_charge_monitor();
 	}
+
+	l_di->in_stop_charging = false;
 }
 
 unsigned int huawei_get_basp_vterm_dec(void)

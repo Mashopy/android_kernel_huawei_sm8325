@@ -28,6 +28,9 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+#include <linux/semaphore.h>
+#include <linux/ioctl.h>
+#include <linux/fs.h>
 
 #define MAX_POWER_WATCHDOG_EXTEND_COUNT 8
 #define MAX_POWER_WATCHDOG_EXTEND_SIZE 64

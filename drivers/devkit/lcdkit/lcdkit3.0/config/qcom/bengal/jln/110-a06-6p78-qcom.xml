@@ -85,6 +85,8 @@
 		<PanelBlmin>18</PanelBlmin>
 		<!--bl max brightness setting-->
 		<PanelBlmax>6000</PanelBlmax>
+		<!--bl def brightness setting-->
+		<PanelBldef>6000</PanelBldef>
 		<!--bl ctrl type setting-->
 		<PanelBlIcCtrlType>0</PanelBlIcCtrlType>
 		<!--bias ctrl type setting-->

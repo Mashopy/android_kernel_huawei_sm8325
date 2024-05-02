@@ -57,8 +57,10 @@ static int rt9758_write_byte(struct rt9758_dev_info *di, u8 reg, u8 data)
 	}
 
 	for (i = 0; i < CP_I2C_RETRY_CNT; i++) {
-		if (!power_i2c_u8_write_byte(di->client, reg, data))
+		if (!power_i2c_u8_write_byte(di->client, reg, data)) {
+			power_usleep(DT_USLEEP_10MS);
 			return 0;
+		}
 		power_usleep(DT_USLEEP_10MS);
 	}
 
@@ -164,9 +166,17 @@ static int rt9758_reverse_cp_chip_init(void *dev_data)
 	ret = rt9758_write_byte(dev_data, RT9758_CTRL1_REG, RT9758_CTRL1_VOUT_OV_FWD_VAL);
 	ret += rt9758_write_byte(dev_data, RT9758_CTRL2_REG, RT9758_CTRL2_VBUS_OVP_VAL);
 	ret += rt9758_write_byte(dev_data, RT9758_CTRL3_REG, RT9758_CTRL3_WRX_IRE_OCP_VAL);
-	ret += rt9758_write_byte(dev_data, RT9758_CTRL6_REG, RT9758_CTRL6_MODE_REV_CP_VAL);
+	ret += rt9758_write_mask(dev_data, RT9758_CTRL6_REG, RT9758_CTRL6_MOD_CHG_EN_MASK,
+		RT9758_CTRL6_MOD_CHG_EN_SHIFT, RT9758_CTRL6_MOD_CHG_EN_DIS);
+	ret += rt9758_write_mask(dev_data, RT9758_CTRL6_REG, RT9758_CTRL6_MODE_BPCP_MASK,
+		RT9758_CTRL6_MODE_BPCP_SHIFT, RT9758_CTRL6_MODE_CP_EN);
+	ret += rt9758_write_mask(dev_data, RT9758_CTRL6_REG, RT9758_CTRL6_MODE_DIRECTION_MASK,
+		RT9758_CTRL6_MODE_DIRECTION_SHIFT, RT9758_CTRL6_MODE_REV_BPCP_EN);
 	ret += rt9758_write_mask(dev_data, RT9758_CTRL4_REG, RT9758_CTRL4_Q0_CONTROL_MASK,
 		RT9758_CTRL4_Q0_CONTROL_SHIFT, RT9758_CTRL4_Q0_CONTROL_EN);
+	power_usleep(DT_USLEEP_1MS);
+	ret += rt9758_write_mask(dev_data, RT9758_CTRL6_REG, RT9758_CTRL6_MOD_CHG_EN_MASK,
+		RT9758_CTRL6_MOD_CHG_EN_SHIFT, RT9758_CTRL6_MOD_CHG_EN_EN);
 
 	return ret;
 }
@@ -208,6 +218,8 @@ static int rt9758_irq_init(struct rt9758_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, rt9758_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "rt9758_int", &di->gpio_int, &di->irq_int))
 		return 0;
@@ -222,7 +234,6 @@ static int rt9758_irq_init(struct rt9758_dev_info *di, struct device_node *np)
 	}
 
 	enable_irq_wake(di->irq_int);
-	INIT_WORK(&di->irq_work, rt9758_irq_work);
 
 	return 0;
 }

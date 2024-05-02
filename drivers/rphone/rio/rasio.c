@@ -41,7 +41,9 @@ static struct fault_ops fault_ops_array[] = {
 struct fault_queue_disk {
 	int res;
 	struct gendisk *gendisk;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 	make_request_fn *make_request_fn;
+#endif
 };
 
 /*fault impl*/
@@ -82,7 +84,7 @@ static int fault_restore(struct fault_impl *fault)
 	struct request_queue *q = NULL;
 
 	/*delay must restore gendisk queue request_fn*/
-	if (fault->type <= FAULT_W_DELAY || fault->type >= FAULT_R_DELAY) {
+	if (fault->type <= FAULT_W_DELAY && fault->type >= FAULT_R_DELAY) {
 		for (i = 0;
 			i < ARRAY_SIZE(fault_injected.arr_queue_disk); i++) {
 			if (!fault_injected.arr_queue_disk[i].gendisk)
@@ -97,10 +99,12 @@ static int fault_restore(struct fault_impl *fault)
 				continue;
 
 			q = fault_injected.arr_queue_disk[i].gendisk->queue;
-			q->make_request_fn =
-			    fault_injected.arr_queue_disk[i].make_request_fn;
 			fault_injected.arr_queue_disk[i].gendisk = NULL;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+			q->make_request_fn =
+				fault_injected.arr_queue_disk[i].make_request_fn;
 			fault_injected.arr_queue_disk[i].make_request_fn = NULL;
+#endif
 		}
 	}
 	memset(fault, 0, sizeof(struct fault_impl));
@@ -225,8 +229,10 @@ static struct fault_impl *args2fault(int args, char *argv[])
 				fault_cur = &fault_injected.impl[i];
 				fault_args.queue_disk.gendisk =
 				    fault_cur->queue_disk.gendisk;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 				fault_args.queue_disk.make_request_fn =
 				    fault_cur->queue_disk.make_request_fn;
+#endif
 			} else {
 				fault_cur = NULL;
 				break;
@@ -396,6 +402,8 @@ static int rasprobe_handler(generic_make_request_checks) (struct
 		return 0;
 	return 0;
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
 void rasio_make_request_fn(struct request_queue *q, struct bio *bio)
 #else
@@ -461,6 +469,7 @@ ret_err:
 	return -EIO;
 #endif
 }
+#endif
 
 int rasio_delay(struct fault_impl *fault)
 {
@@ -483,8 +492,10 @@ int rasio_delay(struct fault_impl *fault)
 			fault_injected.arr_queue_disk[i].res++;
 
 			fault->queue_disk.gendisk = disk;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 			fault->queue_disk.make_request_fn =
 			    fault_injected.arr_queue_disk[i].make_request_fn;
+#endif
 			n = FAULT_MAX;	/*find */
 			break;
 		}
@@ -496,11 +507,13 @@ int rasio_delay(struct fault_impl *fault)
 		fault_injected.arr_queue_disk[n].gendisk = disk;
 		q = disk->queue;
 		fault->queue_disk.gendisk = disk;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 		fault->queue_disk.make_request_fn = q->make_request_fn;
 
 		fault_injected.arr_queue_disk[n].make_request_fn =
 		    q->make_request_fn;
 		q->make_request_fn = rasio_make_request_fn;
+#endif
 		fault_injected.arr_queue_disk[n].res = 1;
 	}
 	write_unlock(&fault_injected.rwk);
@@ -626,3 +639,6 @@ module_exit(tool_exit);
 MODULE_DESCRIPTION("IO faults inject.");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("V001R001C151-1.0");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

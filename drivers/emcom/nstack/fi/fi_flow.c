@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2019-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2019-2023. All rights reserved.
  * Description: This module is flow table for FI
  * Author: songqiubin songqiubin@huawei.com
  * Create: 2019-09-18
@@ -632,22 +632,23 @@ void fi_ipv6_flow_init(void)
 }
 #endif
 
-static bool fi_payload_len_filter_check(__be16 payloadlen,
-	uint32_t filter_pkt_size_start, uint32_t filter_pkt_size_stop)
+bool fi_payload_len_filter_check(__be16 payloadlen,
+	uint32_t filter_size_start, uint32_t filter_size_stop)
 {
-	if (payloadlen < filter_pkt_size_start
-		|| payloadlen > filter_pkt_size_stop) {
-		fi_logd("payloadlen not match]payloadlen=%hu", payloadlen);
+	if (payloadlen < filter_size_start || payloadlen > filter_size_stop) {
+		fi_logd("payloadlen not match[%u,%u], payloadlen=%hu", filter_size_start, filter_size_stop, payloadlen);
 		return false;
 	}
 	return true;
 }
 
-static bool fi_payload_str_filter_check(struct fi_pkt_parse *pktinfo, fi_rpt_cfg *rpt_cfg)
+bool fi_payload_str_filter_check(struct fi_pkt_parse *pktinfo, fi_rpt_cfg *rpt_cfg)
 {
 	int i;
-	__be16 payloadlen = pktinfo->parse_len;
-	char *payload = pktinfo->payload;
+	bool is_udp_multi_frag = (pktinfo->msg.flow_msg.l4proto == IPPROTO_UDP && pktinfo->is_multi_frag);
+	__be16 payloadlen = is_udp_multi_frag ?
+		pktinfo->frag_payload_len : (__be16)pktinfo->parse_len;
+	char *payload = (is_udp_multi_frag ? pktinfo->frag_payload : pktinfo->payload);
 
 	/* If no filter set, default return match */
 	if (!rpt_cfg->filter_str_len[0])
@@ -720,15 +721,16 @@ static void fi_flow_raw_stat_update(struct fi_flow_node *flow, const struct fi_p
 	enum fi_dir dir)
 {
 	struct fi_flow_stat *flow_stat = &flow->flow_ctx.flow_stat;
+	bool is_udp_multi_frag = (pktinfo->msg.flow_msg.l4proto == IPPROTO_UDP && pktinfo->is_multi_frag);
 	if (!pktinfo->flow_cb.flow_identify_cfg->basic_rpt_en)
 		return;
 	if (dir == FI_DIR_UP) {
-		flow_stat->raw_up_pkt_num++;
-		flow_stat->raw_up_pkt_byte += pktinfo->msg.payloadlen;
+		flow_stat->raw_up_pkt_num += (is_udp_multi_frag ? pktinfo->raw_frag_num : 1);
+		flow_stat->raw_up_pkt_byte += pktinfo->msg.payload_len;
 		flow_stat->up_byte += pktinfo->msg.total_len;
 	} else {
-		flow_stat->raw_down_pkt_num++;
-		flow_stat->raw_down_pkt_byte += pktinfo->msg.payloadlen;
+		flow_stat->raw_down_pkt_num += (is_udp_multi_frag ? pktinfo->raw_frag_num : 1);
+		flow_stat->raw_down_pkt_byte += pktinfo->msg.payload_len;
 		flow_stat->down_byte += pktinfo->msg.total_len;
 	}
 }
@@ -751,14 +753,15 @@ static void fi_flow_stat_update(struct fi_flow_node *flow, struct fi_pkt_parse *
 	enum fi_dir dir)
 {
 	struct fi_flow_stat *flow_stat = &flow->flow_ctx.flow_stat;
+	bool is_udp_multi_frag = (pktinfo->msg.flow_msg.l4proto == IPPROTO_UDP && pktinfo->is_multi_frag);
 
 	fi_flow_stat_start(flow, dir);
 	if (dir == FI_DIR_UP) {
-		flow_stat->up_pkt_num++;
-		flow_stat->up_pkt_byte += pktinfo->msg.payloadlen;
+		flow_stat->up_pkt_num += (is_udp_multi_frag ? pktinfo->filter_frag_num : 1);
+		flow_stat->up_pkt_byte += pktinfo->msg.payload_len;
 	} else {
-		flow_stat->down_pkt_num++;
-		flow_stat->down_pkt_byte += pktinfo->msg.payloadlen;
+		flow_stat->down_pkt_num += (is_udp_multi_frag ? pktinfo->filter_frag_num : 1);
+		flow_stat->down_pkt_byte += pktinfo->msg.payload_len;
 	}
 }
 
@@ -786,27 +789,33 @@ static void fi_flow_stat_echo_delay(struct fi_flow_node *flow, struct fi_pkt_par
 static void fi_flow_stat_payload(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir)
 {
 	int ret;
-	uint32_t offset;
-	uint parse_len = pktinfo->parse_len;
-	char *payload = pktinfo->payload;
+	uint32_t stat_report_len;
+	bool is_udp_multi_frag = (pktinfo->msg.flow_msg.l4proto == IPPROTO_UDP && pktinfo->is_multi_frag);
+	uint32_t parse_len = is_udp_multi_frag ?
+		(uint32_t)pktinfo->frag_payload_len : pktinfo->parse_len;
+	char *payload = is_udp_multi_frag ?
+		pktinfo->frag_payload : pktinfo->payload;
 	struct fi_flow_stat *flow_stat = &flow->flow_ctx.flow_stat;
 	fi_flow_identify_cfg *flow_cfg = pktinfo->flow_cb.flow_identify_cfg;
 
 	if (!flow_cfg->periodic[dir].opt_enable[FI_PAYLOAD_SEGMENT_PARSE] ||
 		payload == NULL || !parse_len)
 		return;
-
 	if (flow_cfg->periodic[dir].seg_begin >= parse_len)
 		return;
-	offset = flow_cfg->periodic[dir].seg_end - flow_cfg->periodic[dir].seg_begin + 1;
+
+	stat_report_len = flow_cfg->periodic[dir].seg_end - flow_cfg->periodic[dir].seg_begin + 1;
 	if (flow_cfg->periodic[dir].seg_end >= parse_len)
-		offset = parse_len - flow_cfg->periodic[dir].seg_begin;
+		stat_report_len = min(parse_len - flow_cfg->periodic[dir].seg_begin, (uint32_t)FI_PAYLOAD_SEG_LEN);
+
 	ret = memcpy_s(flow_stat->payload_seg[dir], sizeof(flow_stat->payload_seg[dir]),
-			payload + flow_cfg->periodic[dir].seg_begin, offset);
+			payload + flow_cfg->periodic[dir].seg_begin, stat_report_len);
 	if (ret)
-		fi_loge("memcpy_s failed ret=%d, len=%u", ret, offset);
-	fi_logd("get period payload_seg len=%u, parse_len=%d begin=%u end=%u", offset,
-		parse_len, flow_cfg->periodic[dir].seg_begin, flow_cfg->periodic[dir].seg_end);
+		fi_loge("memcpy_s failed dir:%d, ret=%d, stat_report_len=%u. begin=%u, end=%u",
+			dir, ret, stat_report_len, flow_cfg->periodic[dir].seg_begin, flow_cfg->periodic[dir].seg_end);
+	fi_logd("get period payload_seg is_udp_multi_frag:%d, parse_len:%u, stat_report_len:%u. begin=%u end=%u",
+		is_udp_multi_frag, parse_len, stat_report_len,
+		flow_cfg->periodic[dir].seg_begin, flow_cfg->periodic[dir].seg_end);
 }
 
 void fi_flow_statistics_time_ctrl(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo,
@@ -825,7 +834,7 @@ void fi_flow_statistics_num_ctrl(struct fi_flow_node *flow, struct fi_pkt_parse 
 	int num;
 	fi_rpt_cfg *periodic_cfg = &pktinfo->flow_cb.flow_identify_cfg->periodic[dir];
 
-	flow->flow_ctx.periodic_ctrl[dir].pkt_num++;
+	flow->flow_ctx.periodic_ctrl[dir].pkt_num++; // GSO may have more than one pkt!
 	num = flow->flow_ctx.periodic_ctrl[dir].pkt_num;
 	if ((num >= periodic_cfg->roi_start) && (num <= periodic_cfg->roi_stop))
 		fi_flow_stat_update(flow, pktinfo, dir);
@@ -841,6 +850,7 @@ void fi_flow_statistics(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo,
 	fi_rpt_cfg *periodic_cfg = NULL;
 
 	fi_flow_stat_echo_delay(flow, pktinfo, dir);
+
 	fi_flow_raw_stat_update(flow, pktinfo, dir);
 
 	if (flow->flow_ctx.stat_stop & ((dir == FI_DIR_UP) ? FI_FLOW_PERIODIC_REPORT_STOP_UP :
@@ -857,9 +867,9 @@ void fi_flow_statistics(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo,
 	}
 
 	spin_lock_bh(&(pktinfo->flow_cb.app_info->lock));
-	periodic_cfg = &pktinfo->flow_cb.flow_identify_cfg->periodic[dir];
 
-	if (fi_payload_len_filter_check(pktinfo->msg.payloadlen,
+	periodic_cfg = &pktinfo->flow_cb.flow_identify_cfg->periodic[dir];
+	if (fi_payload_len_filter_check(pktinfo->msg.payload_len,
 			periodic_cfg->filter_pkt_size_start, periodic_cfg->filter_pkt_size_stop)
 		&& fi_payload_str_filter_check(pktinfo, periodic_cfg)) {
 		filter_pass = true;
@@ -888,7 +898,7 @@ void fi_flow_statistics(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo,
 	return;
 }
 
-static void fi_ip_stat_periodic_log(const struct fi_flow_node *node)
+static void fi_flow_stat_log(const struct fi_flow_node *node)
 {
 	if (node->flow_ctx.flow_msg.l3proto == ETH_P_IP) {
 		fi_logi("dev: %s, sk_mark:%u, SrcIP: "IPV4_FMT", SrcPort: %hu, DstIP: "IPV4_FMT", DstPort: %hu, "
@@ -919,16 +929,16 @@ static void fi_ip_stat_periodic_log(const struct fi_flow_node *node)
 	}
 }
 
-static void fi_ip_stat_periodic_log_limited(struct fi_flow_node *node)
+static void fi_flow_stat_log_limited(struct fi_flow_node *node)
 {
 	uint32_t curtime = jiffies_to_msecs(jiffies);
 	if (curtime - node->ip_flow_print_log_time >= FI_FLOW_PRINT_LOG_PERIOD) {
-		fi_ip_stat_periodic_log(node);
+		fi_flow_stat_log(node);
 		node->ip_flow_print_log_time = curtime;
 	}
 }
 
-bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir)
+bool fi_pkt_report_check(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir)
 {
 	bool enable = false;
 	bool filter_pass = false;
@@ -940,7 +950,7 @@ bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pkt
 
 	spin_lock_bh(&(pktinfo->flow_cb.app_info->lock));
 	pkt_cfg = &pktinfo->flow_cb.flow_identify_cfg->pkt[dir];
-	if (fi_payload_len_filter_check(pktinfo->msg.payloadlen,
+	if (fi_payload_len_filter_check(pktinfo->msg.payload_len,
 			pkt_cfg->filter_pkt_size_start, pkt_cfg->filter_pkt_size_stop)
 		&& fi_payload_str_filter_check(pktinfo, pkt_cfg))
 		filter_pass = true;
@@ -959,7 +969,7 @@ bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pkt
 		break;
 	case FI_RPT_NUM_CTRL:
 		if (filter_pass) {
-			flow->flow_ctx.pkt_ctrl[dir].pkt_num++;
+			flow->flow_ctx.pkt_ctrl[dir].pkt_num++; // GSO may have more than one pkt!
 			if ((flow->flow_ctx.pkt_ctrl[dir].pkt_num >= pkt_cfg->roi_start)
 				&& (flow->flow_ctx.pkt_ctrl[dir].pkt_num <= pkt_cfg->roi_stop))
 				enable = true;
@@ -977,7 +987,57 @@ bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pkt
 	return (enable && filter_pass);
 }
 
-void fi_ip_flow_periodic_report(const struct fi_flow *flow,
+static bool fi_flow_get_stats(int num, const struct fi_flow *flow,
+				struct sk_buff **pskb, struct report_local_var *local_var, char **data)
+{
+	struct fi_flow_node *node = NULL;
+	struct fi_flow_node *tmp = NULL;
+	list_for_each_entry_safe(node, tmp, &(flow->flow_table[num].list), list) {
+		if ((node->flow_ctx.stat_stop & FI_FLOW_PERIODIC_REPORT_NEED) ||
+				node->flow_cb.flow_identify_cfg->basic_rpt_en) {
+			if (node->flow_cb.flow_identify_cfg->basic_rpt_en)
+				fi_flow_get_sk_info(node);
+			if (node->flow_ctx.key_info_check_rst == FI_RPT_BLOCK &&
+				node->flow_ctx.flow_stat.sock_state < FLOW_FINISH)
+				continue;
+			if (local_var->offset >= local_var->size) {
+				/* enqueue pre skb and alloc a new skb */
+				fi_enqueue_netlink_skb(*pskb);
+				local_var->total_left -= local_var->size;
+				if (local_var->total_left <= 0) {
+					fi_logi("exceed total size]size=%u", local_var->size);
+					return false;
+				}
+				local_var->size = FI_MAX_ALIGN_SIZE;
+				*pskb = fi_get_netlink_skb(FI_PERIODIC_MSG_RPT, local_var->size, data);
+				if (*pskb == NULL) {
+					fi_loge("failed get netlink skb");
+					return false;
+				}
+				local_var->offset = 0;
+			}
+			node->flow_ctx.flow_stat.rtt = node->qos.rtt;
+			local_var->ret = memcpy_s(*data + local_var->offset, local_var->size - local_var->offset,
+				&node->flow_ctx.flow_stat, sizeof(struct fi_periodic_rpt_msg));
+			if (local_var->ret) {
+				fi_loge("memcpy_s failed]ret=%d,size=%u,offset=%u",
+					local_var->ret, local_var->size, local_var->offset);
+				kfree_skb(*pskb);
+				return false;
+			}
+			fi_flow_stat_log_limited(node);
+			local_var->ret = memset_s(&node->flow_ctx.flow_stat,
+				sizeof(struct fi_flow_stat), 0, sizeof(struct fi_flow_stat));
+			if (local_var->ret)
+				fi_loge("memset_s failed ret=%d", local_var->ret);
+			node->flow_ctx.flow_stat.up_down_diff_time = -1;
+			local_var->offset += sizeof(struct fi_periodic_rpt_msg);
+		}
+	}
+	return true;
+}
+
+void _fi_flow_stat_update_report(const struct fi_flow *flow,
 	void (*flow_lock)(uint32_t),
 	void (*flow_unlock)(uint32_t))
 {
@@ -985,8 +1045,6 @@ void fi_ip_flow_periodic_report(const struct fi_flow *flow,
 	struct report_local_var local_var = {0};
 	char *data = NULL;
 	struct sk_buff *pskb = NULL;
-	struct fi_flow_node *node = NULL;
-	struct fi_flow_node *tmp = NULL;
 
 	/*lint -e574*/
 	local_var.total_left = atomic_read(&flow->node_num) * sizeof(struct fi_periodic_rpt_msg);
@@ -1011,57 +1069,9 @@ void fi_ip_flow_periodic_report(const struct fi_flow *flow,
 		}
 
 		(*flow_lock)(i);
-		list_for_each_entry_safe(node, tmp, &(flow->flow_table[i].list), list) {
-			if ((node->flow_ctx.stat_stop & FI_FLOW_PERIODIC_REPORT_NEED) ||
-					node->flow_cb.flow_identify_cfg->basic_rpt_en) {
-				if (node->flow_cb.flow_identify_cfg->basic_rpt_en)
-					fi_flow_get_sk_info(node);
-				if (node->flow_ctx.key_info_check_rst == FI_RPT_BLOCK &&
-					node->flow_ctx.flow_stat.sock_state < FLOW_FINISH)
-					continue;
-
-				// update netlink type for mproute
-				fi_update_netlink_type((struct nlmsghdr *)(data - NLMSG_HDRLEN),
-					node->flow_cb.app_info->msg.service);
-
-				if (local_var.offset >= local_var.size) {
-					/* enqueue pre skb and alloc a new skb */
-					fi_enqueue_netlink_skb(pskb);
-
-					local_var.total_left -= local_var.size;
-					if (local_var.total_left <= 0) {
-						fi_logi("exceed total size]size=%u", local_var.size);
-						(*flow_unlock)(i);
-						return;
-					}
-					local_var.size = FI_MAX_ALIGN_SIZE;
-					pskb = fi_get_netlink_skb(FI_PERIODIC_MSG_RPT, local_var.size, &data);
-					if (pskb == NULL) {
-						fi_loge("failed get netlink skb");
-						(*flow_unlock)(i);
-						return;
-					}
-					local_var.offset = 0;
-				}
-				node->flow_ctx.flow_stat.rtt = node->qos.rtt;
-				local_var.ret = memcpy_s(data + local_var.offset, local_var.size - local_var.offset,
-					&node->flow_ctx.flow_stat, sizeof(struct fi_periodic_rpt_msg));
-				if (local_var.ret) {
-					fi_loge("memcpy_s failed]ret=%d,size=%u,offset=%u",
-						local_var.ret, local_var.size, local_var.offset);
-					kfree_skb(pskb);
-					(*flow_unlock)(i);
-					return;
-				}
-				fi_ip_stat_periodic_log_limited(node);
-				local_var.ret = memset_s(&node->flow_ctx.flow_stat,
-					sizeof(struct fi_flow_stat), 0, sizeof(struct fi_flow_stat));
-				if (local_var.ret)
-					fi_loge("memset_s failed ret=%d", local_var.ret);
-
-				node->flow_ctx.flow_stat.up_down_diff_time = -1;
-				local_var.offset += sizeof(struct fi_periodic_rpt_msg);
-			}
+		if (!fi_flow_get_stats(i, flow, &pskb, &local_var, &data)) {
+			(*flow_unlock)(i);
+			return;
 		}
 		(*flow_unlock)(i);
 	}
@@ -1078,12 +1088,12 @@ void fi_ip_flow_periodic_report(const struct fi_flow *flow,
 	}
 }
 
-void fi_flow_periodic_report(void)
+void fi_flow_stat_update_report(void)
 {
-	fi_ip_flow_periodic_report(&g_fi_ipv4_flow,
+	_fi_flow_stat_update_report(&g_fi_ipv4_flow,
 		fi_ipv4_flow_lock, fi_ipv4_flow_unlock);
 #if IS_ENABLED(CONFIG_IPV6)
-	fi_ip_flow_periodic_report(&g_fi_ipv6_flow,
+	_fi_flow_stat_update_report(&g_fi_ipv6_flow,
 		fi_ipv6_flow_lock, fi_ipv6_flow_unlock);
 #endif
 }
@@ -1097,17 +1107,16 @@ void fi_flow_qos_msg_log(struct fi_flow_node *node)
 			ipv4_info(node->flow_ctx.flow_msg.ipv4_dip), node->flow_ctx.flow_msg.dport,
 			node->uid, node->flow_ctx.flow_msg.dev, node->qos.rtt, node->qos.bw_est,
 			node->qos.rcv_bytes, node->file_size.size, node->flow_ctx.up_pkt_num);
-	}
 #if IS_ENABLED(CONFIG_IPV6)
-	else {
+	} else {
 		fi_logi("Periodic qos report. SrcIP: "IPV6_FMT", SrcPort: %hu, DstIP: "IPV6_FMT", DstPort: %hu, "
 			"uid: %u, dev %s, rtt: %u, bw: %u, rcv_bytes: %u, file_size %u up_pkt_num %d",
 			ipv6_info(node->flow_ctx.flow_msg.ipv6_sip), node->flow_ctx.flow_msg.sport,
 			ipv6_info(node->flow_ctx.flow_msg.ipv6_dip), node->flow_ctx.flow_msg.dport,
 			node->uid, node->flow_ctx.flow_msg.dev, node->qos.rtt, node->qos.bw_est,
 			node->qos.rcv_bytes, node->file_size.size, node->flow_ctx.up_pkt_num);
-	}
 #endif
+	}
 }
 
 void fi_flow_qos_msg_log_limited(struct fi_flow_node * node)
@@ -1119,7 +1128,8 @@ void fi_flow_qos_msg_log_limited(struct fi_flow_node * node)
 	}
 }
 
-int fi_flow_qos_msg(const struct fi_flow_head *head, struct sk_buff **pskb, char **data, uint32_t *offset, uint32_t *size)
+int fi_flow_qos_msg_update(const struct fi_flow_head *head, struct sk_buff **pskb,
+	char **data, uint32_t *offset, uint32_t *size)
 {
 	int ret;
 	struct fi_flow_node *node = NULL;
@@ -1171,7 +1181,7 @@ int fi_flow_qos_msg(const struct fi_flow_head *head, struct sk_buff **pskb, char
 	return 0;
 }
 
-void fi_ip_flow_qos_report(const struct fi_flow *flow,
+void _fi_flow_qos_update_report(const struct fi_flow *flow,
 	void (*flow_lock)(uint32_t),
 	void (*flow_unlock)(uint32_t))
 {
@@ -1196,7 +1206,7 @@ void fi_ip_flow_qos_report(const struct fi_flow *flow,
 			continue;
 		}
 		(*flow_lock)(i);
-		if (fi_flow_qos_msg(head, &pskb, &data, &offset, &size) != 0) {
+		if (fi_flow_qos_msg_update(head, &pskb, &data, &offset, &size) != 0) {
 			(*flow_unlock)(i);
 			return;
 		}
@@ -1217,12 +1227,12 @@ void fi_ip_flow_qos_report(const struct fi_flow *flow,
 	return;
 }
 
-void fi_flow_qos_report(void)
+void fi_flow_qos_update_report(void)
 {
-	fi_ip_flow_qos_report(&g_fi_ipv4_flow,
+	_fi_flow_qos_update_report(&g_fi_ipv4_flow,
 		fi_ipv4_flow_lock, fi_ipv4_flow_unlock);
 #if IS_ENABLED(CONFIG_IPV6)
-	fi_ip_flow_qos_report(&g_fi_ipv6_flow,
+	_fi_flow_qos_update_report(&g_fi_ipv6_flow,
 		fi_ipv6_flow_lock, fi_ipv6_flow_unlock);
 #endif
 }

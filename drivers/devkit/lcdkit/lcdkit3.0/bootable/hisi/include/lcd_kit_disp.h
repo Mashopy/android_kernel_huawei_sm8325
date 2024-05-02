@@ -40,7 +40,7 @@ extern struct fdt_operators *lcd_fdt_ops;
 
 int lcd_kit_get_elvss_info(struct hisi_fb_data_type *hisifd);
 struct lcd_kit_disp_desc *lcd_kit_get_disp_info(void);
-#define disp_info	lcd_kit_get_disp_info()
+#define DISP_INFO lcd_kit_get_disp_info()
 
 enum lcd_gpio_type {
 	NORMAL_GPIO_TYPE,

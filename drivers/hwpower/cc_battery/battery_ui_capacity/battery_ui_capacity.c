@@ -48,6 +48,16 @@ static const struct bat_ui_vbat_para g_bat_ui_fake_vbat_level[] = {
 	{ 4250,  85 },
 };
 
+static int bat_ui_capacity_filter(int soc)
+{
+	if (soc < BUC_CAPACITY_EMPTY)
+		return BUC_CAPACITY_EMPTY;
+	else if (soc > BUC_CAPACITY_FULL)
+		return BUC_CAPACITY_FULL;
+	else
+		return soc;
+}
+
 int bat_ui_capacity(void)
 {
 	struct bat_ui_capacity_device *di = g_bat_ui_capacity_dev;
@@ -172,6 +182,7 @@ void bat_ui_capacity_sync_filter(int rep_soc, int round_soc, int base)
 	/* step1: reset capacity fifo */
 	bat_ui_capacity_reset_capacity_fifo(di, round_soc);
 	new_soc = (rep_soc * di->filter_len / base) - round_soc * (di->filter_len - 1);
+	new_soc = bat_ui_capacity_filter(new_soc);
 	bat_ui_capacity_pulling_filter(di, new_soc);
 
 	hwlog_info("sync filter prev_soc=%d,new_soc=%d,round_soc=%d\n",
@@ -553,6 +564,7 @@ static void bat_ui_capacity_update_info(struct bat_ui_capacity_device *di)
 	di->bat_temp = coul_interface_get_battery_temperature(type);
 }
 
+#ifndef CONFIG_HLTHERM_RUNTEST
 static bool bat_ui_check_soc_vary(int soc_changed_abs, int last_record_soc,
 	bool temp_stablity, struct bat_ui_capacity_device *di)
 {
@@ -610,6 +622,7 @@ static int bat_ui_battery_soc_vary_flag(bool monitor_flag, int *delta_soc,
 	}
 	return ret;
 }
+#endif /* CONFIG_HLTHERM_RUNTEST */
 
 static void bat_ui_check_soc_vary_err(struct bat_ui_capacity_device *di)
 {

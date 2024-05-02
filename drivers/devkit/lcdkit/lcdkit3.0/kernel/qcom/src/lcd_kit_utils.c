@@ -33,6 +33,9 @@
 #include "lcd_kit_factory.h"
 #endif
 #include <linux/thermal.h>
+#ifdef CONFIG_LCD_KIT_HYBRID
+#include <lcd_kit_hybrid_core.h>
+#endif
 
 #define MAX_DELAY_TIME 200
 #define LCDKIT_DEFAULT_PANEL_NAME "AUO_OTM1901A 5.2' VIDEO TFT 1080 x 1920 DEFAULT"
@@ -45,6 +48,11 @@ extern struct dsm_client *lcd_dclient;
 #define AOD_LIGHT_DELAY 34
 #define SN_CODE_23_NUMB_SIZE 23
 #define SN_CODE_2_NONE_SIZE 2
+
+typedef struct {
+	int feature_item;
+	int (*func_ptr)(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id);
+} lcd_kit_alpm_mode_handle;
 
 bool lcd_kit_support(void)
 {
@@ -141,12 +149,144 @@ static bool is_alpm_mode(struct dsi_display *disp)
 	return false;
 }
 
-static int alpm_mode_handle(uint32_t mode)
+static int alpm_display_off(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
 {
 	int ret = LCD_KIT_FAIL;
+
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.off_cmds);
+	return ret;
+}
+
+int tddi_aod_light_set(uint32_t bl_lsb, uint32_t bl_msb)
+{
+	struct lcd_kit_bl_ops *bl_ops = NULL;
+
+	bl_ops = lcd_kit_get_bl_ops();
+	if (!bl_ops) {
+		LCD_KIT_ERR("bl_ops is null!\n");
+		return LCD_KIT_FAIL;
+	}
+	return bl_ops->backlight_set_in_aod(bl_lsb, bl_msb);
+}
+
+int set_aod_dimming(void)
+{
+	struct lcd_kit_bl_ops *bl_ops = NULL;
+
+	bl_ops = lcd_kit_get_bl_ops();
+	if (!bl_ops) {
+		LCD_KIT_ERR("bl_ops is null!\n");
+		return LCD_KIT_FAIL;
+	}
+	return bl_ops->backlight_set_aod_dimming();
+}
+
+static int alpm_on_high_light(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	int ret = LCD_KIT_FAIL;
+
+	if (!is_alpm_mode(display)) {
+		LCD_KIT_ERR("not in aod state, return!\n");
+		return ret;
+	}
+	LCD_KIT_INFO("enter ALPM_ON_HIGH_LIGHT\n");
+	if (common_info->tddi_aod_support)
+		return tddi_aod_light_set(common_info->tddi_aod_high_light.buf[0],
+			common_info->tddi_aod_high_light.buf[1]);
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.high_light_cmds);
+
+	return ret;
+}
+
+static int alpm_exit(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	int ret = LCD_KIT_FAIL;
+
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.exit_cmds);
+	return ret;
+}
+
+static int alpm_on_low_light(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	int ret = LCD_KIT_FAIL;
+
+	if (!is_alpm_mode(display)) {
+		LCD_KIT_ERR("not in aod state, return!\n");
+		return ret;
+	}
+	if (common_info->tddi_aod_support)
+		return tddi_aod_light_set(common_info->tddi_aod_low_light.buf[0],
+			common_info->tddi_aod_low_light.buf[1]);
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.low_light_cmds);
+
+	return ret;
+}
+
+static int alpm_single_clock(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	(void)adapt_ops;
+	(void)display;
+	(void)panel_id;
+
+	return LCD_KIT_OK;
+}
+
+static int alpm_double_clock(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	(void)adapt_ops;
+	(void)display;
+	(void)panel_id;
+
+	return LCD_KIT_OK;
+}
+
+static int alpm_on_middle_light(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	int ret = LCD_KIT_FAIL;
+
+	if (!is_alpm_mode(display)) {
+		LCD_KIT_ERR("not in aod state, return!\n");
+		return ret;
+	}
+	if (common_info->tddi_aod_support)
+		return tddi_aod_light_set(common_info->tddi_aod_middle_light.buf[0],
+			common_info->tddi_aod_middle_light.buf[1]);
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.middle_light_cmds);
+
+	return ret;
+}
+
+static int alpm_no_light(struct lcd_kit_adapt_ops *adapt_ops, struct dsi_display *display, uint32_t panel_id)
+{
+	int ret = LCD_KIT_FAIL;
+
+	if (!is_alpm_mode(display)) {
+		LCD_KIT_ERR("not in aod state, return!\n");
+		return ret;
+	}
+	ret = adapt_ops->mipi_tx(display, &disp_info->alpm.no_light_cmds);
+
+	return ret;
+}
+
+static const lcd_kit_alpm_mode_handle g_lcd_kit_handle[] = {
+	{ ALPM_DISPLAY_OFF, alpm_display_off },
+	{ ALPM_ON_HIGH_LIGHT, alpm_on_high_light },
+	{ ALPM_EXIT, alpm_exit },
+	{ ALPM_ON_LOW_LIGHT, alpm_on_low_light },
+	{ ALPM_SINGLE_CLOCK, alpm_single_clock },
+	{ ALPM_DOUBLE_CLOCK, alpm_double_clock },
+	{ ALPM_ON_MIDDLE_LIGHT, alpm_on_middle_light },
+	{ ALPM_NO_LIGHT, alpm_no_light },
+};
+
+static int alpm_mode_handle(uint32_t mode)
+{
+	int i = 0;
 	struct lcd_kit_adapt_ops *adapt_ops = NULL;
 	struct qcom_panel_info *pinfo = NULL;
 	struct dsi_display *display = NULL;
+	int table_num = sizeof(g_lcd_kit_handle) / sizeof(lcd_kit_alpm_mode_handle);
 	uint32_t panel_id = lcd_get_active_panel_id();
 
 	LCD_KIT_INFO("panel-%u: aod mode is %u\n", panel_id, mode);
@@ -165,56 +305,14 @@ static int alpm_mode_handle(uint32_t mode)
 		LCD_KIT_ERR("disp is null!\n");
 		return LCD_KIT_FAIL;
 	}
-	if (display->panel->sync_broadcast_en) {
-		msleep(AOD_LIGHT_DELAY);
-		LCD_KIT_INFO("broadcast delay\n");
+
+	for (i = 0; i < table_num; i++) {
+		if (((mode & ALPM_SETTING_CASE_MASK) == g_lcd_kit_handle[i].feature_item) &&
+			(g_lcd_kit_handle[i].func_ptr))
+			return g_lcd_kit_handle[i].func_ptr(adapt_ops, display, panel_id);
 	}
-	switch (mode & ALPM_SETTING_CASE_MASK) {
-	case ALPM_DISPLAY_OFF:
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.off_cmds);
-		break;
-	case ALPM_ON_HIGH_LIGHT:
-		if (!is_alpm_mode(display)) {
-			LCD_KIT_ERR("not in aod state, return!\n");
-			break;
-		}
-		LCD_KIT_INFO("enter ALPM_ON_HIGH_LIGHT\n");
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.high_light_cmds);
-		break;
-	case ALPM_EXIT:
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.exit_cmds);
-		break;
-	case ALPM_ON_LOW_LIGHT:
-		if (!is_alpm_mode(display)) {
-			LCD_KIT_ERR("not in aod state, return!\n");
-			break;
-		}
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.low_light_cmds);
-		break;
-	case ALPM_SINGLE_CLOCK:
-		ret = LCD_KIT_OK;
-		break;
-	case ALPM_DOUBLE_CLOCK:
-		ret = LCD_KIT_OK;
-		break;
-	case ALPM_ON_MIDDLE_LIGHT:
-		if (!is_alpm_mode(display)) {
-			LCD_KIT_ERR("not in aod state, return!\n");
-			break;
-		}
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.middle_light_cmds);
-		break;
-	case ALPM_NO_LIGHT:
-		if (!is_alpm_mode(display)) {
-			LCD_KIT_ERR("not in aod state, return!\n");
-			break;
-		}
-		ret = adapt_ops->mipi_tx(display, &disp_info->alpm.no_light_cmds);
-		break;
-	default:
-		break;
-	}
-	return ret;
+
+	return LCD_KIT_FAIL;
 }
 
 #define MAX_WAIT_FRAME_TIME 500
@@ -237,6 +335,11 @@ int lcd_kit_alpm_setting(uint32_t panel_id, uint32_t mode)
 		LCD_KIT_ERR("disp is null!\n");
 		return LCD_KIT_FAIL;
 	}
+#ifdef CONFIG_LCD_KIT_HYBRID
+	ret = lcd_kit_hybrid_mode(panel_id, mode);
+	LCD_KIT_INFO("-\n");
+	return ret;
+#endif
 	LCD_KIT_INFO("doze_wait_max_time is %u\n", disp_info->alpm.doze_time_delay);
 	if (!is_alpm_mode(disp)) {
 		reinit_completion(&aod_lp1_done);
@@ -590,6 +693,20 @@ static void lcd_kit_parse_dt_pcd(uint32_t panel_id, struct device_node *np)
 			&disp_info->pcd_errflag.read_errflag_cmds);
 }
 
+void lcd_kit_fps_get_config(uint32_t panel_id, struct device_node *np)
+{
+	lcd_kit_parse_array_data(np, "lcd-kit,panel-support-fps-list",
+		&disp_info->fps.panel_support_fps_list);
+	disp_info->fps.fps_30_cmd = (char *)of_get_property(np,
+		"lcd-kit,fps-30-cmd", NULL);
+	disp_info->fps.fps_60_cmd = (char *)of_get_property(np,
+		"lcd-kit,fps-60-cmd", NULL);
+	disp_info->fps.fps_90_cmd = (char *)of_get_property(np,
+		"lcd-kit,fps-90-cmd", NULL);
+	disp_info->fps.fps_120_cmd = (char *)of_get_property(np,
+		"lcd-kit,fps-120-cmd", NULL);
+}
+
 void lcd_kit_parse_util(uint32_t panel_id, struct device_node *np)
 {
 	if (np == NULL) {
@@ -617,14 +734,7 @@ void lcd_kit_parse_util(uint32_t panel_id, struct device_node *np)
 		&disp_info->fps.default_fps, 0);
 	if (disp_info->fps.support) {
 		disp_info->fps.panel_support_fps_list.cnt = SEQ_NUM;
-		lcd_kit_parse_array_data(np, "lcd-kit,panel-support-fps-list",
-			&disp_info->fps.panel_support_fps_list);
-		disp_info->fps.fps_60_cmd = (char *)of_get_property(np,
-			"lcd-kit,fps-60-cmd", NULL);
-		disp_info->fps.fps_90_cmd = (char *)of_get_property(np,
-			"lcd-kit,fps-90-cmd", NULL);
-		disp_info->fps.fps_120_cmd = (char *)of_get_property(np,
-			"lcd-kit,fps-120-cmd", NULL);
+		lcd_kit_fps_get_config(panel_id, np);
 	}
 	/* elvdd detect */
 	lcd_kit_parse_u32(np, "lcd-kit,elvdd-detect-support",
@@ -1402,17 +1512,97 @@ static int __init early_parse_project_id_cmdline(char *arg)
 	return LCD_KIT_OK;
 }
 
+static int __init early_parse_omeinfo_sn0_cmdline(char *arg)
+{
+	uint32_t sn_cmp_len;
+	uint32_t panel_id = lcd_get_active_panel_id();
+
+	if (arg == NULL) {
+		LCD_KIT_ERR("input is null\n");
+		return LCD_KIT_FAIL;
+	}
+
+	if (!disp_info) {
+		LCD_KIT_ERR("disp_info is null\n");
+		return LCD_KIT_FAIL;
+	}
+
+	sn_cmp_len = strlen(arg);
+	if (sn_cmp_len >= LCD_KIT_SN_CODE_LENGTH)
+		sn_cmp_len = LCD_KIT_SN_CODE_LENGTH;
+	memcpy(disp_info->sn_code, arg, sn_cmp_len);
+	disp_info->sn_len = sn_cmp_len - 1;
+	disp_info->sn_check_flags = false;
+	return LCD_KIT_OK;
+}
+
 early_param("panel0_version", early_parse_panel0_version_cmdline);
 early_param("panel1_version", early_parse_panel1_version_cmdline);
 early_param("panel0_sn", early_parse_panel0_sn_cmdline);
 early_param("panel1_sn", early_parse_panel1_sn_cmdline);
 early_param("projectid", early_parse_project_id_cmdline);
+early_param("omeinfo_sn0", early_parse_omeinfo_sn0_cmdline);
 
-static int lcd_kit_get_sn_code(uint32_t panel_id)
+static int lcd_kit_hiview_tplcd(void)
+{
+	int ret;
+	uint8_t sn_info[2] = {0};
+	uint32_t panel_id = lcd_get_active_panel_id();
+	struct hiview_hievent *event = hiview_hievent_create(DSM_LCD_SN_CHECK_ERROR_NO);
+	struct qcom_panel_info *pinfo = lcm_get_panel_info(panel_id);
+	if (pinfo == NULL) {
+		LCD_KIT_ERR("pinfo is NULL\n");
+		hiview_hievent_destroy(event);
+		return LCD_KIT_FAIL;
+	}
+	if (event == NULL) {
+		LCD_KIT_ERR("create hievent fail\n");
+		hiview_hievent_destroy(event);
+		return LCD_KIT_FAIL;
+	}
+
+	sn_info[0] = disp_info->sncmp;
+	hiview_hievent_put_string(event, "TplcdSNChk", (char *)sn_info);
+	hiview_hievent_put_string(event, "TplcdHashSN", (char *)pinfo->sn_code);
+	ret = hiview_hievent_report(event);
+	if (ret <= 0) {
+		LCD_KIT_ERR("hiview_hievent_report failed\n");
+		hiview_hievent_destroy(event);
+		return LCD_KIT_FAIL;
+	}
+	hiview_hievent_destroy(event);
+	return LCD_KIT_OK;
+}
+
+static void lcd_kit_sn_check(void)
+{
+	uint32_t panel_id = lcd_get_active_panel_id();
+	struct qcom_panel_info *pinfo = lcm_get_panel_info(panel_id);
+
+	if (pinfo == NULL) {
+		LCD_KIT_ERR("pinfo is NULL\n");
+		return;
+	}
+	if ((!common_info->sn_code.check_support) || (disp_info->sn_check_flags == true)
+		|| (disp_info->sn_len <= SNCMP_LEN))
+		return;
+
+	if (!strncmp(pinfo->sn_code, disp_info->sn_code, disp_info->sn_len)) {
+		disp_info->sncmp = 0;
+		LCD_KIT_INFO("sn check ok!\n");
+	} else {
+		disp_info->sncmp = 1;
+		LCD_KIT_INFO("report lcd info to HiView\n");
+		if (lcd_kit_hiview_tplcd())
+			LCD_KIT_ERR("HiView lcd info failed\n");
+	}
+	disp_info->sn_check_flags = true;
+}
+
+static int lcd_kit_read_sn_code(uint32_t panel_id)
 {
 	int ret;
 	struct qcom_panel_info *pinfo = NULL;
-	struct lcd_kit_panel_ops *panel_ops = NULL;
 	char read_value[OEM_INFO_SIZE_MAX + 1] = {0};
 	struct lcd_kit_adapt_ops *adapt_ops = NULL;
 
@@ -1425,6 +1615,39 @@ static int lcd_kit_get_sn_code(uint32_t panel_id)
 		LCD_KIT_ERR("mipi_rx is NULL\n");
 		return LCD_KIT_FAIL;
 	}
+
+	pinfo = lcm_get_panel_info(panel_id);
+	if (pinfo == NULL) {
+		LCD_KIT_ERR("pinfo is null\n");
+		return LCD_KIT_FAIL;
+	}
+
+	if (disp_info && disp_info->oeminfo.barcode_2d.support) {
+		common_info->close_dual_dsi_sn = 1;
+		ret = adapt_ops->mipi_rx(pinfo->display, read_value,
+			LCD_KIT_SN_CODE_LENGTH,
+			&disp_info->oeminfo.barcode_2d.cmds);
+		lcd_kit_sn_reprocess(panel_id, read_value, LCD_KIT_SN_CODE_LENGTH);
+		LCD_KIT_INFO("do lcd_kit_sn_reprocess\n");
+		if (ret != 0) {
+			LCD_KIT_ERR("get sn_code error!\n");
+			return LCD_KIT_FAIL;
+		}
+		memcpy(pinfo->sn_code, read_value, LCD_KIT_SN_CODE_LENGTH);
+		pinfo->sn_code_length = LCD_KIT_SN_CODE_LENGTH;
+		lcd_kit_sn_check();
+		return LCD_KIT_OK;
+	}
+	return LCD_KIT_OK;
+}
+
+static int lcd_kit_get_sn_code(uint32_t panel_id)
+{
+	int ret;
+	struct qcom_panel_info *pinfo = NULL;
+	struct lcd_kit_panel_ops *panel_ops = NULL;
+	char read_value[OEM_INFO_SIZE_MAX + 1] = {0};
+
 	pinfo = lcm_get_panel_info(panel_id);
 	if (pinfo == NULL) {
 		LCD_KIT_ERR("pinfo is null\n");
@@ -1434,6 +1657,7 @@ static int lcd_kit_get_sn_code(uint32_t panel_id)
 		if (strlen(pinfo->sn_code) != 0) {
 			LCD_KIT_INFO("have got sn_code in cmdline: %s\n", pinfo->sn_code);
 			pinfo->sn_code_length = LCD_KIT_SN_CODE_LENGTH;
+			lcd_kit_sn_check();
 			return LCD_KIT_OK;
 		}
 
@@ -1446,22 +1670,13 @@ static int lcd_kit_get_sn_code(uint32_t panel_id)
 			}
 			memcpy(pinfo->sn_code, read_value + 2, LCD_KIT_SN_CODE_LENGTH);
 			pinfo->sn_code_length = LCD_KIT_SN_CODE_LENGTH;
+			lcd_kit_sn_check();
 			return LCD_KIT_OK;
 		}
-		if (disp_info && disp_info->oeminfo.barcode_2d.support) {
-			common_info->close_dual_dsi_sn = 1;
-			ret = adapt_ops->mipi_rx(pinfo->display, read_value,
-				LCD_KIT_SN_CODE_LENGTH,
-				&disp_info->oeminfo.barcode_2d.cmds);
-			lcd_kit_sn_reprocess(panel_id, read_value, LCD_KIT_SN_CODE_LENGTH);
-			LCD_KIT_INFO("do lcd_kit_sn_reprocess\n");
-			if (ret != 0) {
-				LCD_KIT_ERR("get sn_code error!\n");
-				return LCD_KIT_FAIL;
-			}
-			memcpy(pinfo->sn_code, read_value, LCD_KIT_SN_CODE_LENGTH);
-			pinfo->sn_code_length = LCD_KIT_SN_CODE_LENGTH;
-			return LCD_KIT_OK;
+		ret = lcd_kit_read_sn_code(panel_id);
+		if (ret != LCD_KIT_OK) {
+			LCD_KIT_ERR("read sn code failed!\n");
+			return LCD_KIT_FAIL;
 		}
 	}
 	return LCD_KIT_OK;

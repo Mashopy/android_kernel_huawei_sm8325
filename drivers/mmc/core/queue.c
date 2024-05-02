@@ -21,6 +21,10 @@
 #include "crypto.h"
 #include "card.h"
 #include "host.h"
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#include "../host/cqhci.h"
+#endif
 
 #define MMC_DMA_MAP_MERGE_SEGMENTS	512
 
@@ -152,15 +156,23 @@ static void mmc_mq_recovery_handler(struct work_struct *work)
 					    recovery_work);
 	struct request_queue *q = mq->queue;
 	struct mmc_host *host = mq->card->host;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	struct cqhci_host *cq_host = host->cqe_private;
+#endif
 	mmc_get_card(mq->card, &mq->ctx);
 
 	mq->in_recovery = true;
 
-	if (mq->use_cqe && !host->hsq_enabled)
+	if (mq->use_cqe && !host->hsq_enabled) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		if (mmc_card_mmc(host->card) && (!strcmp(mmc_hostname(host), "mmc0")) && cq_host != NULL)
+			DSM_EMMC_LOG(host->card, DSM_EMMC_CQE_RECOVERY,
+				"%s:eMMC enter cqe recovery, CQHCI_TERRI=0x%08x\n", __func__, cqhci_readl(cq_host, CQHCI_TERRI));
+#endif
 		mmc_blk_cqe_recovery(mq);
-	else
+	} else {
 		mmc_blk_mq_recovery(mq);
+	}
 
 	mq->in_recovery = false;
 
@@ -337,7 +349,9 @@ static blk_status_t mmc_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 	}
 
 	blk_mq_start_request(req);
-
+#ifdef CONFIG_DISK_MAGO
+	atomic_inc(&q->inflt_disk);
+#endif
 	issued = mmc_blk_mq_issue_rq(mq, req);
 
 	switch (issued) {
@@ -354,7 +368,9 @@ static blk_status_t mmc_mq_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	if (issued != MMC_REQ_STARTED) {
 		bool put_card = false;
-
+#ifdef CONFIG_DISK_MAGO
+		atomic_dec(&q->inflt_disk);
+#endif
 		spin_lock_irq(&mq->lock);
 		mq->in_flight[issue_type] -= 1;
 #if defined(CONFIG_SDC_QTI)

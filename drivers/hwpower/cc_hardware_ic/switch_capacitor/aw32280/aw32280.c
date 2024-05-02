@@ -415,7 +415,7 @@ static int aw32280_get_register_head(char *buffer, int size, void *dev_data)
 		return -ENODEV;
 
 	snprintf(buffer, size,
-		"dev        mode   Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp");
+		"dev       mode   Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp   ");
 
 	return 0;
 }
@@ -445,20 +445,22 @@ static int aw32280_value_dump(char *buffer, int size, void *dev_data)
 	(void)aw32280_get_device_temp(&temp, dev_data);
 	(void)aw32280_read_byte(di, AW32280_SC_SC_MODE_REG, &val);
 
-	snprintf(buff, sizeof(buff), "%s ", di->name);
+	snprintf(buff, sizeof(buff), "%-10s", di->name);
 	strncat(buffer, buff, strlen(buff));
 
 	if (aw32280_is_device_close(dev_data))
-		snprintf(buff, sizeof(buff), "%s", "   OFF    ");
+		snprintf(buff, sizeof(buff), "%s", "OFF    ");
 	else if (((val & AW32280_SC_SC_MODE_MASK) >> AW32280_SC_SC_MODE_SHIFT) ==
 		AW32280_CHG_FBYPASS_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   LVC    ");
+		snprintf(buff, sizeof(buff), "%s", "LVC    ");
 	else if (((val & AW32280_SC_SC_MODE_MASK) >> AW32280_SC_SC_MODE_SHIFT) ==
 		AW32280_CHG_F21SC_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   SC     ");
+		snprintf(buff, sizeof(buff), "%s", "SC     ");
 	else if (((val & AW32280_SC_SC_MODE_MASK) >> AW32280_SC_SC_MODE_SHIFT) ==
 		AW32280_CHG_F41SC_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   SC4    ");
+		snprintf(buff, sizeof(buff), "%s", "SC4    ");
+	else
+		snprintf(buff, sizeof(buff), "%s", "BUCK   ");
 
 	strncat(buffer, buff, strlen(buff));
 	snprintf(buff, sizeof(buff), "%-7d%-7d%-7d%-7d%-7d%-7d%-7d",

@@ -22,7 +22,6 @@
 #include <chipset_common/hwpower/common_module/power_dts.h>
 #include <chipset_common/hwpower/common_module/power_gpio.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
-#include <chipset_common/hwpower/common_module/power_supply_application.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_ic.h>
 
 #define HWLOG_TAG direct_charge_ic
@@ -232,21 +231,19 @@ int dc_ic_get_ic_max_ibat(int mode, unsigned int index, int *ibat)
 	return 0;
 }
 
-bool dc_ic_get_ibat_from_coul(int *ibat)
+bool dc_ic_get_ibat_from_coul(void)
 {
-	if (!ibat || !g_dc_ic_di || !g_dc_ic_di->use_coul_ibat)
+	if (!g_dc_ic_di || !g_dc_ic_di->use_coul_ibat)
 		return false;
 
-	*ibat = power_supply_app_get_bat_current_now();
 	return true;
 }
 
-bool dc_ic_get_vbat_from_coul(int *vbat)
+bool dc_ic_get_vbat_from_coul(void)
 {
-	if (!vbat || !g_dc_ic_di || !g_dc_ic_di->use_coul_vbat)
+	if (!g_dc_ic_di || !g_dc_ic_di->use_coul_vbat)
 		return false;
 
-	*vbat = power_supply_app_get_bat_voltage_now();
 	return true;
 }
 

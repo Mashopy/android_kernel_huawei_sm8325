@@ -18,7 +18,9 @@
 #include "card.h"
 #include "host.h"
 #include "mmc_ops.h"
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#endif
 #define MMC_OPS_TIMEOUT_MS	(10 * 60 * 1000) /* 10 minute timeout */
 
 static const u8 tuning_blk_pattern_4bit[] = {
@@ -308,7 +310,14 @@ mmc_send_cxd_data(struct mmc_card *card, struct mmc_host *host,
 		mmc_set_data_timeout(&data, card);
 
 	mmc_wait_for_req(host, &mrq);
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if (cmd.error || data.error) {
+		if (!strcmp(mmc_hostname(host), "mmc0"))
+			DSM_EMMC_LOG(card, DSM_EMMC_SEND_CXD_ERR,
+				"opcode:%d failed, cmd.error:%d, data.error:%d\n",
+				opcode, cmd.error, data.error);
+	}
+#endif
 	if (cmd.error)
 		return cmd.error;
 	if (data.error)

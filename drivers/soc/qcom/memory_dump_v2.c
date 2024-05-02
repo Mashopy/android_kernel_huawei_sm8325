@@ -18,6 +18,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/of_reserved_mem.h>
+#include <platform/linux/rainbow.h>
 
 #define MSM_DUMP_TABLE_VERSION		MSM_DUMP_MAKE_VERSION(2, 0)
 
@@ -874,6 +875,12 @@ static int mem_dump_alloc(struct platform_device *pdev)
 static int mem_dump_probe(struct platform_device *pdev)
 {
 	int ret;
+	bool bootdump_switch  = false;
+
+	cmd_himntn_item_switch(HIMNTN_ID_BOOTDUMP_SWITCH, &bootdump_switch);
+	pr_err("HIMNTN_ID_BOOTDUMP_SWITCH bootdump_switch is %d\n", bootdump_switch);
+	if (!bootdump_switch)
+		return 0;
 
 	ret = mem_dump_alloc(pdev);
 	return ret;

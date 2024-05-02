@@ -61,7 +61,7 @@ int bat_model_get_vbat_max(void)
 		return POWER_SUPPLY_DEFAULT_VOLTAGE_MAX;
 
 	if (!di->ops || !di->ops->get_vbat_max) {
-		hwlog_info("ops or get_vbat_max is null\n");
+		hwlog_info("default vbat_max=%d\n", di->vbat_max);
 		return di->vbat_max;
 	}
 	return di->ops->get_vbat_max();
@@ -98,10 +98,9 @@ int bat_model_is_removed(void)
 {
 	struct bat_model_device *di = g_bat_model_dev;
 
-	if (!di || !di->ops || !di->ops->is_removed) {
-		hwlog_err("di or ops or is_removed is null\n");
+	if (!di || !di->ops || !di->ops->is_removed)
 		return 0;
-	}
+
 	return di->ops->is_removed();
 }
 
@@ -113,7 +112,7 @@ const char *bat_model_get_brand(void)
 		return POWER_SUPPLY_DEFAULT_BRAND;
 
 	if (!di->ops || !di->ops->get_brand) {
-		hwlog_info("ops or get_brand is null\n");
+		hwlog_info("battery brand is %s\n", di->brand);
 		return di->brand;
 	}
 	return di->ops->get_brand();
@@ -562,7 +561,7 @@ static void bat_model_parse_si_item_code(struct bat_model_device *di)
 
 static void bat_model_parse_bat_structure_types_tab(struct bat_model_device *di)
 {
-	int array_len, i, row, col;
+	int array_len, i, row, col, ret;
 	const char *str = NULL;
 	struct device_node *np = di->dev->of_node;
 
@@ -588,8 +587,12 @@ static void bat_model_parse_bat_structure_types_tab(struct bat_model_device *di)
 				di->bat_types_num = 0;
 				return;
 			}
-			strncpy_s(di->bat_types_tab[row].types, BAT_TYPES_LEN,
+			ret = strncpy_s(di->bat_types_tab[row].types, BAT_TYPES_LEN,
 				str, strlen(str));
+			if (ret != EOK) {
+				di->bat_types_num = 0;
+				return;
+			}
 			break;
 		case BAT_TYPES_INFO_IDENTIFIER_PATTERN:
 			if (strlen(str) >= BAT_IDENTIFIER_PATTERN_LEN) {
@@ -597,8 +600,12 @@ static void bat_model_parse_bat_structure_types_tab(struct bat_model_device *di)
 				di->bat_types_num = 0;
 				return;
 			}
-			strncpy_s(di->bat_types_tab[row].identifier_pattern, BAT_IDENTIFIER_PATTERN_LEN,
+			ret = strncpy_s(di->bat_types_tab[row].identifier_pattern, BAT_IDENTIFIER_PATTERN_LEN,
 				str, strlen(str));
+			if (ret != EOK) {
+				di->bat_types_num = 0;
+				return;
+			}
 			break;
 		default:
 			break;

@@ -40,6 +40,8 @@ int mt5727_parse_dts(struct device_node *np, struct mt5727_dev_info *di)
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"tx_ping_ocp_th", (u32 *)&di->tx_pocp_th, MT5727_TX_PING_OCP_TH);
 	(void)power_dts_read_u16(power_dts_tag(HWLOG_TAG), np,
+		"tx_ping_freq", &di->tx_ping_freq, MT5727_TX_PING_FREQ);
+	(void)power_dts_read_u16(power_dts_tag(HWLOG_TAG), np,
 		"tx_max_fop", &di->tx_fop.tx_max_fop, MT5727_TX_MAX_FOP);
 	(void)power_dts_read_u16(power_dts_tag(HWLOG_TAG), np,
 		"tx_min_fop", &di->tx_fop.tx_min_fop, MT5727_TX_MIN_FOP);

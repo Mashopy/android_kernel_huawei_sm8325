@@ -162,7 +162,7 @@ static int sc8546_scp_adapter_multi_reg_read(u8 reg, u8 *val,
 		}
 		/* check cmd transfer success or fail, ignore ack data */
 		if (sc8546_scp_cmd_transfer_check(di) == 0) {
-			memcpy(val, &di->scp_data[1], SC8546_SCP_MULTI_READ_LEN);
+			memcpy(val, &di->scp_data[1], num);
 			break;
 		}
 	}
@@ -576,21 +576,20 @@ static int sc8546_scp_multi_reg_read_block(u8 reg, u8 *val, u8 num,
 	int ret, i;
 	u8 data[SC8546_SCP_MULTI_READ_LEN] = { 0 };
 	struct sc8546_device_info *di = dev_data;
+	u8 data_len = (num < SC8546_SCP_MULTI_READ_LEN) ? num : SC8546_SCP_MULTI_READ_LEN;
 
 	if (!di || !val)
 		return -ENODEV;
 
 	di->scp_error_flag = SC8546_SCP_NO_ERR;
 
-	for (i = 0; i < num; i += SC8546_SCP_MULTI_READ_LEN) {
-		ret = sc8546_scp_adapter_multi_reg_read(reg + i, data,
-			SC8546_SCP_MULTI_READ_LEN, di);
+	for (i = 0; i < num; i += data_len) {
+		ret = sc8546_scp_adapter_multi_reg_read(reg + i, data, data_len, di);
 		if (ret) {
 			hwlog_err("scp read failed, reg=0x%x\n", reg + i);
 			return -EINVAL;
 		}
-		val[i] = data[0];
-		val[i + 1] = data[1];
+		memcpy(&val[i], &data[0], data_len);
 	}
 
 	return 0;

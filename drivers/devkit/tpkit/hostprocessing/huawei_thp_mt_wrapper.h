@@ -265,6 +265,8 @@ struct tp_nv_data {
 	_IOWR(INPUT_MT_SET_IO_TYPE, 0x0c, unsigned int)
 #define INPUT_MT_IOCTL_CMD_SET_STYLUS_ADSORPTION_STATUS \
 	_IOWR(INPUT_MT_SET_IO_TYPE, 0x0d, unsigned int)
+#define INPUT_MT_IOCTL_CMD_SET_AOD_STATUS \
+	_IOWR(INPUT_MT_WRAPPER_IO_TYPE, 0x17, uint32_t)
 
 int thp_mt_wrapper_init(void);
 void thp_mt_wrapper_exit(void);

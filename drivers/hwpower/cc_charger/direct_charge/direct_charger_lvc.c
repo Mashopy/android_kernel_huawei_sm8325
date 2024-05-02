@@ -270,49 +270,6 @@ static int lvc_get_rt_test_prot_type(void)
 	return di->prot_type;
 }
 
-static int lvc_get_rt_test_time(unsigned int *val)
-{
-	struct direct_charge_device *di = g_lvc_di;
-
-	if (!power_cmdline_is_factory_mode())
-		return 0;
-
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -EPERM;
-	}
-
-	*val = di->rt_test_para[DC_NORMAL_MODE].rt_test_time;
-	return 0;
-}
-
-static int lvc_get_rt_test_result(unsigned int *val)
-{
-	int iin_thermal_th;
-	struct direct_charge_device *di = g_lvc_di;
-
-	if (!power_cmdline_is_factory_mode())
-		return 0;
-
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -EPERM;
-	}
-
-	iin_thermal_th = di->rt_test_para[DC_NORMAL_MODE].rt_curr_th + 500; /* margin is 500mA */
-	if (pd_dpm_get_cc_moisture_status() || di->bat_temp_err_flag ||
-		di->rt_test_para[DC_NORMAL_MODE].rt_test_result ||
-		(di->sysfs_enable_charger == 0) ||
-		((direct_charge_get_stage_status() == DC_STAGE_CHARGING) &&
-		(di->sysfs_iin_thermal < iin_thermal_th)) ||
-		(di->dc_stage == DC_STAGE_CHARGE_DONE))
-		*val = 0; /* 0: succ */
-	else
-		*val = 1; /* 1: fail */
-
-	return 0;
-}
-
 static int lvc_get_hota_iin_limit(unsigned int *val)
 {
 	struct direct_charge_device *di = g_lvc_di;
@@ -413,8 +370,6 @@ static struct power_if_ops lvc_if_ops = {
 	.set_iin_thermal_all = lvc_set_iin_limit,
 	.set_ichg_ratio = lvc_set_ichg_ratio,
 	.set_vterm_dec = lvc_set_vterm_dec,
-	.get_rt_test_time = lvc_get_rt_test_time,
-	.get_rt_test_result = lvc_get_rt_test_result,
 	.get_rt_test_prot_type = lvc_get_rt_test_prot_type,
 	.get_hota_iin_limit = lvc_get_hota_iin_limit,
 	.get_startup_iin_limit = lvc_get_startup_iin_limit,
@@ -549,6 +504,9 @@ static void lvc_fault_work(struct work_struct *work)
 	case POWER_NE_DC_FAULT_CC_SHORT:
 		hwlog_err("typec cc vbus short happened\n");
 		break;
+	case POWER_NE_DC_FAULT_AC_HARD_RESET:
+		hwlog_err("adapter hard reset\n");
+		break;
 	default:
 		hwlog_err("unknown fault: %u happened\n", di->charge_fault);
 		break;
@@ -647,7 +605,7 @@ static ssize_t lvc_sysfs_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE, "%d\n", di->adp_antifake_failed_cnt);
 		break;
 	case DC_SYSFS_CABLE_TYPE:
-		len = snprintf(buf, PAGE_SIZE, "%d\n", di->cable_type);
+		len = snprintf(buf, PAGE_SIZE, "%d\n", dc_get_cable_type_info(DC_CABLE_TYPE));
 		break;
 	default:
 		len = 0;
@@ -699,10 +657,7 @@ static ssize_t lvc_sysfs_store(struct device *dev,
 			return -EINVAL;
 
 		hwlog_info("set resistance_threshold=%ld\n", val);
-
-		di->std_cable_full_path_res_max = val;
-		di->nonstd_cable_full_path_res_max = val;
-		di->ctc_cable_full_path_res_max = val;
+		di->cable_info.ignore_full_path_res = true;
 		break;
 	default:
 		break;
@@ -736,8 +691,6 @@ static inline void lvc_sysfs_remove_group(struct device *dev)
 
 static void lvc_init_parameters(struct direct_charge_device *di)
 {
-	int i;
-
 	di->sysfs_enable_charger = 1;
 	di->dc_stage = DC_STAGE_DEFAULT;
 	di->sysfs_iin_thermal = di->iin_thermal_default;
@@ -750,13 +703,11 @@ static void lvc_init_parameters(struct direct_charge_device *di)
 	di->dc_err_report_flag = FALSE;
 	di->bat_temp_err_flag = false;
 	di->sc_conv_ocp_count = 0;
-	di->ignore_full_path_res = false;
+	di->cable_info.ignore_full_path_res = false;
 	di->cur_mode = CHARGE_IC_MAIN;
 	di->tbat_id = BAT_TEMP_MIXED;
 	di->local_mode = LVC_MODE;
 	di->multi_ic_check_info.force_single_path_flag = false;
-	for (i = 0; i < DC_MODE_TOTAL; i++)
-		di->rt_test_para[i].rt_test_result = false;
 }
 
 static int lvc_probe(struct platform_device *pdev)
@@ -805,6 +756,7 @@ static int lvc_probe(struct platform_device *pdev)
 
 	di->fault_nb.notifier_call = direct_charge_fault_notifier_call;
 	ret = power_event_anc_register(POWER_ANT_LVC_FAULT, &di->fault_nb);
+	ret += power_event_anc_register(POWER_ANT_DC_FAULT, &di->fault_nb);
 	if (ret < 0)
 		goto fail_create_link;
 
@@ -834,6 +786,7 @@ static int lvc_remove(struct platform_device *pdev)
 		return -ENODEV;
 
 	power_event_anc_unregister(POWER_ANT_LVC_FAULT, &di->fault_nb);
+	power_event_anc_unregister(POWER_ANT_DC_FAULT, &di->fault_nb);
 	lvc_sysfs_remove_group(di->dev);
 	power_wakeup_source_unregister(di->charging_lock);
 	devm_kfree(&pdev->dev, di);

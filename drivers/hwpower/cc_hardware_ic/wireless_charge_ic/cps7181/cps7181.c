@@ -480,6 +480,8 @@ gpio_en_fail:
 static int cps7181_irq_init(struct cps7181_dev_info *di,
 	struct device_node *np)
 {
+	INIT_WORK(&di->irq_work, cps7181_irq_work);
+
 	if (power_gpio_config_interrupt(np, "gpio_int", "cps7181_int",
 		&di->gpio_int, &di->irq_int))
 		return -EINVAL;
@@ -493,7 +495,6 @@ static int cps7181_irq_init(struct cps7181_dev_info *di,
 
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, cps7181_irq_work);
 
 	return 0;
 }

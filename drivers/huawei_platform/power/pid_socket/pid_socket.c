@@ -21,7 +21,7 @@
 #include <net/sock.h>
 
 #include <../../../include/log/log_usertype.h>
-
+#include <huawei_platform/log/hwlog_kernel.h>
 
 void print_process_pid_name(struct inet_sock *inet)
 {
@@ -57,6 +57,7 @@ void print_process_pid_name(struct inet_sock *inet)
 
 	source_port = htons(source_port);
 	printk("task=NULL, %s: uid:%d, pid:%d, port:%d\n", __func__, uid, pid, source_port);
+	HWDUBAI_LOGE("DUBAI_TAG_WATCH_NETWORK_SOCKET_EVENT", "uid=%d pid=%d name=%s port=%d", uid, pid, __func__, source_port);
 }
 
 /* 20150114 add, get pid and process name of the app who used connect function */

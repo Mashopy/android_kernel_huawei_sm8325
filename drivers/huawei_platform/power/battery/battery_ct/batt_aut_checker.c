@@ -111,6 +111,28 @@ static int get_batt_sn_wrapper(struct batt_chk_data *drv_data,
 	return ret;
 }
 
+static int get_batt_code_wrapper(struct batt_chk_data *drv_data,
+	struct power_genl_attr *res, const unsigned char **code,
+	unsigned int *code_len_bits)
+{
+	int ret = 0;
+
+	/*
+	 * -1 is returned only when the IC communication fail
+	 * 0 is returned in any other case
+	 */
+	if (!drv_data ||
+		!drv_data->ic_ops.get_batt_code)
+		return ret;
+
+	bat_type_apply_mode(BAT_ID_SN);
+	ret = drv_data->ic_ops.get_batt_code(drv_data->ic, res, code,
+		code_len_bits);
+	bat_type_release_mode(true);
+
+	return ret;
+}
+
 static int prepare_wrapper(struct batt_chk_data *drv_data, enum res_type type,
 	struct power_genl_attr *res)
 {
@@ -966,6 +988,8 @@ static int check_batt_ct_ops(struct batt_chk_data *drv_data)
 		ret = BATTERY_DRIVER_FAIL;
 		hwlog_err("[%s] get_batt_sn is not valid\n", __func__);
 	}
+	if (!drv_data->ic_ops.get_batt_code)
+		hwlog_err("[%s] get_batt_code is not valid\n", __func__);
 	if (!drv_data->ic_ops.prepare) {
 		ret = BATTERY_DRIVER_FAIL;
 		hwlog_err("[%s] ct_prepare is not valid\n", __func__);
@@ -988,6 +1012,7 @@ static void init_wrapper_ops(struct batt_chk_data *drv_data)
 	drv_data->bco.get_ic_uuid = get_ic_uuid_wrapper;
 	drv_data->bco.get_batt_type = get_batt_type_wrapper;
 	drv_data->bco.get_batt_sn = get_batt_sn_wrapper;
+	drv_data->bco.get_batt_code = get_batt_code_wrapper;
 	drv_data->bco.prepare = prepare_wrapper;
 	drv_data->bco.certification = certification_wrapper;
 	drv_data->bco.set_act_signature = set_act_signature_wrapper;

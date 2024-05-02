@@ -282,6 +282,8 @@ static int sy6512_irq_init(struct sy6512_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, sy6512_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "sy6512_int", &di->gpio_int, &di->irq_int))
 		return 0;
@@ -296,7 +298,6 @@ static int sy6512_irq_init(struct sy6512_dev_info *di, struct device_node *np)
 	}
 
 	enable_irq_wake(di->irq_int);
-	INIT_WORK(&di->irq_work, sy6512_irq_work);
 
 	return 0;
 }

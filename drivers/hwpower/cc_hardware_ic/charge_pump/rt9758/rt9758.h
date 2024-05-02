@@ -70,6 +70,13 @@
 #define RT9758_CTRL6_MODE_DIRECTION_SHIFT   1
 #define RT9758_CTRL6_MODE_FWD_BPCP_EN       0
 #define RT9758_CTRL6_MODE_REV_BPCP_EN       1
+#define RT9758_CTRL6_MOD_CHG_EN_MASK        BIT(2)
+#define RT9758_CTRL6_MOD_CHG_EN_SHIFT       2
+#define RT9758_CTRL6_MOD_CHG_EN_DIS         0
+#define RT9758_CTRL6_MOD_CHG_EN_EN          1
+
+/* vout pd en register */
+#define RT9758_CTRL13_REG                   0x13
 
 struct rt9758_dev_info {
 	struct i2c_client *client;

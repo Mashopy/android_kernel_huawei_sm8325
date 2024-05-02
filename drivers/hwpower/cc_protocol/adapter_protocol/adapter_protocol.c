@@ -205,9 +205,8 @@ void adapter_update_adapter_support_mode(int prot, unsigned int *mode)
 	int ret;
 	unsigned int i;
 	int adp_type = ADAPTER_TYPE_UNKNOWN;
-	struct adapter_protocol_ops *l_ops = adapter_get_protocol_ops(prot);
 
-	if (!l_ops || !mode)
+	if (!mode)
 		return;
 
 	ret = adapter_get_adp_type(prot, &adp_type);
@@ -603,6 +602,32 @@ int adapter_get_port_temp(int prot, int *temp)
 	return l_ops->get_port_temp(temp);
 }
 
+int adapter_get_source_info(int prot, struct adapter_source_info *info)
+{
+	struct adapter_protocol_ops *l_ops = adapter_get_protocol_ops(prot);
+
+	if (!l_ops || !info)
+		return -EPERM;
+
+	if (!l_ops->get_source_info)
+		return -EPERM;
+
+	return l_ops->get_source_info(info);
+}
+
+int adapter_get_cable_info(int prot, int *curr)
+{
+	struct adapter_protocol_ops *l_ops = adapter_get_protocol_ops(prot);
+
+	if (!l_ops || !curr)
+		return -EPERM;
+
+	if (!l_ops->get_cable_info)
+		return -EPERM;
+
+	return l_ops->get_cable_info(curr);
+}
+
 int adapter_get_port_leakage_current_flag(int prot, int *flag)
 {
 	struct adapter_protocol_ops *l_ops = adapter_get_protocol_ops(prot);
@@ -809,6 +834,16 @@ bool adapter_is_undetach_cable(int prot)
 		return false;
 
 	return l_ops->is_undetach_cable();
+}
+
+bool adapter_is_scp_superior(int prot)
+{
+	struct adapter_protocol_ops *l_ops = adapter_get_protocol_ops(prot);
+
+	if (!l_ops || !l_ops->is_scp_superior)
+		return false;
+
+	return l_ops->is_scp_superior();
 }
 
 static int __init adapter_protocol_init(void)

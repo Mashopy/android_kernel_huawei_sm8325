@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2020-2020. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2023. All rights reserved.
  * Description: mpflow module implemention
  * Author: xialiang xialiang4@huawei.com
  * Create: 2020-06-08
@@ -540,9 +540,8 @@ static bool emcom_xengine_mpflow_get_addr_port(struct sockaddr *addr, __be32 *s_
 		*s_addr = usin->sin_addr.s_addr;
 		*port = ntohs(usin->sin_port);
 		return true;
-	}
 #if IS_ENABLED(CONFIG_IPV6)
-	else if (addr->sa_family == AF_INET6) {
+	} else if (addr->sa_family == AF_INET6) {
 		struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)addr;
 
 		if (!ipv6_addr_v4mapped(&usin6->sin6_addr))
@@ -550,9 +549,8 @@ static bool emcom_xengine_mpflow_get_addr_port(struct sockaddr *addr, __be32 *s_
 		*s_addr = usin6->sin6_addr.s6_addr32[EMCOM_MPFLOW_FI_CLAT_IPV4_INDEX];
 		*port = ntohs(usin6->sin6_port);
 		return true;
-	}
 #endif
-	else {
+	} else {
 		return false;
 	}
 }
@@ -1110,12 +1108,12 @@ static bool emcom_xengine_mpflow_bm_search(const uint8_t *buf, uint32_t buflen,
 	uint8_t shift_stride;
 	uint32_t bindex = sptn->ptnlen;
 
-	if ((buf == NULL) || (sptn->ptn == NULL) || (sptn->skip == NULL) || (sptn->shift == NULL)) {
+	if ((buf == NULL) || (sptn->ptn == NULL) || (sptn->skip == NULL) || (sptn->shift == NULL))
 		return false;
-	}
-	if ((sptn->ptnlen <= 0) || (buflen <= sptn->ptnlen)) {
+
+	if ((sptn->ptnlen <= 0) || (buflen <= sptn->ptnlen))
 		return false;
-	}
+
 	while (bindex <= buflen) {
 		pindex = sptn->ptnlen;
 		while (sptn->ptn[--pindex] == buf[--bindex]) {
@@ -1603,7 +1601,6 @@ int emcom_xengine_mpflow_getmode_spec(int8_t index, uid_t uid)
 
 	is_wifi_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN0_IFNAME, EMCOM_MPFLOW_VER_V1);
 	is_lte_block = emcom_xengine_mpflow_blocked(uid, EMCOM_CELL0_IFNAME, EMCOM_MPFLOW_VER_V1);
-
 	if ((is_wifi_block && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_WIFI)) ||
 		(is_lte_block && (g_mpflow_uids[index].bindmode == EMCOM_XENGINE_MPFLOW_BINDMODE_LTE)) ||
 		((is_wifi_block == true) && (is_lte_block == true))) {
@@ -1683,8 +1680,8 @@ void emcom_xengine_mpflow_bind2device(struct sock *sk, struct sockaddr *uaddr)
 	spin_lock_bh(&g_mpflow_lock);
 	index = emcom_xengine_mpflow_finduid(uid);
 	if (index == INDEX_INVALID) {
-		emcom_xengine_mpflow_ai_bind2device(sk, uaddr);
 		spin_unlock_bh(&g_mpflow_lock);
+		emcom_xengine_mpflow_ai_bind2device(sk, uaddr);
 		return;
 	}
 
@@ -1738,9 +1735,8 @@ struct emcom_xengine_mpflow_stat *emcom_xengine_mpflow_get(int uid, const char *
 	errno_t err;
 	struct emcom_xengine_mpflow_stat *mpflow_list = NULL;
 
-	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list)) {
+	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list))
 		return NULL;
-	}
 
 	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
 		if ((node == NULL) && (mpflow_list[index].uid == UID_INVALID_APP))
@@ -1790,9 +1786,8 @@ void emcom_xengine_mpflow_delete(int uid, uint8_t ver)
 	struct emcom_xengine_mpflow_stat *node = NULL;
 	struct emcom_xengine_mpflow_stat *mpflow_list = NULL;
 
-	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list)) {
+	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list))
 		return;
-	}
 
 	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
 		node = &mpflow_list[index];
@@ -1808,9 +1803,8 @@ void emcom_xengine_mpflow_clear_blocked(int uid, uint8_t ver)
 	errno_t err;
 	struct emcom_xengine_mpflow_stat *mpflow_list = NULL;
 
-	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list)) {
+	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list))
 		return;
-	}
 
 	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
 		node = &mpflow_list[index];
@@ -1834,9 +1828,8 @@ bool emcom_xengine_mpflow_blocked(int uid, const char *name, uint8_t ver)
 	struct emcom_xengine_mpflow_stat *node = NULL;
 	struct emcom_xengine_mpflow_stat *mpflow_list = NULL;
 
-	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list)) {
+	if (!emcom_xengine_get_mpflowlist(ver, &mpflow_list))
 		return false;
-	}
 
 	for (index = 0; index < EMCOM_MPFLOW_MAX_LIST_NUM; index++) {
 		node = &mpflow_list[index];
@@ -1865,7 +1858,9 @@ void emcom_xengine_mpflow_report(struct emcom_xengine_mpflow_fallback *fallback)
 	if (fallback->mark >= 0) {
 		emcom_loge("MpRoute fallback report uid:%d reason: %d, mark:%d",
 			fallback->uid, fallback->reason, fallback->mark);
+#ifdef CONFIG_HW_EMCOM_NSTACK
 		fi_send_mproute_msg2daemon((const void *)fallback, sizeof(struct emcom_xengine_mpflow_fallback));
+#endif
 		return;
 	}
 
@@ -2004,39 +1999,71 @@ int8_t emcom_xengine_mpflow_checkstatus(const struct sock *sk, int *reason, int 
 	return result;
 }
 
+static bool emcom_xengine_mpflow_fallback_check_valid_reason(const char *name, int net_type, int reason)
+{
+	if (strncmp(emcom_xengine_get_network_iface_name(net_type), name, strlen(name)) != 0)
+		return false;
+
+	if (net_type != EMCOM_XENGINE_NET_CELL0 && net_type != EMCOM_XENGINE_NET_CELL1)
+		return true;
+
+	if (reason != EMCOM_MPFLOW_FALLBACK_RETRANS)
+		return true;
+
+	return false;
+}
+
+static bool emcom_xengine_mpflow_fallback_update_reason(int reason, const char *name,
+	struct emcom_xengine_mpflow_stat *node, struct emcom_xengine_mpflow_fallback *fallback)
+{
+	int net_type;
+	fallback->mark = -1;
+	fallback->uid = node->uid;
+	/* report connection unreachabled */
+	if (strncmp(EMCOM_MPROUTE_IFNAME, name, strlen(name)) == 0) {
+		fallback->reason = EMCOM_MPROUTE_FALLBACK_OFFSET + reason;
+		fallback->mark = node->mark;
+		return true;
+	}
+
+	for (net_type = EMCOM_XENGINE_NET_WLAN0; net_type < EMCOM_XENGINE_NET_MAX_NUM; ++net_type) {
+		if (emcom_xengine_mpflow_fallback_check_valid_reason(name, net_type, reason)) {
+			fallback->reason = (EMCOM_MPFLOW_FALLBACK_WLAN_OFFSET +
+						net_type * EMCOM_MPFLOW_FALLBACK_INDEX_OFFSET) + reason;
+			return true;
+		}
+	}
+
+	emcom_loge("invalid ifname:%s", name);
+	return false;
+}
+
+static bool emcom_xengine_mpflow_fallback_set_report(int reason, int state, const char *name,
+	struct emcom_xengine_mpflow_stat *node)
+{
+	if (emcom_xengine_mpflow_errlink(reason, node) || emcom_xengine_mpflow_retrans(reason, node)) {
+		struct emcom_xengine_mpflow_fallback fallback;
+		emcom_loge("MpFlow fallback uid:%d inf:%d(%s) mark:%d estlink:%d nodata,rst,tout:%d,%d,%d\n",
+				node->uid, node->ifindex, node->name, node->mark, node->mpflow_estlink,
+				node->mpflow_fail_nopayload, node->mpflow_fail_syn_rst, node->mpflow_fail_syn_timeout);
+
+		if (!emcom_xengine_mpflow_fallback_update_reason(reason, name, node, &fallback))
+			return false;
+
+		node->report_jiffies = jiffies;
+		emcom_xengine_mpflow_report(&fallback);
+	}
+
+	return true;
+}
+
 static void emcom_xengine_mpflow_fallback_report(struct sock *sk, int reason, int state, const char *name,
 	struct emcom_xengine_mpflow_stat *node)
 {
 	int8_t result = emcom_xengine_mpflow_checkstatus(sk, &reason, state, node);
 	if (result == EMCOM_MPFLOW_FALLBACK_SET) {
-		if (emcom_xengine_mpflow_errlink(reason, node) || emcom_xengine_mpflow_retrans(reason, node)) {
-			struct emcom_xengine_mpflow_fallback fallback;
-			emcom_loge("MpFlow fallback uid:%d inf:%d(%s) mark:%d estlink:%d nodata,rst,tout:%d,%d,%d\n",
-					   node->uid, node->ifindex, node->name, node->mark, node->mpflow_estlink,
-					   node->mpflow_fail_nopayload, node->mpflow_fail_syn_rst, node->mpflow_fail_syn_timeout);
-
-			fallback.mark = -1;
-			fallback.uid = node->uid;
-			/* report connection unreachabled */
-			if (!strncmp(EMCOM_WLAN0_IFNAME, name, strlen(name))) {
-				fallback.reason = EMCOM_MPFLOW_FALLBACK_WLAN_OFFSET + reason;
-			} else if (!strncmp(EMCOM_CELL0_IFNAME, name, strlen(name)) && (reason != EMCOM_MPFLOW_FALLBACK_RETRANS)) {
-				fallback.reason = EMCOM_MPFLOW_FALLBACK_LTE_OFFSET + reason;
-			}  else if (!strncmp(EMCOM_WLAN1_IFNAME, name, strlen(name))) {
-				fallback.reason = EMCOM_MPFLOW_FALLBACK_WLAN1_OFFSET + reason;
-			}  else if (!strncmp(EMCOM_CELL1_IFNAME, name, strlen(name)) && (reason != EMCOM_MPFLOW_FALLBACK_RETRANS)) {
-				fallback.reason = EMCOM_MPFLOW_FALLBACK_LTE1_OFFSET + reason;
-			} else if (!strncmp(EMCOM_MPROUTE_IFNAME, name, strlen(name))) {
-				fallback.reason = EMCOM_MPROUTE_FALLBACK_OFFSET + reason;
-				fallback.mark = node->mark;
-			} else {
-				emcom_loge("invalid ifname:%s", name);
-				return;
-			}
-
-			node->report_jiffies = jiffies;
-			emcom_xengine_mpflow_report(&fallback);
-		}
+		if (!emcom_xengine_mpflow_fallback_set_report(reason, state, name, node))
+			return;
 	} else if (result == EMCOM_MPFLOW_FALLBACK_CLR) {
 		node->mpflow_fallback = EMCOM_MPFLOW_FALLBACK_CLR;
 		node->mpflow_fail_nopayload = 0;
@@ -2138,7 +2165,7 @@ void emcom_mpflow_check_mpdns_addr(struct sock *sk, int reason, int result)
 	if (!need_clear)
 		return;
 
-	init_net_type = emcom_xengine_get_net_type(sk->sk_mark & 0x00FF);
+	init_net_type = emcom_xengine_get_net_type(sk->sk_mark & EMCOM_XENGINE_NET_ID_MASK);
 	bound_net_type = emcom_xengine_get_sock_bound_net_type(sk);
 	if (bound_net_type == EMCOM_XENGINE_NET_INVALID || bound_net_type == init_net_type)
 		return;

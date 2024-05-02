@@ -115,6 +115,7 @@ struct soc_decimal_dev {
 	struct device *dev;
 	struct notifier_block nb;
 	struct hrtimer timer;
+	struct work_struct soc_decimal_timer_work;
 	int para_level;
 	struct soc_decimal_para_data para[SOC_DECIMAL_PARA_LEVEL];
 	u32 ui_offset;

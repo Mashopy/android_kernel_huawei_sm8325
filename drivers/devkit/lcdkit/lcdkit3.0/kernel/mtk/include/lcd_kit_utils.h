@@ -84,24 +84,24 @@
 #define LCD_KIT_PCD_DETECT_CLOSE  0
 
 struct ldi_panel_info {
-	u32 h_back_porch;
-	u32 h_front_porch;
 	u32 h_pulse_width;
+	u32 h_front_porch;
+	u32 h_back_porch;
 	/*
 	 * note: vbp > 8 if used overlay compose,
 	 * also lcd vbp > 8 in lcd power on sequence
 	 */
-	u32 v_back_porch;
-	u32 v_front_porch;
 	u32 v_pulse_width;
-	u8 hsync_plr;
-	u8 vsync_plr;
-	u8 pixelclk_plr;
+	u32 v_front_porch;
+	u32 v_back_porch;
 	u8 data_en_plr;
+	u8 pixelclk_plr;
+	u8 vsync_plr;
+	u8 hsync_plr;
 	/* for cabc */
+	u32 v_front_porch_forlp;
 	u8 dpi0_overlap_size;
 	u8 dpi1_overlap_size;
-	u32 v_front_porch_forlp;
 };
 
 struct mipi_hopping_info {
@@ -202,19 +202,19 @@ struct panel_round_corner {
 struct mipi_panel_info {
 	u8 dsi_version;
 	u8 vc;
-	u8 lane_nums;
 	u8 lane_nums_select_support;
+	u8 lane_nums;
 	u8 color_mode;
 	u32 dsi_bit_clk; /* clock lane(p/n) */
 	u32 burst_mode;
 	u32 max_tx_esc_clk;
 	u8 non_continue_en;
+	u32 dsi_bit_clk_upt;
 	u32 dsi_bit_clk_val1;
 	u32 dsi_bit_clk_val2;
 	u32 dsi_bit_clk_val3;
 	u32 dsi_bit_clk_val4;
 	u32 dsi_bit_clk_val5;
-	u32 dsi_bit_clk_upt;
 	u32 hs_wr_to_time;
 	/* dphy config parameter adjust */
 	u32 mipi_ulpm_after_vci;
@@ -235,10 +235,10 @@ struct mipi_panel_info {
 	/* only for 3660 use */
 	u32 rg_vrefsel_vcm_clk_adjust;
 	u32 rg_vrefsel_vcm_data_adjust;
-	u32 phy_mode;  /* 0: DPHY, 1:CPHY */
-	u32 lp11_flag; /* 0: nomal_lp11, 1:short_lp11, 2:disable_lp11 */
 	u32 phy_m_n_count_update; /* 0:old ,1:new can get 988.8M */
 	u32 eotp_disable_flag; /* 0: eotp enable, 1:eotp disable */
+	u32 phy_mode;  /* 0: DPHY, 1:CPHY */
+	u32 lp11_flag; /* 0: nomal_lp11, 1:short_lp11, 2:disable_lp11 */
 };
 
 struct mtk_panel_info {
@@ -254,18 +254,18 @@ struct mtk_panel_info {
 	u32 output_mode; /* MTK_PANEL_OUTPUT_MODE */
 	u32 lcm_cmd_if; /* lcm_cmd_if is used to distinguish for Panel Cmd single or dual Port */
 	u32 type;
+	u32 height;
+	u32 width; /* mm */
 	u32 xres;
 	u32 yres;
-	u32 width; /* mm */
-	u32 height;
 	u32 bpp;
 	u32 fps;
 	u32 fps_updt;
 	u32 orientation;
 	u32 bgr_fmt;
 	u32 bl_set_type;
-	u32 bl_min;
 	u32 bl_max;
+	u32 bl_min;
 	u32 bl_def;
 	u32 bl_v200;
 	u32 bl_otm;
@@ -297,49 +297,49 @@ struct mtk_panel_info {
 	u32 ifbc_orise_ctl;
 	u32 ifbc_orise_ctr;
 	u32 ssc_disable;
-	u32 vrefresh;
 	u32 ssc_range;
+	u32 vrefresh;
 	u8 sbl_support;
+	u8 color_temp_rectify_support;
 	u8 sre_support;
 	u8 color_temperature_support;
-	u8 color_temp_rectify_support;
+	u32 color_temp_rectify_B;
 	u32 color_temp_rectify_R;
 	u32 color_temp_rectify_G;
-	u32 color_temp_rectify_B;
-	u8 comform_mode_support;
-	u8 cinema_mode_support;
-	u8 frc_enable;
-	u8 esd_enable;
-	u8 esd_skip_mipi_check;
-	u8 esd_recover_step;
-	u8 esd_expect_value_type;
-	u8 dirty_region_updt_support;
-	u8 snd_cmd_before_frame_support;
-	u8 dsi_bit_clk_upt_support;
 	u8 mipiclk_updt_support_new;
 	u8 fps_updt_support;
 	u8 fps_updt_panel_only;
 	u8 fps_updt_force_update;
 	u8 fps_scence;
+	u8 comform_mode_support;
+	u8 cinema_mode_support;
+	u8 frc_enable;
+	u8 esd_enable;
+	u8 esd_skip_mipi_check;
+	u8 dirty_region_updt_support;
+	u8 snd_cmd_before_frame_support;
+	u8 dsi_bit_clk_upt_support;
+	u8 esd_recover_step;
+	u8 esd_expect_value_type;
 
 	u8 panel_effect_support;
 
-	u8 gmp_support;
 	u8 colormode_support;
-	u8 gamma_support;
-	u8 gamma_type; /* normal, cinema */
-	u8 xcc_support;
 	u8 acm_support;
 	u8 acm_ce_support;
 	u8 rgbw_support;
+	u8 xcc_support;
+	u8 gamma_type; /* normal, cinema */
+	u8 gamma_support;
+	u8 gmp_support;
 	u8 hbm_support;
 
-	u8 hiace_support;
-	u8 dither_support;
 	u8 arsr1p_sharpness_support;
+	u8 dither_support;
+	u8 hiace_support;
 	struct ldi_panel_info ldi;
-	struct mipi_panel_info mipi;
 	struct mipi_hopping_info mipi_hopping;
+	struct mipi_panel_info mipi;
 	int maxluminance;
 	int minluminance;
 	/* sn code */
@@ -349,17 +349,17 @@ struct mtk_panel_info {
 	struct panel_round_corner round_corner;
 #endif
 };
+enum {
+	LCD_OFFLINE = 0,
+	LCD_ONLINE = 1,
+};
+
 /* enum */
 enum {
 	RGBW_SET1_MODE = 1,
 	RGBW_SET2_MODE = 2,
 	RGBW_SET3_MODE = 3,
 	RGBW_SET4_MODE = 4,
-};
-
-enum {
-	LCD_OFFLINE = 0,
-	LCD_ONLINE = 1,
 };
 
 struct lcd_kit_gamma {
@@ -486,6 +486,13 @@ struct lcd_kit_quickly_sleep_out {
 	struct timeval panel_on_record_tv;
 };
 
+enum bias_control_mode {
+	MT_AP_MODE = 0,
+	PMIC_ONLY_MODE = 1,
+	GPIO_ONLY_MODE,
+	GPIO_THEN_I2C_MODE,
+};
+
 enum bl_control_mode {
 	MTK_AP_MODE = 0,
 	I2C_ONLY_MODE = 1,
@@ -497,13 +504,6 @@ enum bl_control_mode {
 	MTK_MIPI_MODE,
 	MTK_MIPI_BL_IC_PWM_MODE,
 	PWM_I2C_MODE,
-};
-
-enum bias_control_mode {
-	MT_AP_MODE = 0,
-	PMIC_ONLY_MODE = 1,
-	GPIO_ONLY_MODE,
-	GPIO_THEN_I2C_MODE,
 };
 
 struct display_engine_ddic_hbm_param {

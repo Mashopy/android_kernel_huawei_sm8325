@@ -3,7 +3,7 @@
  *
  * memory leak detect
  *
- * Copyright (c) 2021 Huawei Technologies Co., Ltd.
+ * Copyright (c) 2021-2022 Huawei Technologies Co., Ltd.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,78 +18,55 @@
 
 #include <linux/module.h>
 #include <linux/version.h>
-#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
+#ifdef CONFIG_ANDROID_VENDOR_HOOKS
 #include <platform/trace/hooks/memcheck.h>
 #else
 #include <platform/trace/events/memcheck.h>
 #endif
-#include <platform/linux/memcheck.h>
-
-#include "impl/memstack_buddy.h"
-#include "impl/memstack_slub.h"
-#include "impl/memstat_imp.h"
-#include "memcheck_memstat.h"
-
-static void hook_mm_set_buddy_track(void *ignore, struct page *page,
-				    unsigned int order, unsigned long caller)
-{
-	mm_set_buddy_track(page, order, caller);
-}
-static void hook_mm_track_lslub_pages(void *ignore, struct page *page,
-				      unsigned int order, unsigned long caller,
-				      bool is_add)
-{
-	mm_track_lslub_pages(page, order, caller, is_add);
-}
-
-static void hook_mm_set_slub_alloc_track(void *ignore, unsigned long caller)
-{
-	mm_set_slub_alloc_track(caller);
-}
-
-static void hook_mm_set_slub_free_track(void *ignore, unsigned long caller)
-{
-	mm_set_slub_free_track(caller);
-}
+#include "memcheck_account.h"
+#include "memcheck_log_cma.h"
 
 static void hook_mm_mem_stats_show(void *ignore, int unused)
 {
-	mm_mem_stats_show();
+	memcheck_stats_show();
 }
 
-static void hook_mm_vmalloc_detail_show(void *ignore, int unused)
+static void hook_cma_report(void *ignore, char *name, unsigned long total,
+			    unsigned long req)
 {
-	mm_vmalloc_detail_show();
+	memcheck_cma_report(name, total, req);
 }
 
-static void hook_mm_set_skb_pages_zone_state(void *ignore, struct page *page,
-					     unsigned int order, bool is_add)
+static void hook_slub_obj_report(void *ignore, struct kmem_cache *s)
 {
-	mm_set_skb_pages_zone_state(page, order, is_add);
+	memcheck_slub_obj_report(s);
+}
+
+static void hook_lowmem_report(void *ignore, struct task_struct *p,
+				 unsigned long points)
+{
+	memcheck_lowmem_report(p, points);
 }
 
 static int __init dfx_memcheck_init(void)
 {
 	memcheck_createfs();
-	register_trace_mm_set_buddy_track(hook_mm_set_buddy_track, NULL);
-	register_trace_mm_track_lslub_pages(hook_mm_track_lslub_pages, NULL);
-	register_trace_mm_set_slub_alloc_track(hook_mm_set_slub_alloc_track, NULL);
-	register_trace_mm_set_slub_free_track(hook_mm_set_slub_free_track, NULL);
 	register_trace_mm_mem_stats_show(hook_mm_mem_stats_show, NULL);
-	register_trace_mm_vmalloc_detail_show(hook_mm_vmalloc_detail_show, NULL);
-	register_trace_mm_set_skb_pages_zone_state(hook_mm_set_skb_pages_zone_state, NULL);
-
+	register_trace_cma_report(hook_cma_report, NULL);
+	register_trace_slub_obj_report(hook_slub_obj_report, NULL);
+	register_trace_lowmem_report(hook_lowmem_report, NULL);
 	return 0;
 }
 module_init(dfx_memcheck_init);
 
 static void __exit dfx_memcheck_exit(void)
 {
-	unregister_trace_mm_set_buddy_track(hook_mm_set_buddy_track, NULL);
-	unregister_trace_mm_track_lslub_pages(hook_mm_track_lslub_pages, NULL);
-	unregister_trace_mm_set_slub_alloc_track(hook_mm_set_slub_alloc_track, NULL);
-	unregister_trace_mm_set_slub_free_track(hook_mm_set_slub_free_track, NULL);
-	unregister_trace_mm_set_skb_pages_zone_state(hook_mm_set_skb_pages_zone_state, NULL);
+#if (KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE)
+	unregister_trace_mm_mem_stats_show(hook_mm_mem_stats_show, NULL);
+	unregister_trace_cma_report(hook_cma_report, NULL);
+	unregister_trace_slub_obj_report(hook_slub_obj_report, NULL);
+	unregister_trace_lowmem_report(hook_lowmem_report, NULL);
+#endif
 }
 module_exit(dfx_memcheck_exit);
 

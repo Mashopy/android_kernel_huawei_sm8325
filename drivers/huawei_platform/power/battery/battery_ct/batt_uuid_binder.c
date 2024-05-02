@@ -300,6 +300,7 @@ static void batt_try_bind(struct batt_chk_data *drv_data,
 			memcpy(uuid_record->uuid[i], uuid_record->uuid[i - 1],
 				MAX_BATT_UUID_LEN);
 
+		memset(uuid_record->uuid[0], 0, MAX_BATT_UUID_LEN);
 		memcpy(uuid_record->uuid[0], uuid, len);
 		uuid_record->version = RAW_UUID_BIND_VER;
 		/* 1:enable update sign to refresh tee */

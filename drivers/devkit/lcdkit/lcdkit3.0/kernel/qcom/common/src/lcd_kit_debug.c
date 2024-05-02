@@ -663,7 +663,7 @@ int lcd_kit_dbg_parse_config(void)
 	int ret;
 
 	fs = get_fs(); /* save previous value */
-	set_fs(get_ds()); /* use kernel limit */
+	set_fs(KERNEL_DS); /* use kernel limit */
 	fd = ksys_open((const char __force *) LCD_KIT_PARAM_FILE_PATH, O_RDONLY, 0);
 	if (fd < 0) {
 		LCD_KIT_ERR("%s file doesn't exsit\n", LCD_KIT_PARAM_FILE_PATH);
@@ -1021,7 +1021,7 @@ static int parse_open(const char *path)
 	int ret;
 	int fd = -1;
 
-	set_fs(get_ds()); //lint !e501
+	set_fs(KERNEL_DS); //lint !e501
 	fd = ksys_open((const char __force *)path, O_RDONLY, 0);
 	if (fd < 0) {
 		LCD_KIT_ERR("%s file doesn't exsit\n", path);

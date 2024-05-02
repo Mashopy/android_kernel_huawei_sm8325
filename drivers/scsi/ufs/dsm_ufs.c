@@ -85,7 +85,7 @@ static int dsm_ufs_updata_ice_info(struct ufs_hba *hba)
 	g_ufs_dsm_adaptor.ice_doorbell = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
 	for (i = 0; i < UFS_DMD_INDEX_SIZE; i++)
 	{
-		if (!((g_ufs_dsm_adaptor.ice_doorbell >> i)&0x1))
+		if (!((g_ufs_dsm_adaptor.ice_doorbell >> i) & 0x1))
 		{
 			continue;
 		}

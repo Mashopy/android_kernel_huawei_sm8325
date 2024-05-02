@@ -42,7 +42,7 @@
 
 #define BAT_HEATING_RW_BUF_SIZE              32
 
-#define DELAY_TIME_FOR_INIT_MONITOR_WORK     10000 /* 10s */
+#define DELAY_TIME_FOR_INIT_MONITOR_WORK     15000 /* 15s */
 #define DELAY_TIME_FOR_MONITOR_WORK          5000 /* 5s */
 #define DELAY_TIME_FOR_COUNT_WORK            10000 /* 10s */
 #define DELAY_TIME_FOR_DMD_WORK              3000 /* 3s */
@@ -81,6 +81,7 @@ enum bat_heating_uevent_type {
 	BAT_HEATING_STOP_HEAT_UP,
 	BAT_HEATING_POPUP_UI_MSG,
 	BAT_HEATING_REMOVE_UI_MSG,
+	BAT_HEATING_EXIT_SERVICE,
 	BAT_HEATING_UEVENT_END,
 };
 
@@ -143,6 +144,7 @@ struct bat_heating_dev {
 	bool ui_msg_flag;
 	bool dc_stop_flag;
 	int overload_count;
+	bool service_exit_flag;
 };
 
 int lcd_kit_drm_notifier_register(uint32_t panel_id, struct notifier_block *nb);

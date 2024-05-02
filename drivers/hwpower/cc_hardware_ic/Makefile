@@ -13,3 +13,4 @@ obj-$(CONFIG_CHARGE_ADC_MONITOR) += charge_adc_monitor/
 obj-$(CONFIG_FUEL_GAUGE) += fuel_gauge/
 obj-$(CONFIG_ADAPTER_PROTOCOL) += protocol_ic/
 obj-$(CONFIG_HUAWEI_CHARGER_AP) += charger_ic/
+obj-y += boost_ic/

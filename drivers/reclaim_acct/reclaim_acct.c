@@ -28,49 +28,98 @@
 #include <linux/sched/clock.h>
 #include <linux/sched/task.h>
 #include <linux/slab.h>
+#include <linux/swap.h>
 #include <linux/types.h>
+#include <linux/time64.h>
+#include <linux/fs.h>
 
 #include <log/log_usertype.h>
+#include <securec.h>
+
+#include "internal.h"
+#include "reclaimacct_show.h"
 
 /*
  * Memory pool of reclaim_acct. Maximum of NR_POOLMEMBER structs can be
  * used at the same time. Once memory pool is used up, the record should
  * be simply abandoned without any runtime error.
  */
-struct reclaim_acct {
-	u64 start[NR_RA_STUBS];
-	u64 delay[NR_RA_STUBS];
-	u64 count[NR_RA_STUBS];
+const char *reclaim_type_str[RECLAIM_TYPES] = {
+	DIRECT_RECLAIM_STR,
+	KSWAPD_NODE_STR,
+	ZSWAPD_NODE_STR
 };
 
+const char *stub_name[NR_RA_STUBS] = {
+	DIRECT_RECLAIM_STR,
+	DRAIN_ALL_PAGES_STR,
+	SHRINK_FILE_LIST_STR,
+	SHRINK_ANON_LIST_STR,
+	SHRINK_SLAB_STR
+};
+
+static u64 g_delay_max[RECLAIM_TYPES];
+static DEFINE_SPINLOCK(g_delay_max_lock);
+
 /* Define a mem pool of NR_POOLMEMBER pointers */
-#define NR_POOLMEMBER 32
+#define NR_POOLMEMBER 128
 static struct reclaim_acct *g_mempool[NR_POOLMEMBER];
 static int g_mempool_index = NR_POOLMEMBER - 1;
 static DEFINE_SPINLOCK(g_mempool_lock);
 
-/* Store reclaim accounting data */
-static struct reclaimacct_show {
-	u64 delay[NR_DELAY_LV][NR_RA_STUBS];
-	u64 count[NR_DELAY_LV][NR_RA_STUBS];
-	u64 delay_max;
-	u64 delay_max_t;
-} *g_reclaimacct_show;
-static DEFINE_SPINLOCK(g_reclaimacct_show_lock);
-
 /* Once initialized, the variable should never be changed */
 static bool g_reclaimacct_is_off = true;
 static int g_reclaimacct_disable = 1;
+static int g_reclaim_trace_enable;
+static int g_kswapd_trace_enable;
+static int g_kswapd_delay_threshold = DEFAULT_DELAY_THRESHOLD;
 
-static void reclaimacct_clear(u64 *start, u64 *delay, u64 *count)
+static void tracing_mark_write(int pid, const char *name,
+	bool trace_begin, void *scan, unsigned long reclaim)
 {
-	*start = 0;
-	*delay = 0;
-	*count = 0;
+	if (likely(!g_reclaim_trace_enable))
+		return;
+
+	if (trace_begin) {
+		if (!scan)
+			trace_printk("B|%d|%s\n", pid, name);
+		else
+			trace_printk("B|%d|shrink_slab_%pS\n", pid, scan);
+	} else {
+		trace_printk("E|%d\n", pid);
+		trace_printk("C|%d|%s reclaim|%lu\n", pid, name, reclaim);
+	}
 }
 
+static inline void reclaimacct_trace_begin(const char *name, void *scan, unsigned long reclaim)
+{
+	return tracing_mark_write(current->tgid, name, true, scan, reclaim);
+}
+
+static inline void reclaimacct_trace_end(const char *name, void *scan, unsigned long reclaim)
+{
+	return tracing_mark_write(current->tgid, name, false, scan, reclaim);
+}
+
+#ifdef CONFIG_SCHEDSTATS
+void get_ra_sched_blocked_info(struct task_struct *tsk, u64 blocked_time)
+{
+	void *pt = NULL;
+
+	if (likely(!tsk->reclaim_acct))
+		return;
+
+	if (blocked_time > SCHED_BLOCK_THRESHOLD * NSEC_PER_MSEC &&
+		blocked_time > tsk->reclaim_acct->sched_blocked_max_time) {
+		pt = (void *)get_wchan(tsk);
+		tsk->reclaim_acct->p_stack = pt;
+		tsk->reclaim_acct->sched_blocked_max_time = blocked_time;
+	}
+}
+#endif
+
 /* reclaimacct_alloc MUST be used with reclaimacct_free */
-static struct reclaim_acct *reclaimacct_alloc(void)
+static struct reclaim_acct *__reclaimacct_alloc(void)
 {
 	struct reclaim_acct *elem = NULL;
 
@@ -89,8 +138,15 @@ static struct reclaim_acct *reclaimacct_alloc(void)
 	return elem;
 }
 
+static struct reclaim_acct *reclaimacct_alloc(enum ra_reclaim_type type)
+{
+	if (is_system_reclaim(type))
+		return kzalloc(sizeof(struct reclaim_acct), GFP_KERNEL);
+	return __reclaimacct_alloc();
+}
+
 /* reclaimacct_free MUST be used with reclaimacct_alloc */
-static void reclaimacct_free(struct reclaim_acct *elem)
+static void __reclaimacct_free(struct reclaim_acct *elem)
 {
 	spin_lock(&g_mempool_lock);
 	if (g_mempool_index >= -1 &&
@@ -103,28 +159,243 @@ static void reclaimacct_free(struct reclaim_acct *elem)
 	spin_unlock(&g_mempool_lock);
 }
 
-/* The caller should make sure start, total, count and func are not NULL */
-static void reclaimacct_end(const u64 *start, u64 *delay, u64 *count,
-			    const char *func_name, const void *shrinker)
+static void reclaimacct_free(struct reclaim_acct *ra, enum ra_reclaim_type type)
 {
-	u64 now, ns;
+	(void)memset_s(ra, sizeof(struct reclaim_acct), 0,
+		sizeof(struct reclaim_acct));
 
-	now = ktime_get_ns();
-	if (now < *start)
+	if (!is_system_reclaim(type))
+		__reclaimacct_free(ra);
+}
+
+void reclaimacct_get_nr_to_scan(const unsigned long *nr)
+{
+	enum lru_list lru;
+
+	if (g_reclaimacct_is_off || g_reclaimacct_disable ||
+		!current->reclaim_acct)
 		return;
 
-	ns = now - *start;
-	if (ns < DELAY_LV5) {
-		*delay += ns;
-		(*count)++;
-	}
-	if (ns > DELAY_LV4 && ns < DELAY_LV5) {
-		if (shrinker)
-			pr_warn_ratelimited("shrinker=%pF\n", shrinker);
+	for_each_evictable_lru(lru)
+		current->reclaim_acct->nr_to_scanned[lru] += nr[lru];
 
-		if (func_name)
-			pr_warn_ratelimited("%s timeout:%lu\n", func_name, ns);
+	return;
+}
+
+void kswapd_change_block_status(void)
+{
+	if (g_reclaimacct_is_off || g_reclaimacct_disable ||
+		!current->reclaim_acct)
+		return;
+
+	current->reclaim_acct->is_blocked = true;
+}
+
+static void show_delay_info(struct reclaim_acct *ra)
+{
+	u64 delay[NR_RA_STUBS];
+	int i;
+
+	for (i = 0; i < NR_RA_STUBS; i++)
+		delay[i] = ra->delay[i] / NSEC_PER_MSEC;
+
+	pr_err("delay: %s=%llums %s=%llums %s=%llums %s=%llums\n",
+		reclaim_type_str[ra->reclaim_type], delay[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, delay[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, delay[RA_SHRINKANON],
+		SHRINK_SLAB_STR, delay[RA_SHRINKSLAB]);
+
+#ifdef CONFIG_SCHEDSTATS
+	pr_err("sched: sleep=%llums runable=%llums\n",
+		ra->sum_sleep_runtime / NSEC_PER_MSEC,
+		ra->wait_sum / NSEC_PER_MSEC);
+
+	if (ra->p_stack && ra->sched_blocked_max_time)
+		pr_err("sched: %pS blocked max_time=%llums\n",
+			ra->p_stack, ra->sched_blocked_max_time / NSEC_PER_MSEC);
+#endif
+
+	pr_err("nr_to_scan: %s=%llu %s=%llu %s=%llu %s=%llu %s=%llu",
+		LRU_INACTIVE_ANON_STR, ra->nr_to_scanned[LRU_INACTIVE_ANON],
+		LRU_ACTIVE_ANON_STR, ra->nr_to_scanned[LRU_ACTIVE_ANON],
+		LRU_INACTIVE_FILE_STR, ra->nr_to_scanned[LRU_INACTIVE_FILE],
+		LRU_ACTIVE_FILE_STR, ra->nr_to_scanned[LRU_ACTIVE_FILE],
+		LRU_UNEVICTABLE_STR, ra->nr_to_scanned[LRU_UNEVICTABLE]);
+
+	pr_err("scanned: %s=%llu %s=%llu %s=%llu %s=%llu\n",
+		reclaim_type_str[ra->reclaim_type], ra->scanned[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, ra->scanned[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, ra->scanned[RA_SHRINKANON],
+		SHRINK_SLAB_STR, ra->scanned[RA_SHRINKSLAB]);
+
+	pr_err("reclaimed: %s=%llu %s=%llu %s=%llu %s=%llu\n",
+		reclaim_type_str[ra->reclaim_type], ra->freed[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, ra->freed[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, ra->freed[RA_SHRINKANON],
+		SHRINK_SLAB_STR, ra->freed[RA_SHRINKSLAB]);
+
+	if (ra->scan_objects) {
+		bool is_fs = is_super_cache_scan(ra->scan_objects);
+		pr_err("shrinker: %pS %s %s delay_max: %lluns",
+			ra->scan_objects, is_fs ? ra->fs_type : "",
+			is_fs ? ra->s_id : "", ra->shrinker_delay_max);
 	}
+}
+
+static void print_trace_info(struct reclaim_acct *ra)
+{
+	u64 delay[NR_RA_STUBS];
+	int i;
+
+	for (i = 0; i < NR_RA_STUBS; i++)
+		delay[i] = ra->delay[i] / NSEC_PER_MSEC;
+
+	trace_printk(
+		"reclaimacct: Kswapd delay %s=%llums %s=%llums %s=%llums %s=%llums\n",
+		KSWAPD_NODE_STR, delay[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, delay[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, delay[RA_SHRINKANON],
+		SHRINK_SLAB_STR, delay[RA_SHRINKSLAB]);
+
+#ifdef CONFIG_SCHEDSTATS
+	trace_printk("reclaimacct: Kswapd sched sleep=%llums runable=%llums\n",
+		ra->sum_sleep_runtime / NSEC_PER_MSEC,
+		ra->wait_sum / NSEC_PER_MSEC);
+
+	if (ra->p_stack && ra->sched_blocked_max_time)
+		trace_printk("reclaimacct: Kswapd sched %pS blocked max_time=%llums\n",
+			ra->p_stack, ra->sched_blocked_max_time / NSEC_PER_MSEC);
+#endif
+
+	trace_printk(
+		"reclaimacct: Kswapd nr_to_scan %s=%llu %s=%llu %s=%llu %s=%llu %s=%llu",
+		LRU_INACTIVE_ANON_STR, ra->nr_to_scanned[LRU_INACTIVE_ANON],
+		LRU_ACTIVE_ANON_STR, ra->nr_to_scanned[LRU_ACTIVE_ANON],
+		LRU_INACTIVE_FILE_STR, ra->nr_to_scanned[LRU_INACTIVE_FILE],
+		LRU_ACTIVE_FILE_STR, ra->nr_to_scanned[LRU_ACTIVE_FILE],
+		LRU_UNEVICTABLE_STR, ra->nr_to_scanned[LRU_UNEVICTABLE]);
+
+	trace_printk(
+		"reclaimacct: Kswapd scanned %s=%llu %s=%llu %s=%llu %s=%llu\n",
+		KSWAPD_NODE_STR, ra->scanned[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, ra->scanned[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, ra->scanned[RA_SHRINKANON],
+		SHRINK_SLAB_STR, ra->scanned[RA_SHRINKSLAB]);
+
+	trace_printk(
+		"reclaimacct: Kswapd reclaimed %s=%llu %s=%llu %s=%llu %s=%llu\n",
+		KSWAPD_NODE_STR, ra->freed[RA_RECLAIM],
+		SHRINK_FILE_LIST_STR, ra->freed[RA_SHRINKFILE],
+		SHRINK_ANON_LIST_STR, ra->freed[RA_SHRINKANON],
+		SHRINK_SLAB_STR, ra->freed[RA_SHRINKSLAB]);
+
+	if (ra->scan_objects) {
+		bool is_fs = is_super_cache_scan(ra->scan_objects);
+		trace_printk("reclaimacct: Kswapd shrinker: %pS %s %s delay_max: %lluns",
+			ra->scan_objects, is_fs ? ra->fs_type : "",
+			is_fs ? ra->s_id : "", ra->shrinker_delay_max);
+	}
+}
+
+static void print_reclaim_info(struct reclaim_acct *ra)
+{
+	show_delay_info(ra);
+
+	spin_lock(&g_delay_max_lock);
+	if (ra->delay[RA_RECLAIM] > g_delay_max[ra->reclaim_type]) {
+		g_delay_max[ra->reclaim_type] = ra->delay[RA_RECLAIM];
+		pr_info("-------------------------------------------");
+		show_mem(SHOW_MEM_FILTER_NODES, NULL);
+	}
+	spin_unlock(&g_delay_max_lock);
+}
+
+static void get_fs_info(struct reclaim_acct *ra, struct shrinker *shrinker)
+{
+	struct super_block *sb = NULL;
+
+	if (!is_super_cache_scan(shrinker->scan_objects))
+		return;
+
+	sb = container_of(shrinker, struct super_block, s_shrink);
+
+	if (sb->s_type && sb->s_type->name)
+		strlcpy(ra->fs_type, sb->s_type->name, sizeof(ra->fs_type));
+	strlcpy(ra->s_id, sb->s_id, sizeof(ra->s_id));
+}
+
+static void trace_slab_delay_info(struct reclaim_acct *ra, struct shrinker *shrinker, u64 delay)
+{
+	bool is_fs = is_super_cache_scan(shrinker->scan_objects);
+
+	trace_printk("shrinker: %pS %s %s delayed: %llums",
+		shrinker->scan_objects, is_fs ? ra->fs_type : "",
+		is_fs ? ra->s_id : "", delay / NSEC_PER_MSEC);
+}
+
+static void __reclaimacct_end(struct reclaim_acct *ra,  u64 freed,
+	u64 scanned, enum reclaimacct_stubs stub, struct shrinker *shrinker)
+{
+	u64 now, ns, start, delay_threshold, block_threshold;
+	int type = ra->reclaim_type;
+
+	start = ra->start[stub];
+	now = ktime_get_ns();
+	if (now < start)
+		return;
+
+	ns = now - start;
+	if (ns < DELAY_LV5 || is_system_reclaim(type)) {
+		ra->delay[stub] += ns;
+		ra->count[stub]++;
+		ra->freed[stub] += freed;
+		ra->scanned[stub] += scanned;
+		/*
+		 * Collect the data of substage into the data of the whole process.
+		 * Unit:page. Values reclaimed by the slab are not included.
+		 */
+		if (stub != RA_SHRINKSLAB) {
+			ra->freed[RA_RECLAIM] += freed;
+			ra->scanned[RA_RECLAIM] += scanned;
+		}
+	}
+
+	if (shrinker) {
+		get_fs_info(ra, shrinker);
+
+		if (ns > DELAY_LV2)
+			trace_slab_delay_info(ra, shrinker, ns);
+
+		if (ns > ra->shrinker_delay_max) {
+			ra->scan_objects = shrinker->scan_objects;
+			ra->shrinker_delay_max = ns;
+		}
+	}
+
+	if (g_kswapd_delay_threshold < 0) {
+		pr_info(" kswapd_delay_threshold negative, reset with 500ms");
+		g_kswapd_delay_threshold = DEFAULT_DELAY_THRESHOLD;
+	}
+
+	delay_threshold = g_kswapd_delay_threshold * NSEC_PER_MSEC;
+	block_threshold = KWSAPD_BLOCK_DELAY_THRESHOLD * NSEC_PER_MSEC;
+
+	if (ns > DELAY_LV4 && ns < DELAY_LV5) {
+		stub_name[0] = reclaim_type_str[type];
+		pr_warn_ratelimited("%s timeout:%luns\n", stub_name[stub], ns);
+
+		if (shrinker)
+			pr_warn_ratelimited("shrinker=%ps\n", shrinker->scan_objects);
+
+		if (stub == RA_RECLAIM)
+			print_reclaim_info(ra);
+	} else if (type == KSWAPD_RECLAIM && (ra->delay[RA_RECLAIM] > delay_threshold ||
+		(ra->is_blocked && ra->delay[RA_RECLAIM] > block_threshold))) {
+		print_reclaim_info(ra);
+	}
+
+	if (g_kswapd_trace_enable && stub == RA_RECLAIM && type == KSWAPD_RECLAIM)
+		print_trace_info(ra);
 }
 
 void reclaimacct_tsk_init(struct task_struct *tsk)
@@ -139,202 +410,96 @@ void reclaimacct_init(void)
 	reclaimacct_tsk_init(&init_task);
 }
 
-void reclaimacct_directreclaim_start(void)
+void reclaimacct_substage_start(enum reclaimacct_stubs stub, struct shrinker *shrinker)
 {
-	/*
-	 * Recursion call of direct reclaim is avoided by PF_MEMALLOC.
-	 * So reclaimacct_alloc will not be called recursively.
-	 * Check it just for safe, return if NOT NULL.
-	 */
-	if (!g_reclaimacct_disable && !g_reclaimacct_is_off &&
-	    !current->reclaim_acct)
-		current->reclaim_acct = reclaimacct_alloc();
+	reclaimacct_trace_begin(stub_name[stub], shrinker ? shrinker->scan_objects : NULL, 0);
 
 	if (!current->reclaim_acct)
 		return;
 
-	current->reclaim_acct->start[RA_DIRECTRECLAIM] = ktime_get_ns();
+	current->reclaim_acct->start[stub] = ktime_get_ns();
 }
 
-static void __reclaimacct_collect_data(int level)
+void reclaimacct_substage_end(enum reclaimacct_stubs stub, unsigned long freed,
+	unsigned long scanned, struct shrinker *shrinker)
 {
-	int i;
-
-	if (!current->reclaim_acct || !g_reclaimacct_show)
-		return;
-
-	spin_lock(&g_reclaimacct_show_lock);
-	for (i = 0; i < NR_RA_STUBS; i++) {
-		g_reclaimacct_show->delay[level][i] +=
-			current->reclaim_acct->delay[i];
-		g_reclaimacct_show->count[level][i] +=
-			current->reclaim_acct->count[i];
-	}
-
-	if (current->reclaim_acct->delay[RA_DIRECTRECLAIM] >
-	    g_reclaimacct_show->delay_max) {
-		g_reclaimacct_show->delay_max =
-			current->reclaim_acct->delay[RA_DIRECTRECLAIM];
-#ifdef CONFIG_HISI_TIME
-		g_reclaimacct_show->delay_max_t = hisi_getcurtime();
-#else
-		g_reclaimacct_show->delay_max_t = sched_clock();
-#endif
-	}
-	spin_unlock(&g_reclaimacct_show_lock);
-}
-
-static void reclaimacct_collect_data(void)
-{
-	int i;
-	const u64 delay[NR_DELAY_LV] = {
-		DELAY_LV0, DELAY_LV1, DELAY_LV2, DELAY_LV3, DELAY_LV4, DELAY_LV5
-	};
-
-	for (i = 0; i < NR_DELAY_LV; i++) {
-		if (current->reclaim_acct->delay[RA_DIRECTRECLAIM] < delay[i]) {
-			__reclaimacct_collect_data(i);
-			break;
-		}
-	}
-}
-
-void reclaimacct_directreclaim_end(void)
-{
-	int i;
+	reclaimacct_trace_end(stub_name[stub], shrinker ? shrinker->scan_objects : NULL, freed);
 
 	if (!current->reclaim_acct)
 		return;
 
-	reclaimacct_end(&(current->reclaim_acct->start[RA_DIRECTRECLAIM]),
-			&(current->reclaim_acct->delay[RA_DIRECTRECLAIM]),
-			&(current->reclaim_acct->count[RA_DIRECTRECLAIM]),
-			NULL, NULL);
+	__reclaimacct_end(current->reclaim_acct, freed, scanned, stub, shrinker);
+}
 
-	if (current->reclaim_acct->delay[RA_DIRECTRECLAIM] > DELAY_LV4)
-		pr_warn_ratelimited(
-			"Summary %s=%lu %lu %s=%lu %lu %s=%lu %lu %s=%lu %lu %s=%lu %lu\n",
-			DIRECT_RECLAIM_STR,
-			current->reclaim_acct->delay[RA_DIRECTRECLAIM],
-			current->reclaim_acct->count[RA_DIRECTRECLAIM],
-			DRAIN_ALL_PAGES_STR,
-			current->reclaim_acct->delay[RA_DRAINALLPAGES],
-			current->reclaim_acct->count[RA_DRAINALLPAGES],
-			SHRINK_FILE_LIST_STR,
-			current->reclaim_acct->delay[RA_SHRINKFILE],
-			current->reclaim_acct->count[RA_SHRINKFILE],
-			SHRINK_ANON_LIST_STR,
-			current->reclaim_acct->delay[RA_SHRINKANON],
-			current->reclaim_acct->count[RA_SHRINKANON],
-			SHRINK_SLAB_STR,
-			current->reclaim_acct->delay[RA_SHRINKSLAB],
-			current->reclaim_acct->count[RA_SHRINKSLAB]);
-
-	reclaimacct_collect_data();
-
-	for (i = 0; i < NR_RA_STUBS; i++)
-		reclaimacct_clear(&(current->reclaim_acct->start[i]),
-				  &(current->reclaim_acct->delay[i]),
-				  &(current->reclaim_acct->count[i]));
-
-	reclaimacct_free(current->reclaim_acct);
+static void reclaimacct_directreclaim_end(struct reclaim_acct *ra)
+{
+	reclaimacct_free(ra, ra->reclaim_type);
 	current->reclaim_acct = NULL;
 }
 
-void reclaimacct_drainallpages_start(void)
+static void reclaimacct_system_reclaim_end(struct reclaim_acct *ra)
 {
-	if (!current->reclaim_acct)
-		return;
-
-	current->reclaim_acct->start[RA_DRAINALLPAGES] = ktime_get_ns();
+	reclaimacct_free(ra, ra->reclaim_type);
 }
 
-void reclaimacct_drainallpages_end(void)
+void reclaimacct_start(enum ra_reclaim_type type)
 {
-	if (!current->reclaim_acct)
+	reclaimacct_trace_begin(reclaim_type_str[type], NULL, 0);
+
+	if (g_reclaimacct_disable || g_reclaimacct_is_off)
 		return;
 
-	reclaimacct_end(&(current->reclaim_acct->start[RA_DRAINALLPAGES]),
-			&(current->reclaim_acct->delay[RA_DRAINALLPAGES]),
-			&(current->reclaim_acct->count[RA_DRAINALLPAGES]),
-			__func__, NULL);
+	if (!current->reclaim_acct) {
+		current->reclaim_acct =  reclaimacct_alloc(type);
+		if (!current->reclaim_acct)
+			return;
+	}
+	current->reclaim_acct->reclaim_type = type;
+	current->reclaim_acct->start[RA_RECLAIM] = ktime_get_ns();
+
+#ifdef CONFIG_SCHEDSTATS
+	current->reclaim_acct->sum_sleep_runtime = current->se.statistics.sum_sleep_runtime;
+	current->reclaim_acct->wait_sum = current->se.statistics.wait_sum;
+#endif
 }
 
-void reclaimacct_shrinklist_start(int file)
+/* The caller should make sure start, total, count and func are not NULL */
+void reclaimacct_end(enum ra_reclaim_type type)
 {
+	reclaimacct_trace_end(reclaim_type_str[type], NULL, 0);
+
 	if (!current->reclaim_acct)
 		return;
 
-	if (file)
-		current->reclaim_acct->start[RA_SHRINKFILE] = ktime_get_ns();
+#ifdef CONFIG_SCHEDSTATS
+	current->reclaim_acct->sum_sleep_runtime = current->se.statistics.sum_sleep_runtime -
+		current->reclaim_acct->sum_sleep_runtime;
+	current->reclaim_acct->wait_sum = current->se.statistics.wait_sum -
+		current->reclaim_acct->wait_sum;
+#endif
+
+	__reclaimacct_end(current->reclaim_acct, 0, 0, RA_RECLAIM, NULL);
+
+	reclaimacct_collect_data();
+
+	reclaimacct_collect_reclaim_efficiency();
+
+	if (is_system_reclaim(type))
+		reclaimacct_system_reclaim_end(current->reclaim_acct);
 	else
-		current->reclaim_acct->start[RA_SHRINKANON] = ktime_get_ns();
+		reclaimacct_directreclaim_end(current->reclaim_acct);
 }
 
-void reclaimacct_shrinklist_end(int file)
+void reclaimacct_destroy(void)
 {
 	if (!current->reclaim_acct)
 		return;
 
-	if (file) {
-		reclaimacct_end(&(current->reclaim_acct->start[RA_SHRINKFILE]),
-				&(current->reclaim_acct->delay[RA_SHRINKFILE]),
-				&(current->reclaim_acct->count[RA_SHRINKFILE]),
-				__func__, NULL);
-	} else {
-		reclaimacct_end(&(current->reclaim_acct->start[RA_SHRINKANON]),
-				&(current->reclaim_acct->delay[RA_SHRINKANON]),
-				&(current->reclaim_acct->count[RA_SHRINKANON]),
-				__func__, NULL);
-	}
-}
-
-void reclaimacct_shrinkslab_start(void)
-{
-	if (!current->reclaim_acct)
+	if (!is_system_reclaim(current->reclaim_acct->reclaim_type))
 		return;
 
-	current->reclaim_acct->start[RA_SHRINKSLAB] = ktime_get_ns();
-}
-
-void reclaimacct_shrinkslab_end(const void *shrinker)
-{
-	if (!current->reclaim_acct)
-		return;
-
-	reclaimacct_end(&(current->reclaim_acct->start[RA_SHRINKSLAB]),
-			&(current->reclaim_acct->delay[RA_SHRINKSLAB]),
-			&(current->reclaim_acct->count[RA_SHRINKSLAB]),
-			__func__, shrinker);
-}
-
-u64 reclaimacct_get_data(enum ra_show_type type, int level, int stub)
-{
-	u64 ret;
-
-	if (g_reclaimacct_is_off || !g_reclaimacct_show)
-		return 0;
-
-	spin_lock(&g_reclaimacct_show_lock);
-	switch (type) {
-	case RA_DELAY:
-		ret = g_reclaimacct_show->delay[level][stub];
-		break;
-	case RA_COUNT:
-		ret = g_reclaimacct_show->count[level][stub];
-		break;
-	case RA_DELAY_MAX:
-		ret = g_reclaimacct_show->delay_max;
-		break;
-	case RA_DELAY_MAX_T:
-		ret = g_reclaimacct_show->delay_max_t;
-		break;
-	default: /* impossible */
-		ret = 0;
-		break;
-	}
-	spin_unlock(&g_reclaimacct_show_lock);
-	return ret;
+	kfree(current->reclaim_acct);
+	current->reclaim_acct = NULL;
 }
 
 /* Reclaim accounting module initialize */
@@ -361,9 +526,7 @@ static int reclaimacct_init_handle(void *p)
 	}
 
 	/* Init only in non-beta version to save memory */
-	g_reclaimacct_show = kzalloc(sizeof(struct reclaimacct_show),
-				     GFP_KERNEL);
-	if (!g_reclaimacct_show)
+	if (!reclaimacct_initialize_show_data())
 		goto alloc_show_failed;
 
 	alloc_cnt = 0; /* For safe */
@@ -385,8 +548,7 @@ alloc_acct_failed:
 		kfree(g_mempool[i]);
 		g_mempool[i] = NULL;
 	}
-	kfree(g_reclaimacct_show);
-	g_reclaimacct_show = NULL;
+	reclaimacct_destroy_show_data();
 alloc_show_failed:
 reclaimacct_disabled:
 	g_reclaimacct_is_off = true;
@@ -409,3 +571,6 @@ static int __init reclaimacct_module_init(void)
 late_initcall(reclaimacct_module_init);
 
 module_param_named(reclaimacct_disable, g_reclaimacct_disable, int, 0644);
+module_param_named(reclaim_trace_enable, g_reclaim_trace_enable, int, 0644);
+module_param_named(kswapd_delay_threshold, g_kswapd_delay_threshold, int, 0644);
+module_param_named(kswapd_trace_enable, g_kswapd_trace_enable, int, 0644);

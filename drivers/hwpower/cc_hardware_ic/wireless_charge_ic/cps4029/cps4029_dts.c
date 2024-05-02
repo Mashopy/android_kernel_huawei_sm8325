@@ -42,6 +42,10 @@ int cps4029_parse_dts(struct device_node *np, struct cps4029_dev_info *di)
 		"tx_max_fop", (u32 *)&di->tx_fop.tx_max_fop, CPS4029_TX_MAX_FOP);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"tx_min_fop", (u32 *)&di->tx_fop.tx_min_fop, CPS4029_TX_MIN_FOP);
+	(void)power_dts_read_u16(power_dts_tag(HWLOG_TAG), np,
+		"tx_ping_ocp_th", &di->tx_pocp_th, CPS4029_TX_PING_OCP_TH);
+	(void)power_dts_read_u16(power_dts_tag(HWLOG_TAG), np,
+		"tx_ping_freq", &di->tx_ping_freq, CPS4029_TX_PING_FREQ);
 
 	cps4029_parse_tx_fod(np, di);
 

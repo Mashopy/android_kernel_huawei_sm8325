@@ -775,6 +775,9 @@ struct ufs_hba {
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	struct iomt_host_info iomt_host_info_entity;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	struct mago_io_latency_stat mago_latency_entity;
+#endif
 	struct Scsi_Host *host;
 	struct device *dev;
 	/*

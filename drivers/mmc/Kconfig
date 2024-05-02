@@ -20,6 +20,13 @@ config SDSIM_MUX
 	help
 	   This selects for nmcard & sim has a shared tray.
 
+config HUAWEI_EMMC_DSM
+	bool "Listen eMMC kernel err"
+	depends on MMC
+	default n
+	help
+	   use huawei emmc log radar
+
 if MMC
 
 source "drivers/mmc/core/Kconfig"

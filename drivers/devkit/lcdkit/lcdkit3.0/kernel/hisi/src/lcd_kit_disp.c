@@ -234,7 +234,7 @@ static void lcd_kit_update_gamma_from_tpic(struct hisi_fb_data_type *hisifd)
 	static bool has_read;
 	struct ts_kit_ops *ts_ops = NULL;
 
-	if (!disp_info->otp_gamma.support) {
+	if (!DISP_INFO->otp_gamma.support) {
 		LCD_KIT_INFO("not support otp gamma\n");
 		return;
 	}
@@ -249,7 +249,7 @@ static void lcd_kit_update_gamma_from_tpic(struct hisi_fb_data_type *hisifd)
 		has_read = true;
 		/* ret:0--invalid gamma, 1--valid gamma */
 		if (ts_ops->read_otp_gamma) {
-			ret = ts_ops->read_otp_gamma(disp_info->otp_gamma.gamma,
+			ret = ts_ops->read_otp_gamma(DISP_INFO->otp_gamma.gamma,
 				GAMMA_MAX);
 			if (ret < 0) {
 				LCD_KIT_ERR("read otp gamma error\n");
@@ -258,18 +258,18 @@ static void lcd_kit_update_gamma_from_tpic(struct hisi_fb_data_type *hisifd)
 		}
 	}
 	/* print gamma head and len */
-	LCD_KIT_INFO("HEAD:0x%x, LEN:0x%x\n", disp_info->otp_gamma.gamma[0],
-		disp_info->otp_gamma.gamma[1]);
+	LCD_KIT_INFO("HEAD:0x%x, LEN:0x%x\n", DISP_INFO->otp_gamma.gamma[0],
+		DISP_INFO->otp_gamma.gamma[1]);
 	/* verify gamma */
-	if ((disp_info->otp_gamma.gamma[0] != GAMMA_HEAD &&
-		disp_info->otp_gamma.gamma[0] != GRAY_HEAD) ||
-		(disp_info->otp_gamma.gamma[1] != GAMMA_LEN)) {
+	if ((DISP_INFO->otp_gamma.gamma[0] != GAMMA_HEAD &&
+		DISP_INFO->otp_gamma.gamma[0] != GRAY_HEAD) ||
+		(DISP_INFO->otp_gamma.gamma[1] != GAMMA_LEN)) {
 		LCD_KIT_INFO("not otp gamma\n");
 		return;
 	}
-	if (disp_info->otp_gamma.gamma[0] == GAMMA_HEAD)
+	if (DISP_INFO->otp_gamma.gamma[0] == GAMMA_HEAD)
 		lcd_kit_set_otp_gamma(hisifd);
-	if (disp_info->otp_gamma.gamma[0] == GRAY_HEAD)
+	if (DISP_INFO->otp_gamma.gamma[0] == GRAY_HEAD)
 		lcd_kit_set_otp_gray(hisifd);
 }
 
@@ -279,7 +279,7 @@ static void check_pcd_errflag_report(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("hisifd is NULL\n");
 		return;
 	}
-	if (disp_info->pcd_errflag.power_on_support) {
+	if (DISP_INFO->pcd_errflag.power_on_support) {
 		LCD_KIT_INFO("power on pcd\n");
 		(void)lcd_kit_check_pcd_errflag_check(hisifd);
 	} else {
@@ -317,7 +317,7 @@ static void report_amoled_power_ic_check_err(int32_t gpio_value)
 
 	ret = snprintf(record_buf, DMD_RECORD_BUF_LEN,
 		"amoled power ic status error : gpio[%u] expect value = %u, read value = %d\n",
-		disp_info->amoled_power_ic_check.gpio, disp_info->amoled_power_ic_check.expect_value,
+		DISP_INFO->amoled_power_ic_check.gpio, DISP_INFO->amoled_power_ic_check.expect_value,
 		gpio_value);
 	if (ret < 0)
 		LCD_KIT_ERR("snprintf happened error! return %d\n", ret);
@@ -333,31 +333,31 @@ static void lcd_kit_amoled_power_ic_check(void)
 	int32_t ret;
 	int32_t gpio_value;
 
-	ret = gpio_request(disp_info->amoled_power_ic_check.gpio, "power_ic_check_gpio");
+	ret = gpio_request(DISP_INFO->amoled_power_ic_check.gpio, "power_ic_check_gpio");
 	if (ret != 0) {
 		LCD_KIT_ERR("amoled_power_ic_check_gpio[%u] request fail! return %d\n",
-			disp_info->amoled_power_ic_check.gpio, ret);
+			DISP_INFO->amoled_power_ic_check.gpio, ret);
 		return;
 	}
-	ret = gpio_direction_input(disp_info->amoled_power_ic_check.gpio);
+	ret = gpio_direction_input(DISP_INFO->amoled_power_ic_check.gpio);
 	if (ret != 0) {
-		gpio_free(disp_info->amoled_power_ic_check.gpio);
+		gpio_free(DISP_INFO->amoled_power_ic_check.gpio);
 		LCD_KIT_ERR("amoled_power_ic_check_gpio[%u] direction set fail! return %d\n",
-			disp_info->amoled_power_ic_check.gpio, ret);
+			DISP_INFO->amoled_power_ic_check.gpio, ret);
 		return;
 	}
-	gpio_value = gpio_get_value(disp_info->amoled_power_ic_check.gpio);
-	gpio_free(disp_info->amoled_power_ic_check.gpio);
+	gpio_value = gpio_get_value(DISP_INFO->amoled_power_ic_check.gpio);
+	gpio_free(DISP_INFO->amoled_power_ic_check.gpio);
 
-	if (gpio_value != disp_info->amoled_power_ic_check.expect_value) {
+	if (gpio_value != DISP_INFO->amoled_power_ic_check.expect_value) {
 		LCD_KIT_ERR("amoled power ic status abnormal! check_gpio[%u], expect value = %u, read value = %d\n",
-			disp_info->amoled_power_ic_check.gpio, disp_info->amoled_power_ic_check.expect_value,
+			DISP_INFO->amoled_power_ic_check.gpio, DISP_INFO->amoled_power_ic_check.expect_value,
 			gpio_value);
 		report_amoled_power_ic_check_err(gpio_value);
 		return;
 	}
 	LCD_KIT_DEBUG("amoled power ic status normal! check_gpio[%u], expect value = %u, read value = %d\n",
-		disp_info->amoled_power_ic_check.gpio, disp_info->amoled_power_ic_check.expect_value, gpio_value);
+		DISP_INFO->amoled_power_ic_check.gpio, DISP_INFO->amoled_power_ic_check.expect_value, gpio_value);
 }
 
 static void lcd_open_elvdd_detect(struct hisi_fb_data_type *hisifd)
@@ -401,20 +401,20 @@ static int32_t poweric_cmd_detect(struct hisi_fb_data_type *hisifd,
 	int32_t ret;
 
 	ret = lcd_kit_dsi_cmds_rx(hisifd, &read_value, out_len,
-		&disp_info->elvdd_detect.cmds);
+		&DISP_INFO->elvdd_detect.cmds);
 	if (ret) {
 		LCD_KIT_ERR("mipi rx failed!\n");
 		return LCD_KIT_OK;
 	}
-	if ((read_value & disp_info->elvdd_detect.exp_value_mask) !=
-		disp_info->elvdd_detect.exp_value)
+	if ((read_value & DISP_INFO->elvdd_detect.exp_value_mask) !=
+		DISP_INFO->elvdd_detect.exp_value)
 		ret = LCD_KIT_FAIL;
 	*out = read_value;
 
 	LCD_KIT_INFO("read_value = 0x%x, exp_value = 0x%x, mask = 0x%x\n",
 		read_value,
-		disp_info->elvdd_detect.exp_value,
-		disp_info->elvdd_detect.exp_value_mask);
+		DISP_INFO->elvdd_detect.exp_value,
+		DISP_INFO->elvdd_detect.exp_value_mask);
 	return ret;
 }
 
@@ -423,32 +423,32 @@ static int32_t poweric_gpio_detect(int32_t *out)
 	int32_t gpio_value;
 	int32_t ret;
 
-	ret = gpio_request(disp_info->elvdd_detect.detect_gpio, "elvdd_gpio");
+	ret = gpio_request(DISP_INFO->elvdd_detect.detect_gpio, "elvdd_gpio");
 	if (ret != 0) {
-		gpio_free(disp_info->elvdd_detect.detect_gpio);
+		gpio_free(DISP_INFO->elvdd_detect.detect_gpio);
 		LCD_KIT_ERR("pcd_gpio[%d] request fail!\n",
-			disp_info->elvdd_detect.detect_gpio);
+			DISP_INFO->elvdd_detect.detect_gpio);
 		return LCD_KIT_OK;
 	}
-	ret = gpio_direction_input(disp_info->elvdd_detect.detect_gpio);
+	ret = gpio_direction_input(DISP_INFO->elvdd_detect.detect_gpio);
 	if (ret != 0) {
-		gpio_free(disp_info->elvdd_detect.detect_gpio);
+		gpio_free(DISP_INFO->elvdd_detect.detect_gpio);
 		LCD_KIT_ERR("pcd_gpio[%d] direction set fail!\n",
-			disp_info->elvdd_detect.detect_gpio);
+			DISP_INFO->elvdd_detect.detect_gpio);
 		return LCD_KIT_OK;
 	}
-	if (disp_info->elvdd_detect.detect_gpio_type == EXTEND_GPIO_TYPE) {
+	if (DISP_INFO->elvdd_detect.detect_gpio_type == EXTEND_GPIO_TYPE) {
 		gpio_value = gpio_get_value_cansleep(
-			disp_info->elvdd_detect.detect_gpio);
-		(void)gpio_direction_output(disp_info->elvdd_detect.detect_gpio, 0);
-		if (disp_info->elvdd_detect.exp_value > 0)
-			disp_info->elvdd_detect.exp_value = 1; /* gpio value(High level) */
+			DISP_INFO->elvdd_detect.detect_gpio);
+		(void)gpio_direction_output(DISP_INFO->elvdd_detect.detect_gpio, 0);
+		if (DISP_INFO->elvdd_detect.exp_value > 0)
+			DISP_INFO->elvdd_detect.exp_value = 1; /* gpio value(High level) */
 	} else {
-		gpio_value = gpio_get_value(disp_info->elvdd_detect.detect_gpio);
+		gpio_value = gpio_get_value(DISP_INFO->elvdd_detect.detect_gpio);
 	}
-	gpio_free(disp_info->elvdd_detect.detect_gpio);
+	gpio_free(DISP_INFO->elvdd_detect.detect_gpio);
 
-	if (gpio_value != disp_info->elvdd_detect.exp_value)
+	if (gpio_value != DISP_INFO->elvdd_detect.exp_value)
 		ret = LCD_KIT_FAIL;
 	*out = gpio_value;
 	LCD_KIT_INFO("elvdd_gpio_value = %d\n", gpio_value);
@@ -464,7 +464,7 @@ static void report_poweric_err(uint8_t cmd_val, int32_t gpio_val)
 
 	ret = snprintf(record_buf, DMD_RECORD_BUF_LEN,
 		"elvdd: detect_type = 0x%x, cmd_val = 0x%x, gpio_val = %d\n",
-		disp_info->elvdd_detect.detect_type, cmd_val, gpio_val);
+		DISP_INFO->elvdd_detect.detect_type, cmd_val, gpio_val);
 	if (ret < 0)
 		LCD_KIT_ERR("snprintf happened error!\n");
 	(void)lcd_dsm_client_record(lcd_dclient, record_buf,
@@ -477,12 +477,12 @@ static void report_poweric_err(uint8_t cmd_val, int32_t gpio_val)
 static void del_poweric_timer(void)
 {
 	LCD_KIT_INFO("+\n");
-	if (disp_info->elvdd_detect.is_start_delay_timer == false)
+	if (DISP_INFO->elvdd_detect.is_start_delay_timer == false)
 		return;
 	LCD_KIT_INFO("delete elvdd detect delay timer and wq\n");
 	cancel_work(&(poweric_det_delay.wq));
 	del_timer(&(poweric_det_delay.timer));
-	disp_info->elvdd_detect.is_start_delay_timer = false;
+	DISP_INFO->elvdd_detect.is_start_delay_timer = false;
 	LCD_KIT_INFO("-\n");
 }
 
@@ -501,11 +501,11 @@ static void poweric_wq_handler(struct work_struct *work)
 		return;
 	}
 	hisifd = detect->hisifd;
-	if (disp_info->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
+	if (DISP_INFO->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
 		ret = poweric_cmd_detect(hisifd, &cmd_val, 1);
-	else if ((disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
+	else if ((DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
 		ret = poweric_gpio_detect(&gpio_val);
 	if (ret) {
 		LCD_KIT_ERR("detect poweric abnomal, recovery lcd\n");
@@ -542,18 +542,18 @@ static void poweric_timer_fun(unsigned long arg)
 void poweric_detect_delay(struct hisi_fb_data_type *hisifd)
 {
 	LCD_KIT_INFO("+\n");
-	if (disp_info->elvdd_detect.is_start_delay_timer == false) {
+	if (DISP_INFO->elvdd_detect.is_start_delay_timer == false) {
 		LCD_KIT_INFO("init elvdd detect delay timer\n");
 		INIT_WORK(&(poweric_det_delay.wq), poweric_wq_handler);
 		init_timer(&(poweric_det_delay.timer));
 		poweric_det_delay.timer.expires = jiffies +
-			disp_info->elvdd_detect.delay * HZ / 1000;
+			DISP_INFO->elvdd_detect.delay * HZ / 1000;
 		poweric_det_delay.timer.data =
 			(unsigned long)(uintptr_t)&poweric_det_delay;
 		poweric_det_delay.hisifd = hisifd;
 		poweric_det_delay.timer.function = poweric_timer_fun;
 		add_timer(&(poweric_det_delay.timer));
-		disp_info->elvdd_detect.is_start_delay_timer = true;
+		DISP_INFO->elvdd_detect.is_start_delay_timer = true;
 	}
 	LCD_KIT_INFO("-\n");
 }
@@ -565,17 +565,17 @@ static void lcd_kit_poweric_detect(struct hisi_fb_data_type *hisifd)
 	uint8_t cmd_val = 0;
 	int32_t gpio_val = 0;
 
-	if (!disp_info->elvdd_detect.support)
+	if (!DISP_INFO->elvdd_detect.support)
 		return;
-	if (disp_info->elvdd_detect.delay) {
+	if (DISP_INFO->elvdd_detect.delay) {
 		poweric_detect_delay(hisifd);
 		return;
 	}
-	if (disp_info->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
+	if (DISP_INFO->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
 		ret = poweric_cmd_detect(hisifd, &cmd_val, 1);
-	else if ((disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
+	else if ((DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
 		ret = poweric_gpio_detect(&gpio_val);
 	if (ret) {
 		LCD_KIT_ERR("detect poweric abnomal, recovery lcd\n");
@@ -605,7 +605,7 @@ static void lcd_kit_first_screenon_hbm_set(struct hisi_fb_data_type *hisifd)
 		hisifd->de_info.last_hbm_level,
 		hisifd->de_info.hbm_dimming,
 		hisifd->de_info.hbm_level,
-		disp_info->fps.last_update_fps);
+		DISP_INFO->fps.last_update_fps);
 }
 
 static void lcd_kit_fps_handle_on(struct platform_device *pdev,
@@ -623,7 +623,7 @@ static void lcd_kit_fps_handle_on(struct platform_device *pdev,
 		LCD_KIT_ERR("panel_info is NULL!\n");
 		return;
 	}
-	if (disp_info->fps.support && disp_info->fps.fps_need_update_on) {
+	if (DISP_INFO->fps.support && DISP_INFO->fps.fps_need_update_on) {
 		if (pinfo->fps_scence == LCD_FPS_60) {
 			LCD_KIT_INFO("last fps is LCD_FPS_60\n");
 			return;
@@ -649,13 +649,129 @@ static void lcd_kit_set_power_mode(void)
 			lcd_ops->set_power_by_thermal();
 }
 
+static int lcd_init_power_on(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops)
+{
+	int ret = LCD_KIT_OK;
+	char *panel_name = NULL;
+	(void)lcd_ops;
+
+	lcd_kit_set_thp_proximity_sem(true);
+	lcd_kit_set_thp_proximity_state(POWER_ON);
+	lcd_kit_set_power_status(lcd_kit_get_panel_power_on_status(hisifd));
+	if (common_ops->panel_power_on)
+		ret = common_ops->panel_power_on((void *)hisifd);
+	pinfo->lcd_init_step = LCD_INIT_MIPI_LP_SEND_SEQUENCE;
+	panel_name = common_info->panel_model != NULL ?
+		common_info->panel_model : DISP_INFO->compatible;
+	panel_name = common_info->module_info != NULL ?
+		common_info->module_info : panel_name;
+	LCD_KIT_INFO("lcd_name is %s\n", panel_name);
+	lcd_kit_set_thp_proximity_sem(false);
+	LOG_JANK_D(JLID_KERNEL_LCD_POWER_ON, "%s", "LCD_POWER_ON");
+
+	// backlight on
+	hisi_lcd_backlight_on(pdev);
+	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
+	return ret;
+}
+
+static int lcd_init_mipi_lp_send_sequence(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops)
+{
+	int ret = LCD_KIT_OK;
+	(void)lcd_ops;
+
+	/* send mipi command by low power */
+	if (common_ops->panel_on_lp)
+		ret = common_ops->panel_on_lp((void *)hisifd);
+	lcd_open_elvdd_detect(hisifd);
+	/* update gamma */
+	lcd_kit_update_gamma_from_tpic(hisifd);
+	lcd_kit_set_elvss_dim_lp(hisifd);
+	if (!check_sncode) {
+		lcd_kit_sn_check();
+		check_sncode = true;
+	}
+	pinfo->lcd_init_step = LCD_INIT_MIPI_HS_SEND_SEQUENCE;
+
+	// backlight on
+	hisi_lcd_backlight_on(pdev);
+	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
+	return ret;
+}
+
+static int lcd_init_mipi_hs_send_sequence(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops)
+{
+	int ret = LCD_KIT_OK;
+	(void)pinfo;
+
+	/* send mipi command by high speed */
+	if (common_ops->panel_on_hs)
+		ret = common_ops->panel_on_hs((void *)hisifd);
+	/* record panel on time */
+	lcd_kit_disp_on_record_time();
+	if (lcd_kit_get_power_status()) {
+		lcd_kit_clear_sctrl_reg(hisifd);
+		lcd_kit_set_power_status(0);
+	}
+	if (lcd_ops->power_monitor_on)
+		lcd_ops->power_monitor_on();
+	/* let panel pcd start check,only at first power on */
+	if (g_pcd_check_status == PCD_CHECK_WAIT) {
+		(void)lcd_kit_start_pcd_check(hisifd);
+		g_pcd_check_status = PCD_CHECK_ON;
+	}
+	lcd_kit_display_effect_screen_on(hisifd);
+	lcd_kit_fps_handle_on(pdev, hisifd);
+	lcd_kit_set_power_mode();
+
+	// backlight on
+	hisi_lcd_backlight_on(pdev);
+	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
+	return ret;
+}
+
+static int lcd_init_none(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops)
+{
+	(void)pinfo;
+	(void)lcd_ops;
+
+	// backlight on
+	hisi_lcd_backlight_on(pdev);
+	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
+	return LCD_KIT_OK;
+}
+
+static int lcd_init_ldi_send_sequence(struct platform_device *pdev, struct hisi_fb_data_type *hisifd,
+	struct hisi_panel_info *pinfo, struct lcd_kit_ops *lcd_ops)
+{
+	(void)pinfo;
+	(void)lcd_ops;
+
+	// backlight on
+	hisi_lcd_backlight_on(pdev);
+	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
+	return LCD_KIT_OK;
+}
+
+static const lcd_kit_dis_event_handle g_lcd_kit_handle[] = {
+	{ LCD_INIT_POWER_ON, lcd_init_power_on },
+	{ LCD_INIT_MIPI_LP_SEND_SEQUENCE, lcd_init_mipi_lp_send_sequence },
+	{ LCD_INIT_MIPI_HS_SEND_SEQUENCE, lcd_init_mipi_hs_send_sequence },
+	{ LCD_INIT_NONE, lcd_init_none },
+	{ LCD_INIT_LDI_SEND_SEQUENCE, lcd_init_ldi_send_sequence },
+};
+
 static int lcd_kit_on(struct platform_device *pdev)
 {
 	struct hisi_fb_data_type *hisifd = NULL;
 	struct hisi_panel_info *pinfo = NULL;
 	struct lcd_kit_ops *lcd_ops = NULL;
-	int ret = LCD_KIT_OK;
-	char *panel_name = NULL;
+	int i = 0;
+	int table_num = sizeof(g_lcd_kit_handle) / sizeof(lcd_kit_dis_event_handle);
 
 	if (pdev == NULL) {
 		LCD_KIT_ERR("pdev is null\n");
@@ -683,77 +799,26 @@ static int lcd_kit_on(struct platform_device *pdev)
 		return LCD_KIT_FAIL;
 	}
 	lcd_kit_fold_aod_power_on_handle(hisifd);
-	switch (pinfo->lcd_init_step) {
-	case LCD_INIT_POWER_ON:
-		lcd_kit_set_thp_proximity_sem(true);
-		lcd_kit_set_thp_proximity_state(POWER_ON);
-		lcd_kit_set_power_status(lcd_kit_get_panel_power_on_status(hisifd));
-		if (common_ops->panel_power_on)
-			ret = common_ops->panel_power_on((void *)hisifd);
-		pinfo->lcd_init_step = LCD_INIT_MIPI_LP_SEND_SEQUENCE;
-		panel_name = common_info->panel_model != NULL ?
-			common_info->panel_model : disp_info->compatible;
-		panel_name = common_info->module_info != NULL ?
-			common_info->module_info : panel_name;
-		LCD_KIT_INFO("lcd_name is %s\n", panel_name);
-		lcd_kit_set_thp_proximity_sem(false);
-		LOG_JANK_D(JLID_KERNEL_LCD_POWER_ON, "%s", "LCD_POWER_ON");
-		break;
-	case LCD_INIT_MIPI_LP_SEND_SEQUENCE:
-		/* send mipi command by low power */
-		if (common_ops->panel_on_lp)
-			ret = common_ops->panel_on_lp((void *)hisifd);
-		lcd_open_elvdd_detect(hisifd);
-		/* update gamma */
-		lcd_kit_update_gamma_from_tpic(hisifd);
-		lcd_kit_set_elvss_dim_lp(hisifd);
-		if (!check_sncode) {
-			lcd_kit_sn_check();
-			check_sncode = true;
-		}
-		pinfo->lcd_init_step = LCD_INIT_MIPI_HS_SEND_SEQUENCE;
-		break;
-	case LCD_INIT_MIPI_HS_SEND_SEQUENCE:
-		/* send mipi command by high speed */
-		if (common_ops->panel_on_hs)
-			ret = common_ops->panel_on_hs((void *)hisifd);
-		/* record panel on time */
-		lcd_kit_disp_on_record_time();
-		if (lcd_kit_get_power_status()) {
-			lcd_kit_clear_sctrl_reg(hisifd);
-			lcd_kit_set_power_status(0);
-		}
-		if (lcd_ops->power_monitor_on)
-			lcd_ops->power_monitor_on();
-		/* let panel pcd start check,only at first power on */
-		if (g_pcd_check_status == PCD_CHECK_WAIT) {
-			(void)lcd_kit_start_pcd_check(hisifd);
-			g_pcd_check_status = PCD_CHECK_ON;
-		}
-		lcd_kit_display_effect_screen_on(hisifd);
-		lcd_kit_fps_handle_on(pdev, hisifd);
-		lcd_kit_set_power_mode();
-		break;
-	case LCD_INIT_NONE:
-		break;
-	case LCD_INIT_LDI_SEND_SEQUENCE:
-		break;
-	default:
-		break;
+
+	for (i = 0; i < table_num; i++) {
+		if ((pinfo->lcd_init_step == g_lcd_kit_handle[i].feature_item) &&
+			(g_lcd_kit_handle[i].func_ptr))
+			return g_lcd_kit_handle[i].func_ptr(pdev, hisifd, pinfo, lcd_ops);
 	}
+
 	// backlight on
 	hisi_lcd_backlight_on(pdev);
 	LCD_KIT_INFO("fb%d, -!\n", hisifd->index);
-	return ret;
+	return LCD_KIT_OK;
 }
 
 static void lcd_kit_remove_shield_backlight(void)
 {
-	if (disp_info->bl_is_shield_backlight == true)
-		disp_info->bl_is_shield_backlight = false;
-	if (false != disp_info->bl_is_start_second_timer) {
+	if (DISP_INFO->bl_is_shield_backlight == true)
+		DISP_INFO->bl_is_shield_backlight = false;
+	if (false != DISP_INFO->bl_is_start_second_timer) {
 		del_timer(&backlight_second_timer);
-		disp_info->bl_is_start_second_timer = false;
+		DISP_INFO->bl_is_start_second_timer = false;
 		LCD_KIT_INFO("panel powerOff, clear backlight shield timer\n");
 	}
 }
@@ -764,10 +829,10 @@ static void lcd_kit_resume_hisi_panel_info(struct hisi_panel_info *pinfo)
 		LCD_KIT_ERR("panel_info is NULL!\n");
 		return;
 	}
-	if (!disp_info->fps.support)
+	if (!DISP_INFO->fps.support)
 		return;
 	pinfo->fps_updt = LCD_FPS_60;
-	disp_info->fps.fps_can_update_flag = false;
+	DISP_INFO->fps.fps_can_update_flag = false;
 	if ((pinfo->type & PANEL_MIPI_VIDEO) &&
 		(pinfo->dynamic_dsc_support) &&
 		(!pinfo->dynamic_dsc_en))
@@ -786,7 +851,7 @@ static int lcd_kit_off(struct platform_device *pdev)
 	struct hisi_panel_info *pinfo = NULL;
 	struct lcd_kit_ops *lcd_ops = NULL;
 	char *panel_name = (common_info->panel_model != NULL) ?
-		common_info->panel_model : disp_info->compatible;
+		common_info->panel_model : DISP_INFO->compatible;
 
 	if (pdev == NULL) {
 		LCD_KIT_ERR("NULL Pointer\n");
@@ -825,11 +890,11 @@ static int lcd_kit_off(struct platform_device *pdev)
 			g_pcd_check_status = PCD_CHECK_OFF;
 		}
 		/* check amoled power ic errflag and report dmd */
-		if (disp_info->amoled_power_ic_check.support)
+		if (DISP_INFO->amoled_power_ic_check.support)
 			lcd_kit_amoled_power_ic_check();
 		// check mipi errors
 		common_ops->mipi_check(hisifd, panel_name,
-			disp_info->quickly_sleep_out.panel_on_record_tv.tv_sec);
+			DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_sec);
 		// backlight off
 		hisi_lcd_backlight_off(pdev);
 		if (common_ops->panel_off_hs)
@@ -887,10 +952,10 @@ static void lcd_kit_second_timerout_function(unsigned long arg)
 	unsigned long temp;
 
 	temp = arg;
-	if (disp_info->bl_is_shield_backlight == true)
-		disp_info->bl_is_shield_backlight = false;
+	if (DISP_INFO->bl_is_shield_backlight == true)
+		DISP_INFO->bl_is_shield_backlight = false;
 	del_timer(&backlight_second_timer);
-	disp_info->bl_is_start_second_timer = false;
+	DISP_INFO->bl_is_start_second_timer = false;
 	LCD_KIT_INFO("Sheild backlight 1.2s timeout, remove the bl sheild\n");
 }
 
@@ -993,7 +1058,7 @@ static int lcd_kit_enter_hbm_fb(struct hisi_fb_data_type *hisifd,
 		return LCD_KIT_FAIL;
 	}
 	/* enable hbm */
-	if ((disp_info->fps.last_update_fps == LCD_KIT_FPS_HIGH) &&
+	if ((DISP_INFO->fps.last_update_fps == LCD_KIT_FPS_HIGH) &&
 		common_info->dfr_info.fps_lock_command_support) {
 		ret = adapt_ops->mipi_tx(hisifd,
 			&common_info->dfr_info.cmds[FPS_90_HBM_NO_DIM]);
@@ -1070,7 +1135,7 @@ static int lcd_kit_disable_hbm_fp(struct hisi_fb_data_type *hisifd,
 		LCD_KIT_ERR("pinfo is NULL\n");
 		return LCD_KIT_FAIL;
 	}
-	if ((disp_info->fps.last_update_fps == LCD_KIT_FPS_HIGH) &&
+	if ((DISP_INFO->fps.last_update_fps == LCD_KIT_FPS_HIGH) &&
 		common_info->dfr_info.fps_lock_command_support) {
 		ret = adapt_ops->mipi_tx(hisifd,
 			&common_info->dfr_info.cmds[FPS_90_NORMAL_NO_DIM]);
@@ -1329,7 +1394,7 @@ static int lcd_kit_set_backlight_by_type(struct platform_device *pdev, int backl
 	min_backlight = hisifd->ud_fp_current_level;
 	switch (backlight_type) {
 	case BACKLIGHT_HIGH_LEVEL:
-		disp_info->bl_is_shield_backlight = true;
+		DISP_INFO->bl_is_shield_backlight = true;
 		if (common_info->hbm.hbm_fp_support) {
 			mutex_lock(&COMMON_LOCK->hbm_lock);
 			lcd_kit_fphbm_entry_delay(hisifd);
@@ -1348,13 +1413,13 @@ static int lcd_kit_set_backlight_by_type(struct platform_device *pdev, int backl
 			hisifd->panel_info.need_skip_delta = 0;
 		}
 		LCD_KIT_INFO("fp hbm enter\n");
-		if (disp_info->bl_is_start_second_timer == false) {
+		if (DISP_INFO->bl_is_start_second_timer == false) {
 			init_timer(&backlight_second_timer);
 			backlight_second_timer.expires = jiffies + 12 * HZ / 10; // 1.2s
 			backlight_second_timer.data = 0;
 			backlight_second_timer.function = lcd_kit_second_timerout_function;
 			add_timer(&backlight_second_timer);
-			disp_info->bl_is_start_second_timer = true;
+			DISP_INFO->bl_is_start_second_timer = true;
 		} else {
 			// if timer is not timeout, restart timer
 			mod_timer(&backlight_second_timer, (jiffies + 12 * HZ / 10)); // 1.2s
@@ -1363,11 +1428,11 @@ static int lcd_kit_set_backlight_by_type(struct platform_device *pdev, int backl
 			backlight_type, max_backlight, hisifd->bl_level);
 		break;
 	case BACKLIGHT_LOW_LEVEL:
-		if (disp_info->bl_is_start_second_timer == true) {
+		if (DISP_INFO->bl_is_start_second_timer == true) {
 			del_timer(&backlight_second_timer);
-			disp_info->bl_is_start_second_timer = false;
+			DISP_INFO->bl_is_start_second_timer = false;
 		}
-		disp_info->bl_is_shield_backlight = false;
+		DISP_INFO->bl_is_shield_backlight = false;
 		if (common_info->hbm.hbm_fp_support) {
 			if (!lcd_kit_is_current_frame_ok_to_set_fp_backlight(hisifd, BACKLIGHT_LOW_LEVEL))
 				usleep_range(te_interval_60_fps_us, te_interval_60_fps_us);
@@ -1393,7 +1458,7 @@ static void clear_fp_status(struct hisi_fb_data_type *hisifd)
 		common_info->hbm.hbm_if_fp_is_using = 0;
 		mutex_unlock(&COMMON_LOCK->hbm_lock);
 	}
-	disp_info->bl_is_shield_backlight = false;
+	DISP_INFO->bl_is_shield_backlight = false;
 #if defined(CONFIG_HISI_FB_V510) || defined(CONFIG_HISI_FB_V600)
 	hisifd->mask_layer_xcc_flag = 0;
 #endif
@@ -1442,7 +1507,7 @@ static int lcd_kit_set_hbm_for_mmi(struct platform_device *pdev, int level)
 	}
 	switch (backlight_type) {
 	case BACKLIGHT_HIGH_LEVEL:
-		disp_info->bl_is_shield_backlight = true;
+		DISP_INFO->bl_is_shield_backlight = true;
 		LCD_KIT_INFO("bl_type=%d, level=%d\n", backlight_type, level);
 		if (common_info->hbm.hbm_fp_support) {
 			lcd_kit_mipi_set_backlight(hisifd, hisifd->panel_info.bl_max);
@@ -1469,7 +1534,7 @@ static int lcd_kit_set_hbm_for_mmi(struct platform_device *pdev, int level)
 		break;
 	case BACKLIGHT_LOW_LEVEL:
 		LCD_KIT_INFO("bl_type=%d  level=%d\n", backlight_type, level);
-		disp_info->bl_is_shield_backlight = false;
+		DISP_INFO->bl_is_shield_backlight = false;
 		if (common_info->hbm.hbm_fp_support) {
 			lcd_kit_restore_hbm_level(hisifd);
 			mutex_lock(&COMMON_LOCK->hbm_lock);
@@ -1537,7 +1602,7 @@ static int lcd_kit_set_backlight(struct platform_device *pdev, uint32_t bl_level
 		LCD_KIT_INFO("It is in AOD mode and bypass lcd_kit_set_bl!\n");
 		return LCD_KIT_OK;
 	}
-	if (disp_info->bl_is_shield_backlight == true) {
+	if (DISP_INFO->bl_is_shield_backlight == true) {
 		LCD_KIT_ERR("in finger down status, Not run lcd_kit_set_bl\n");
 		return LCD_KIT_OK;
 	}
@@ -1551,8 +1616,8 @@ static int lcd_kit_set_backlight(struct platform_device *pdev, uint32_t bl_level
 		return LCD_KIT_OK;
 	}
 
-	if (disp_info->quickly_sleep_out.support) {
-		if (disp_info->quickly_sleep_out.panel_on_tag)
+	if (DISP_INFO->quickly_sleep_out.support) {
+		if (DISP_INFO->quickly_sleep_out.panel_on_tag)
 			lcd_kit_disp_on_check_delay();
 	}
 	first_screenon = lcd_kit_first_screenon(jank_last_bl_level, bl_level);
@@ -1695,7 +1760,7 @@ static int lcd_kit_set_fastboot(struct platform_device *pdev)
 		return LCD_KIT_FAIL;
 	}
 	// lcd panel version
-	if (disp_info->panel_version.support) {
+	if (DISP_INFO->panel_version.support) {
 		if (!lcd_kit_panel_version_init(hisifd))
 			LCD_KIT_INFO("read panel version successful\n");
 		else
@@ -1786,22 +1851,22 @@ static int lcd_kit_set_tcon_mode(struct platform_device *pdev, uint8_t mode)
 	case EN_DISPLAY_REGION_A:
 		if (adapt_ops->mipi_tx)
 			ret = adapt_ops->mipi_tx((void *)hisifd,
-				&disp_info->cascade_ic.region_a_cmds);
+				&DISP_INFO->cascade_ic.region_a_cmds);
 		break;
 	case EN_DISPLAY_REGION_B:
 		if (adapt_ops->mipi_tx)
 			ret = adapt_ops->mipi_tx((void *)hisifd,
-				&disp_info->cascade_ic.region_b_cmds);
+				&DISP_INFO->cascade_ic.region_b_cmds);
 		break;
 	case EN_DISPLAY_REGION_AB:
 		if (adapt_ops->mipi_tx)
 			ret = adapt_ops->mipi_tx((void *)hisifd,
-				&disp_info->cascade_ic.region_ab_cmds);
+				&DISP_INFO->cascade_ic.region_ab_cmds);
 		break;
 	case EN_DISPLAY_REGION_AB_FOLDED:
 		if (adapt_ops->mipi_tx)
 			ret = adapt_ops->mipi_tx((void *)hisifd,
-				&disp_info->cascade_ic.region_ab_fold_cmds);
+				&DISP_INFO->cascade_ic.region_ab_fold_cmds);
 		break;
 	default:
 		LCD_KIT_ERR("mode %d is not support\n", mode);
@@ -1814,7 +1879,7 @@ static int lcd_kit_fps_scence_handle(struct platform_device *pdev, uint32_t scen
 {
 	int ret = LCD_KIT_OK;
 
-	if (disp_info->fps.support)
+	if (DISP_INFO->fps.support)
 		ret = lcd_kit_updt_fps_scence(pdev, scence);
 	return ret;
 }
@@ -1829,7 +1894,7 @@ static int lcd_kit_fps_updt_handle(struct platform_device *pdev)
 		LCD_KIT_ERR("hisifd is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->fps.support)
+	if (DISP_INFO->fps.support)
 		ret = lcd_kit_updt_fps(pdev);
 	return ret;
 }
@@ -1866,7 +1931,7 @@ static ssize_t lcd_kit_rgbw_set_func(struct hisi_fb_data_type *hisifd)
 {
 	int ret = LCD_KIT_OK;
 
-	if (disp_info->rgbw.support)
+	if (DISP_INFO->rgbw.support)
 		ret = lcd_kit_rgbw_set_handle(hisifd);
 	return ret;
 }
@@ -1887,7 +1952,7 @@ static int lcd_get_demura_func(struct platform_device *pdev,
 		HISI_FB_ERR("invalid input param!\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->demura.support)
+	if (DISP_INFO->demura.support)
 		ret = lcd_get_demura_handle(hisifd, dsi, out, out_len, type, len);
 	return ret;
 }
@@ -1906,7 +1971,7 @@ static int lcd_set_demura_func(struct platform_device *pdev,
 		HISI_FB_ERR("invalid input param!\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->demura.support)
+	if (DISP_INFO->demura.support)
 		ret = lcd_set_demura_handle(hisifd, type, info);
 	return ret;
 }
@@ -1944,7 +2009,7 @@ static ssize_t lcd_kit_hbm_set_func(struct hisi_fb_data_type *hisifd)
 			hisifd->de_info.last_hbm_level,
 			hisifd->de_info.hbm_dimming,
 			hisifd->de_info.hbm_level,
-			disp_info->fps.last_update_fps);
+			DISP_INFO->fps.last_update_fps);
 	if (common_info->dfr_info.fps_lock_command_support) {
 		common_info->dfr_info.hbm_status = HBM_STATUS_IDLE;
 		wake_up_interruptible(&common_info->dfr_info.fps_wait);
@@ -1971,13 +2036,13 @@ static ssize_t lcd_kit_set_ic_dim_on(struct hisi_fb_data_type *hisifd)
 			return ret;
 		}
 	}
-	if (disp_info->bl_is_shield_backlight == true) {
+	if (DISP_INFO->bl_is_shield_backlight == true) {
 		HISI_FB_INFO("fp is using\n");
 		return ret;
 	}
 	if (common_ops->set_ic_dim_on)
 		ret = common_ops->set_ic_dim_on(hisifd,
-			disp_info->fps.last_update_fps);
+			DISP_INFO->fps.last_update_fps);
 	return ret;
 }
 
@@ -2018,11 +2083,11 @@ static void power_off_work(struct work_struct *work)
 	int ret;
 
 	(void *)work;
-	if (!disp_info) {
+	if (!DISP_INFO) {
 		LCD_KIT_ERR("disp info null!\n");
 		return;
 	}
-	if (disp_info->pwrkey_press.long_press_flag == false) {
+	if (DISP_INFO->pwrkey_press.long_press_flag == false) {
 		LCD_KIT_INFO("long press flag false!\n");
 		return;
 	}
@@ -2041,21 +2106,21 @@ static void power_off_work(struct work_struct *work)
 		return;
 	}
 	LCD_KIT_INFO("long press, power off lcd!\n");
-	if (disp_info->pwrkey_press.esd_status == PWR_OFF_NEED_DISABLE_ESD) {
+	if (DISP_INFO->pwrkey_press.esd_status == PWR_OFF_NEED_DISABLE_ESD) {
 		LCD_KIT_INFO("pwr key disabled esd!\n");
 		hisifd->panel_info.esd_enable = 0;
-		disp_info->pwrkey_press.esd_status = PWR_OFF_DISABLED_ESD;
+		DISP_INFO->pwrkey_press.esd_status = PWR_OFF_DISABLED_ESD;
 	}
 	hisifb_vsync_disable_enter_idle(hisifd, true);
 	hisifb_activate_vsync(hisifd);
 	if (ops->mipi_tx) {
 		ret = ops->mipi_tx((void *)hisifd,
-			&disp_info->pwrkey_press.cmds);
+			&DISP_INFO->pwrkey_press.cmds);
 		LCD_KIT_DEBUG("ret is %d\n", ret);
 	}
 	hisifb_vsync_disable_enter_idle(hisifd, false);
 	hisifb_deactivate_vsync(hisifd);
-	if (disp_info->pwrkey_press.power_off_flag) {
+	if (DISP_INFO->pwrkey_press.power_off_flag) {
 		LCD_KIT_INFO("lcd need power off!\n");
 		if (common_ops->panel_off_lp)
 			common_ops->panel_off_lp(hisifd);
@@ -2089,34 +2154,34 @@ static unsigned int get_power_off_timer_val(void)
 	unsigned int val;
 	unsigned int addr;
 
-	if (!disp_info)
+	if (!DISP_INFO)
 		return LONG_PRESS_10S_LCD_TIMER_LEN;
-	addr = disp_info->pwrkey_press.rst_addr;
+	addr = DISP_INFO->pwrkey_press.rst_addr;
 	press_time = hisi_pmic_reg_read(addr);
 	LCD_KIT_INFO("press_time %u!\n", press_time);
 	val = press_time & LONG_PRESS_RST_CONFIG_BIT;
 	switch (val) {
 	case LONG_PRESS_RST_CONFIG1:
-		if (disp_info->pwrkey_press.configtime1)
-			ret_time = disp_info->pwrkey_press.configtime1;
+		if (DISP_INFO->pwrkey_press.configtime1)
+			ret_time = DISP_INFO->pwrkey_press.configtime1;
 		else
 			ret_time = LONG_PRESS_7S_LCD_TIMER_LEN;
 		break;
 	case LONG_PRESS_RST_CONFIG2:
-		if (disp_info->pwrkey_press.configtime2)
-			ret_time = disp_info->pwrkey_press.configtime2;
+		if (DISP_INFO->pwrkey_press.configtime2)
+			ret_time = DISP_INFO->pwrkey_press.configtime2;
 		else
 			ret_time = LONG_PRESS_8S_LCD_TIMER_LEN;
 		break;
 	case LONG_PRESS_RST_CONFIG3:
-		if (disp_info->pwrkey_press.configtime3)
-			ret_time = disp_info->pwrkey_press.configtime3;
+		if (DISP_INFO->pwrkey_press.configtime3)
+			ret_time = DISP_INFO->pwrkey_press.configtime3;
 		else
 			ret_time = LONG_PRESS_9S_LCD_TIMER_LEN;
 		break;
 	case LONG_PRESS_RST_CONFIG4:
-		if (disp_info->pwrkey_press.configtime4)
-			ret_time = disp_info->pwrkey_press.configtime4;
+		if (DISP_INFO->pwrkey_press.configtime4)
+			ret_time = DISP_INFO->pwrkey_press.configtime4;
 		else
 			ret_time = LONG_PRESS_10S_LCD_TIMER_LEN;
 		break;
@@ -2136,24 +2201,24 @@ static int pwrkey_press_event_notifier(struct notifier_block *pwrkey_event_nb,
 	p = pwrkey_event_nb;
 	pd = data;
 
-	if (!disp_info)
+	if (!DISP_INFO)
 		return LCD_KIT_OK;
-	if (disp_info->pwrkey_press.support == false) {
+	if (DISP_INFO->pwrkey_press.support == false) {
 		LCD_KIT_INFO("not support this func!\n");
 		return LCD_KIT_OK;
 	}
-	time = disp_info->pwrkey_press.timer_val;
+	time = DISP_INFO->pwrkey_press.timer_val;
 	switch (event) {
 	case PRESS_KEY_6S:
-		disp_info->pwrkey_press.long_press_flag = true;
-		schedule_delayed_work(&disp_info->pwrkey_press.pf_work,
+		DISP_INFO->pwrkey_press.long_press_flag = true;
+		schedule_delayed_work(&DISP_INFO->pwrkey_press.pf_work,
 			msecs_to_jiffies(time));
 		break;
 	case PRESS_KEY_UP:
-		if (disp_info->pwrkey_press.long_press_flag == false)
+		if (DISP_INFO->pwrkey_press.long_press_flag == false)
 			break;
-		disp_info->pwrkey_press.long_press_flag = false;
-		cancel_delayed_work_sync(&disp_info->pwrkey_press.pf_work);
+		DISP_INFO->pwrkey_press.long_press_flag = false;
+		cancel_delayed_work_sync(&DISP_INFO->pwrkey_press.pf_work);
 		break;
 	default:
 		break;
@@ -2177,29 +2242,29 @@ static int comb_key_press_event_notifier(struct notifier_block *pwrkey_event_nb,
 		return LCD_KIT_FAIL;
 	}
 
-	if (!disp_info)
+	if (!DISP_INFO)
 		return LCD_KIT_OK;
-	if (disp_info->pwrkey_press.support == false) {
+	if (DISP_INFO->pwrkey_press.support == false) {
 		LCD_KIT_INFO("not support this func!\n");
 		return LCD_KIT_OK;
 	}
-	time = disp_info->pwrkey_press.timer_val + 6000; /* 6s */
+	time = DISP_INFO->pwrkey_press.timer_val + 6000; /* 6s */
 	switch (event) {
 	case COMB_KEY_PRESS_DOWN:
-		disp_info->pwrkey_press.long_press_flag = true;
-		schedule_delayed_work(&disp_info->pwrkey_press.pf_work,
+		DISP_INFO->pwrkey_press.long_press_flag = true;
+		schedule_delayed_work(&DISP_INFO->pwrkey_press.pf_work,
 			msecs_to_jiffies(time));
 		break;
 	case COMB_KEY_PRESS_RELEASE:
-		if (disp_info->pwrkey_press.long_press_flag == false)
+		if (DISP_INFO->pwrkey_press.long_press_flag == false)
 			break;
-		if (disp_info->pwrkey_press.esd_status == PWR_OFF_DISABLED_ESD) {
-			disp_info->pwrkey_press.esd_status = PWR_OFF_NEED_DISABLE_ESD;
+		if (DISP_INFO->pwrkey_press.esd_status == PWR_OFF_DISABLED_ESD) {
+			DISP_INFO->pwrkey_press.esd_status = PWR_OFF_NEED_DISABLE_ESD;
 			hisifd->panel_info.esd_enable = 1;
 			LCD_KIT_INFO("pwr key enable esd!\n");
 		}
-		disp_info->pwrkey_press.long_press_flag = false;
-		cancel_delayed_work_sync(&disp_info->pwrkey_press.pf_work);
+		DISP_INFO->pwrkey_press.long_press_flag = false;
+		cancel_delayed_work_sync(&DISP_INFO->pwrkey_press.pf_work);
 		break;
 	default:
 		break;
@@ -2213,29 +2278,29 @@ void lcd_kit_register_power_key_notify(void)
 	struct delayed_work *p_work = NULL;
 	static bool pwroff_config_flag = false;
 
-	if (!disp_info)
+	if (!DISP_INFO)
 		return;
-	if (disp_info->pwrkey_press.support == false)
+	if (DISP_INFO->pwrkey_press.support == false)
 		return;
 
-	p_work = &disp_info->pwrkey_press.pf_work;
+	p_work = &DISP_INFO->pwrkey_press.pf_work;
 	INIT_DELAYED_WORK(p_work, power_off_work);
-	disp_info->pwrkey_press.timer_val = get_power_off_timer_val();
+	DISP_INFO->pwrkey_press.timer_val = get_power_off_timer_val();
 	if (pwroff_config_flag) {
 		LCD_KIT_ERR("power_key notifier has been registed!\n");
 		return;
 	}
 	if (g_restart_type == PRESS_POWER_ONLY) {
-		disp_info->pwrkey_press.nb.notifier_call =
+		DISP_INFO->pwrkey_press.nb.notifier_call =
 			pwrkey_press_event_notifier;
 		ret = powerkey_register_notifier(
-			&disp_info->pwrkey_press.nb);
+			&DISP_INFO->pwrkey_press.nb);
 		if (ret < 0)
 			LCD_KIT_ERR("register power_key notifier failed!\n");
 	} else {
-		disp_info->pwrkey_press.nb.notifier_call =
+		DISP_INFO->pwrkey_press.nb.notifier_call =
 			comb_key_press_event_notifier;
-		ret = comb_key_register_notifier(&disp_info->pwrkey_press.nb);
+		ret = comb_key_register_notifier(&DISP_INFO->pwrkey_press.nb);
 		if (ret < 0)
 			LCD_KIT_ERR("register comb_key notifier failed!\n");
 	}
@@ -2262,8 +2327,8 @@ static ssize_t lcd_kit_color_param_get_func(struct hisi_fb_data_type *hisifd)
 		return LCD_KIT_FAIL;
 	}
 	oeminfo = lcd_kit_get_brightness_color_oeminfo();
-	if (!disp_info->oeminfo.support ||
-		!disp_info->oeminfo.brightness_color_uniform.support) {
+	if (!DISP_INFO->oeminfo.support ||
+		!DISP_INFO->oeminfo.brightness_color_uniform.support) {
 		LCD_KIT_INFO("oeminfo not support\n");
 		return LCD_KIT_OK;
 	}
@@ -2372,10 +2437,10 @@ static int lcd_kit_probe(struct platform_device *pdev)
 	/* utils init */
 	lcd_kit_utils_init(np, pinfo);
 	/* elvdd detect gpio */
-	LCD_KIT_INFO("XML elvdd detect gpio = %d\n", disp_info->elvdd_detect.detect_gpio);
+	LCD_KIT_INFO("XML elvdd detect gpio = %d\n", DISP_INFO->elvdd_detect.detect_gpio);
 	if (g_elvdd_gpio)
-		disp_info->elvdd_detect.detect_gpio = g_elvdd_gpio;
-	LCD_KIT_INFO("use elvdd detect gpio %d\n", disp_info->elvdd_detect.detect_gpio);
+		DISP_INFO->elvdd_detect.detect_gpio = g_elvdd_gpio;
+	LCD_KIT_INFO("use elvdd detect gpio %d\n", DISP_INFO->elvdd_detect.detect_gpio);
 	/* init factory mode */
 	factory_init(pinfo);
 #ifdef LCD_KIT_DEBUG_ENABLE
@@ -2520,7 +2585,7 @@ static void lcd_get_project_id(struct device_node *np)
 	if (project_id) {
 		len = strlen(project_id);
 		len = (len > PROJECTID_LEN) ? PROJECTID_LEN : len;
-		strncpy(disp_info->project_id.id, project_id, len);
+		strncpy(DISP_INFO->project_id.id, project_id, len);
 	}
 }
 
@@ -2558,22 +2623,22 @@ static int __init lcd_kit_init(void)
 	lcd_get_project_id(np);
 	lcd_get_set_power_support(np);
 	lcd_get_power_seq_from_dts(np);
-	if (of_property_read_u32(np, "board_version", &disp_info->board_version))
-		disp_info->board_version = 0;
-	LCD_KIT_INFO("disp_info->board_version = 0x%x\n", disp_info->board_version);
-	lcd_kit_parse_u32(np, "product_id", &disp_info->product_id, 0);
-	LCD_KIT_INFO("disp_info->product_id = %d", disp_info->product_id);
-	disp_info->compatible = (char *)of_get_property(np, "lcd_panel_type", NULL);
-	if (!disp_info->compatible) {
+	if (of_property_read_u32(np, "board_version", &DISP_INFO->board_version))
+		DISP_INFO->board_version = 0;
+	LCD_KIT_INFO("DISP_INFO->board_version = 0x%x\n", DISP_INFO->board_version);
+	lcd_kit_parse_u32(np, "product_id", &DISP_INFO->product_id, 0);
+	LCD_KIT_INFO("DISP_INFO->product_id = %d", DISP_INFO->product_id);
+	DISP_INFO->compatible = (char *)of_get_property(np, "lcd_panel_type", NULL);
+	if (!DISP_INFO->compatible) {
 		LCD_KIT_ERR("can not get lcd kit compatible\n");
 		return ret;
 	}
-	LCD_KIT_DEBUG("disp_info->compatible = %s\n", disp_info->compatible);
-	len = strlen(disp_info->compatible);
+	LCD_KIT_DEBUG("DISP_INFO->compatible = %s\n", DISP_INFO->compatible);
+	len = strlen(DISP_INFO->compatible);
 	memset((char *)lcd_kit_driver.driver.of_match_table->compatible, 0,
 		LCD_KIT_PANEL_COMP_LENGTH);
 	strncpy((char *)lcd_kit_driver.driver.of_match_table->compatible,
-		disp_info->compatible, len > (LCD_KIT_PANEL_COMP_LENGTH - 1) ?
+		DISP_INFO->compatible, len > (LCD_KIT_PANEL_COMP_LENGTH - 1) ?
 		(LCD_KIT_PANEL_COMP_LENGTH - 1) : len);
 	lcd_get_elvdd_detect_gpio(np);
 	/* register driver */

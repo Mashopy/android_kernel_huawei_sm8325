@@ -28,6 +28,21 @@
 #define HWLOG_TAG hc32l110_fw
 HWLOG_REGIST();
 
+static int hc32l110_fw_retry_write_bootloader(struct hc32l110_device_info *di, u8 *cmd)
+{
+	int i;
+
+	/* retry max 10 times to wait i2c init ok */
+	for (i = 0; i < HC32L110_FW_ACK_COUNT; i++) {
+		if (!hc32l110_write_word_bootloader(di, cmd, HC32L110_FW_CMD_SIZE))
+			return 0;
+
+		power_usleep(DT_USLEEP_2MS);
+	}
+
+	return -EIO;
+}
+
 static int hc32l110_fw_write_cmd(struct hc32l110_device_info *di, u16 cmd)
 {
 	int i;
@@ -38,7 +53,9 @@ static int hc32l110_fw_write_cmd(struct hc32l110_device_info *di, u16 cmd)
 	buf[0] = cmd >> 8;
 	buf[1] = cmd & 0xFF;
 
-	(void)hc32l110_write_word_bootloader(di, buf, HC32L110_FW_CMD_SIZE);
+	if (hc32l110_fw_retry_write_bootloader(di, buf))
+		return -EIO;
+
 	for (i = 0; i < HC32L110_FW_ACK_COUNT; i++) {
 		power_usleep(DT_USLEEP_1MS);
 		ack = 0;
@@ -298,17 +315,15 @@ int hc32l110_fw_update_empty_mtp(struct hc32l110_device_info *di)
 
 int hc32l110_fw_update_latest_mtp(struct hc32l110_device_info *di)
 {
-	hc32l110_fw_program_begin(di);
-
-	if (hc32l110_fw_check_bootloader_mode(di)) {
-		(void)gpio_direction_output(di->gpio_enable, 0);
-		return -EINVAL;
+	if (!hc32l110_fw_get_ver_id(di) && di->fw_ver_id >= HC32L110_MTP_VER) {
+		hwlog_info("no need update_latest_mtp: ver_id=%x mtp_ver=%x\n", di->fw_ver_id, HC32L110_MTP_VER);
+		return 0;
 	}
 
-	hc32l110_fw_program_end(di);
-
-	if (!hc32l110_fw_get_ver_id(di) && di->fw_ver_id >= HC32L110_MTP_VER)
-		return 0;
+	if (di->fw_ver_id == 0) {
+		hwlog_info("hc32l110 is not exit or bootloader is empty\n");
+		return -EINVAL;
+	}
 
 	hwlog_info("need update mtp: ver_id=%x mtp_ver=%x\n", di->fw_ver_id, HC32L110_MTP_VER);
 	return hc32l110_fw_update_mtp(di, g_hc32l110_mtp_data, HC32L110_MTP_SIZE);

@@ -115,6 +115,8 @@ struct cps4029_dev_info {
 	u16 irq_val;
 	int irq_cnt;
 	u16 ept_type;
+	u16 tx_pocp_th;
+	u16 tx_ping_freq;
 	u16 chip_id;
 };
 

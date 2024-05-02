@@ -42,7 +42,7 @@
 #include <linux/vmalloc.h>
 #include "aw8622x.h"
 #include "haptic_nv.h"
-
+#include "../vibrator_event.h"
 /******************************************************
  *
  * Register Access
@@ -2379,6 +2379,7 @@ static ssize_t aw8622x_duration_store(struct device *dev,
 		//return rc;
 	aw8622x->duration = val;
 	aw8622x->effect_mode = LONG_VIB_RAM_MODE;
+	__pm_wakeup_event(aw8622x->nv_ws, aw8622x->duration + HAPTIC_WAKE_LOCK_GAP);
 	return count;
 }
 
@@ -3648,6 +3649,14 @@ static int aw8622x_haptic_play_repeat_seq(struct aw8622x *aw8622x,
 	return 0;
 }
 
+static void aw8622x_vib_duration_notify(struct aw8622x *aw8622x)
+{
+	if (aw8622x->state && aw8622x->effect_mode == LONG_VIB_RAM_MODE)
+		vibrator_duration_distinguish(aw8622x->duration);
+	else
+		vibrator_duration_distinguish(0);
+}
+
 static void aw8622x_vibrator_work_routine(struct work_struct *work)
 {
 	struct aw8622x *aw8622x = container_of(work, struct aw8622x,
@@ -3659,6 +3668,7 @@ static void aw8622x_vibrator_work_routine(struct work_struct *work)
 
 	aw8622x_haptic_stop(aw8622x);
 	aw8622x_haptic_upload_lra(aw8622x, AW8622X_F0_CALI);
+	aw8622x_vib_duration_notify(aw8622x);
 	if (aw8622x->state) {
 		if (aw8622x->activate_mode ==
 			AW_HAPTIC_ACTIVATE_RAM_MODE) {
@@ -3681,19 +3691,9 @@ static void aw8622x_vibrator_work_routine(struct work_struct *work)
 					__func__);
 		}
 		if (aw8622x->effect_mode == LONG_VIB_RAM_MODE ||
-			(aw8622x->activate_mode == AW_HAPTIC_ACTIVATE_CONT_MODE)) {
+			(aw8622x->activate_mode == AW_HAPTIC_ACTIVATE_CONT_MODE))
 			hrtimer_start(&aw8622x->timer, ktime_set(aw8622x->duration / 1000,
 				(aw8622x->duration % 1000) * 1000000), HRTIMER_MODE_REL);
-			if (aw8622x->nv_ws)
-				__pm_stay_awake(aw8622x->nv_ws);
-			aw8622x->wk_lock_flag = 1;
-		}
-	} else {
-		if (aw8622x->wk_lock_flag == 1) {
-			if (aw8622x->nv_ws)
-				__pm_relax(aw8622x->nv_ws);
-			aw8622x->wk_lock_flag = 0;
-		}
 	}
 	mutex_unlock(&aw8622x->lock);
 }
@@ -3741,6 +3741,7 @@ int aw8622x_vibrator_init(struct aw8622x *aw8622x)
 		return ret;
 	}
 #endif
+	vibrator_nb_init();
 	hrtimer_init(&aw8622x->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	aw8622x->timer.function = aw8622x_vibrator_timer_func;
 	INIT_WORK(&aw8622x->vibrator_work,
@@ -4236,6 +4237,7 @@ void aw8622x_haptic_file_config(struct aw8622x *aw8622x, uint64_t type)
 		aw8622x->amplitude = type % LONG_TIME_AMP_DIV_COFF;
 		aw8622x->state = 1;
 		aw_adapt_amp_again(aw8622x, LONG_VIB_RAM_MODE);
+		__pm_wakeup_event(aw8622x->nv_ws, aw8622x->duration + HAPTIC_WAKE_LOCK_GAP);
 		aw_dev_info("long index = %d, amp = %d\n", aw8622x->index, aw8622x->amplitude);
 		schedule_work(&aw8622x->vibrator_work);
 	} else if ((type > 0) && (type <= SHORT_HAPTIC_RAM_MAX_ID)) { // short ram haptic

@@ -27,10 +27,14 @@
 #include <linux/device.h>
 #include <linux/miscdevice.h>
 #include <linux/of.h>
+#include <linux/syscalls.h>
 #include <log/log_usertype.h>
 #include <linux/platform_device.h>
 #include <linux/soc/qcom/pmic_glink.h>
 #include <huawei_platform/log/hw_log.h>
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
+#include <chipset_common/hwpower/common_module/power_cmdline.h>
+#include <chipset_common/hwpower/charger/charger_common_interface.h>
 #include "ulog_file.h"
 
 #ifdef HWLOG_TAG
@@ -46,16 +50,26 @@ HWLOG_REGIST();
 #define UTRACE_WAIT_TIME_MS         1000
 #define UTRACE_MAX_GET_LOG_SIZE     8192
 #define UTRACE_DEF_PERIOD           10
+#define USB_AND_CHARGE_CATEGORIES   0xFFFFFFFF
+
+#define UTRACE_BETA_FILE_PATH_1     "/hw_product/region_comm/china/log_collect_service_beta.xml"
+#define UTRACE_BETA_FILE_PATH_2     "/system/etc/log_collect_service_beta.xml"
 
 enum {
 	TRACE_ONCE = 0,
 	TRACE_PERIOD,
 };
 
+enum {
+	TRACE_STOP = 0,
+	TRACE_START,
+};
+
 static struct utrace_device *g_utrace_dev;
 
 struct utrace_device {
 	struct device *dev;
+	u32 run;
 	u32 mode;
 	u32 level;
 	u32 period;
@@ -69,6 +83,8 @@ struct utrace_device {
 	u32 ulog_size;
 	char ulog_buffer[UTRACE_MAX_GET_LOG_SIZE + 1];
 	struct ulog_file ufile;
+	struct notifier_block event_nb;
+	bool charger_online;
 };
 
 struct utrace_ulog_prop_req_msg {
@@ -170,7 +186,7 @@ static void utrace_proc_req_ulog_rsp(struct utrace_device *di,
 
 	memcpy(di->ulog_buffer, msg->read_buffer, sizeof(msg->read_buffer));
 	di->ulog_size = strlen(di->ulog_buffer);
-	hwlog_info("get ulog success size =%u\n", di->ulog_size);
+	hwlog_debug("get ulog success size =%u\n", di->ulog_size);
 	complete(&di->wait_rsp);
 }
 
@@ -179,7 +195,7 @@ static int utrace_glink_callback(void *priv, void *data, size_t len)
 	struct pmic_glink_hdr *hdr = data;
 	struct utrace_device *di = priv;
 
-	hwlog_info("owner: %u type: %u opcode: %#x len: %zu\n", hdr->owner,
+	hwlog_debug("owner: %u type: %u opcode: %#x len: %zu\n", hdr->owner,
 		hdr->type, hdr->opcode, len);
 
 	switch (hdr->opcode) {
@@ -518,6 +534,7 @@ static void utrace_create_debugfs(struct utrace_device *udi)
 static void utrace_work(struct work_struct *work)
 {
 	int ret = 0;
+	int charge_done_status = charge_get_done_type();
 	struct utrace_device *di = container_of(work, struct utrace_device,
 		trace_work.work);
 
@@ -526,26 +543,115 @@ static void utrace_work(struct work_struct *work)
 		di->ulog_size = 0;
 		ret = utrace_req_ulog(di);
 		if (ret || (di->ulog_size == 0)) {
-			hwlog_err("%s ret=%d\n", __func__, ret);
+			hwlog_debug("%s ret=%d\n", __func__, ret);
 			break;
 		} else {
-			ulog_write(&di->ufile, di->ulog_buffer, di->ulog_size);
+			ret = ulog_write(&di->ufile, di->ulog_buffer, di->ulog_size);
+			if (ret) {
+				hwlog_err("%s ulog write fail\n", __func__);
+				return;
+			}
 		}
+	}
+
+	if ((!di->charger_online || (charge_done_status == CHARGE_DONE)) &&
+		(di->mode != TRACE_PERIOD)) {
+		hwlog_info("stop utrace work, online=%d, status=%d\n",
+			di->charger_online, charge_done_status);
+		return;
 	}
 
 	queue_delayed_work(system_power_efficient_wq, &di->trace_work,
 		msecs_to_jiffies(MSEC_PER_SEC * di->period));
 }
 
-static bool utrace_check_version(void)
+static bool utrace_check_log_version(void)
 {
-#ifndef DBG_ULOG_TRACE
-	unsigned int type = get_log_usertype();
-	if ((type != BETA_USER) && (type != TEST_USER))
+	int ret;
+
+	ret = ksys_access(UTRACE_BETA_FILE_PATH_1, 0);
+	if (!ret) {
+		hwlog_info("hw_product path access ok\n");
+		return true;
+	}
+
+	ret = ksys_access(UTRACE_BETA_FILE_PATH_2, 0);
+	if (!ret) {
+		hwlog_info("system path access ok\n");
+		return true;
+	}
+	return false;
+}
+
+static bool utrace_normal_boot_mode(void)
+{
+	if (power_cmdline_is_powerdown_charging_mode() ||
+		power_cmdline_is_factory_mode() ||
+		power_cmdline_is_recovery_mode() ||
+		power_cmdline_is_erecovery_mode()) {
+		hwlog_info("current mode not support ulog trace\n");
 		return false;
-#endif /* DBG_ULOG_TRACE */
+	}
 
 	return true;
+}
+
+static int utrace_charge_control(struct utrace_device *di, u64 status)
+{
+	hwlog_info("%s: set trace run mode to %llu\n", __func__, status);
+	if (di->run == status)
+		return 0;
+
+	di->run = status;
+	di->categories = USB_AND_CHARGE_CATEGORIES;
+	if (di->run == TRACE_START) {
+		di->period = 1;
+		queue_delayed_work(system_power_efficient_wq, &di->trace_work, 0);
+	} else {
+		cancel_delayed_work_sync(&di->trace_work);
+	}
+
+	utrace_set_ulog_prop(di);
+
+	return 0;
+}
+
+static int utrace_charge_notifier_call(struct notifier_block *nb,
+	unsigned long event, void *data)
+{
+	struct utrace_device *di = g_utrace_dev;
+
+	if (!di)
+		return NOTIFY_OK;
+
+	switch (event) {
+	case POWER_NE_CHARGING_STOP:
+		di->charger_online = false;
+		utrace_charge_control(di, TRACE_STOP);
+		break;
+	case POWER_NE_CHARGING_START:
+		di->charger_online = true;
+		utrace_charge_control(di, TRACE_START);
+		break;
+	default:
+		return NOTIFY_OK;
+	}
+
+	hwlog_info("%s: receive event=%lu\n", __func__, event);
+
+	return NOTIFY_OK;
+}
+
+static void utrace_charge_mode_log(struct utrace_device *di)
+{
+	int ret;
+
+	di->charger_online = false;
+
+	di->event_nb.notifier_call = utrace_charge_notifier_call;
+	ret = power_event_bnc_register(POWER_BNT_CHARGING, &di->event_nb);
+	if (ret)
+		hwlog_err("%s: charge notify register failed", __func__);
 }
 
 static int utrace_probe(struct platform_device *pdev)
@@ -554,7 +660,12 @@ static int utrace_probe(struct platform_device *pdev)
 	struct utrace_device *udi = NULL;
 	struct pmic_glink_client_data client_data = { 0 };
 
-	if (!utrace_check_version())
+	if (!utrace_check_log_version()) {
+		hwlog_info("no log version\n");
+		return 0;
+	}
+
+	if (!utrace_normal_boot_mode())
 		return 0;
 
 	udi = devm_kzalloc(&pdev->dev, sizeof(*udi), GFP_KERNEL);
@@ -583,13 +694,18 @@ static int utrace_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&udi->trace_work, utrace_work);
 	ulog_init(&udi->ufile);
 	platform_set_drvdata(pdev, udi);
-	utrace_create_debugfs(udi);
+	utrace_charge_mode_log(udi);
 
+	g_utrace_dev = udi;
+#ifndef DBG_ULOG_TRACE
+	return 0;
+#endif /* DBG_ULOG_TRACE */
+
+	utrace_create_debugfs(udi);
 	if (misc_register(&utrace_misc_dev) != 0) {
 		hwlog_err("%s: misc register failed", __func__);
 		goto exit;
 	}
-	g_utrace_dev = udi;
 
 	return 0;
 
@@ -597,6 +713,7 @@ exit:
 	debugfs_remove_recursive(udi->root);
 	pmic_glink_unregister_client(udi->client);
 	udi->root = NULL;
+	g_utrace_dev = NULL;
 
 	return -ENODEV;
 }
@@ -610,6 +727,8 @@ static int utrace_remove(struct platform_device *pdev)
 
 	debugfs_remove_recursive(di->root);
 	pmic_glink_unregister_client(di->client);
+	power_event_bnc_unregister(POWER_BNT_CHARGING, &di->event_nb);
+
 	di->root = NULL;
 	return 0;
 }

@@ -36,6 +36,12 @@
 #include <trace/events/trace_msm_ssr_event.h>
 
 #include "peripheral-loader.h"
+
+#ifdef CONFIG_BLACKBOX
+#include <platform/linux/blackbox.h>
+#include <platform/linux/blackbox_subsystem.h>
+#endif
+
 #ifdef CONFIG_MODEM_RESET
 #include "modem_reset/hw_modem_reset.h"
 #endif
@@ -1034,6 +1040,12 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	for_each_subsys_device(list, count, NULL, subsystem_free_memory);
 
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_POWERUP, NULL);
+
+#ifdef CONFIG_BLACKBOX
+	bbox_subsystem_crash_notify(desc->name);
+	pr_err("bbox_subsystem_crash_notify: %s\n", desc->name);
+#endif
+
 	ret = for_each_subsys_device(list, count, NULL, subsystem_powerup);
 	pr_info("finish subsystem_powerup \n");
 	if (ret)

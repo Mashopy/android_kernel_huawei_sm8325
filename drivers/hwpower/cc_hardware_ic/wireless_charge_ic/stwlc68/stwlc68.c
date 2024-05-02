@@ -288,7 +288,7 @@ int stwlc68_get_chip_info_str(char *info_str, int len, void *dev_data)
 		return -EIO;
 
 	return snprintf(info_str, WLTRX_IC_CHIP_INFO_LEN,
-		"chip_id:%d cfg_id:0x%x patch_id:0x%x cut_id:%d sram_id:0x%x", chip_info.chip_id,
+		"chip_id:%u cfg_id:0x%x patch_id:0x%x cut_id:%u sram_id:0x%x", chip_info.chip_id,
 		chip_info.cfg_id, chip_info.patch_id, chip_info.cut_id, chip_info.sram_id);
 }
 
@@ -527,6 +527,8 @@ static int stwlc68_irq_init(struct stwlc68_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, stwlc68_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "stwlc68_int", &di->gpio_int, &di->irq_int)) {
 		ret = -EINVAL;
@@ -541,7 +543,6 @@ static int stwlc68_irq_init(struct stwlc68_dev_info *di, struct device_node *np)
 	}
 	enable_irq_wake(di->irq_int);
 	di->irq_active = 1;
-	INIT_WORK(&di->irq_work, stwlc68_irq_work);
 
 	return 0;
 

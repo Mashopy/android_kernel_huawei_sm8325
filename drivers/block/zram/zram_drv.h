@@ -162,7 +162,6 @@ struct zram_indirect_handle {
 	unsigned long		handle;
 	atomic_t		refs;
 	u32			hash;
-	size_t			len;
 };
 
 struct zram_hashtable_head {

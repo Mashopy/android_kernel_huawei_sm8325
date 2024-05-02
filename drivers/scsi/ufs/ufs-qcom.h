@@ -495,5 +495,4 @@ struct ufs_ioctl_query_data {
 	 */
 	__u8 buffer[0];
 };
-
 #endif /* UFS_QCOM_H_ */

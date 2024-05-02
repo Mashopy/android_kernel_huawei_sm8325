@@ -523,10 +523,10 @@ static ssize_t pn547_dev_write(struct file *filp, const char __user *buf,
 		pr_info("%s : need to send 0x20\n", __func__);
 		while (++retry_count < MAX_I2C_WAKEUP_TIME) {
 			ret = i2c_master_send(pn547_dev->client, wakeup_cmd, wakeup_len);
-			usleep_range(I2C_WAKEUP_SLEEP_TIME1, I2C_WAKEUP_SLEEP_TIME2);
 			if (ret == wakeup_len) {
 				break;
 			}
+			usleep_range(I2C_WAKEUP_SLEEP_TIME1, I2C_WAKEUP_SLEEP_TIME2);
 		}
 		if (ret < 0) {
 			pr_err("%s: failed to write wakeup_cmd : %d, retry for : %d times\n", __func__, ret, retry_count);

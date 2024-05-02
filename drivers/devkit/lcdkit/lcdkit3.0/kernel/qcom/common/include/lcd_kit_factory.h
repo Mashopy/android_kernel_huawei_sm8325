@@ -132,6 +132,7 @@ struct lcd_kit_checksum {
 	struct lcd_kit_dsi_panel_cmds enable_cmds;
 	struct lcd_kit_dsi_panel_cmds disable_cmds;
 	struct lcd_kit_arrays_data value;
+	struct lcd_kit_arrays_data value_ext;
 	struct lcd_kit_arrays_data dsi1_value;
 };
 

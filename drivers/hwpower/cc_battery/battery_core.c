@@ -554,13 +554,13 @@ static void bat_core_update_health(struct bat_core_device *di)
 
 	if (di->data.temp_now == BAT_CORE_TEMP_UNKNOWN) {
 		health = POWER_SUPPLY_HEALTH_UNKNOWN;
+	} else if (bat_fault_is_cutoff_vol()) {
+		health = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
+		bat_fault_send_under_voltage_event();
 	} else if (di->data.temp_now < BAT_CORE_COLD_TEMP) {
 		health = POWER_SUPPLY_HEALTH_COLD;
 	} else if (di->data.temp_now > BAT_CORE_OVERHEAT_TEMP) {
 		health = POWER_SUPPLY_HEALTH_OVERHEAT;
-	} else if (bat_fault_is_cutoff_vol()) {
-		health = POWER_SUPPLY_HEALTH_UNDERVOLTAGE;
-		bat_fault_send_under_voltage_event();
 	} else {
 		health = POWER_SUPPLY_HEALTH_GOOD;
 	}

@@ -365,6 +365,8 @@ static int sc8502_irq_init(struct sc8502_dev_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, sc8502_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "sc8502_int", &di->gpio_int, &di->irq_int))
 		return 0;
@@ -379,7 +381,6 @@ static int sc8502_irq_init(struct sc8502_dev_info *di, struct device_node *np)
 	}
 
 	enable_irq_wake(di->irq_int);
-	INIT_WORK(&di->irq_work, sc8502_irq_work);
 	return 0;
 }
 

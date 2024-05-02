@@ -30,8 +30,9 @@ HWLOG_REGIST();
 static int dc_get_max_current(void)
 {
 	int adp_limit;
-	int cable_limit;
-	int bat_limit;
+	int adp_max_cur;
+	int cable_max_cur;
+	int bat_max_cur;
 	int max_cur;
 	int bat_vol = hw_battery_get_series_num() * BAT_RATED_VOLT;
 	struct direct_charge_device *l_di = direct_charge_get_di();
@@ -40,33 +41,36 @@ static int dc_get_max_current(void)
 		return 0;
 
 	/* get max current by adapter */
-	adp_limit = dc_get_adapter_max_current(bat_vol * l_di->dc_volt_ratio);
-	adp_limit *= l_di->dc_volt_ratio;
+	adp_max_cur = dc_get_adapter_max_current(bat_vol * l_di->dc_volt_ratio);
+	adp_limit = dc_get_adapter_ilimit();
+	if (adp_limit)
+		adp_max_cur = adp_max_cur > adp_limit ? adp_limit : adp_max_cur;
+	adp_max_cur *= l_di->dc_volt_ratio;
 
 	/* get max current by battery */
 	if (l_di->product_max_pwr)
-		bat_limit = l_di->product_max_pwr * POWER_UW_PER_MW / bat_vol;
+		bat_max_cur = l_di->product_max_pwr * POWER_UW_PER_MW / bat_vol;
 	else
-		bat_limit = direct_charge_get_battery_max_current();
+		bat_max_cur = direct_charge_get_battery_max_current();
 
 	/* get max current by cable */
-	cable_limit = dc_get_cable_max_current();
+	cable_max_cur = dc_get_cable_max_current(l_di->working_mode);
 	/* avoid 55W/66W display issues on 5A/6A c2c cable */
-	if (pd_dpm_get_ctc_cable_flag() && (cable_limit >= CTC_EMARK_CURR_5A * l_di->dc_volt_ratio))
-		cable_limit = cable_limit * 11 / POWER_BASE_DEC; /* amplified 1.1 times. */
-	if (l_di->cc_cable_detect_enable && cable_limit)
-		max_cur = (bat_limit < cable_limit) ? bat_limit : cable_limit;
+	if (pd_dpm_get_ctc_cable_flag() && (cable_max_cur >= CTC_EMARK_CURR_5A * l_di->dc_volt_ratio))
+		cable_max_cur = cable_max_cur * 11 / POWER_BASE_DEC; /* amplified 1.1 times. */
+	if (l_di->cc_cable_detect_enable && cable_max_cur)
+		max_cur = (bat_max_cur < cable_max_cur) ? bat_max_cur : cable_max_cur;
 	else
-		max_cur = bat_limit;
+		max_cur = bat_max_cur;
 
-	if (adp_limit)
-		max_cur = (max_cur < adp_limit) ? max_cur : adp_limit;
+	if (adp_max_cur)
+		max_cur = (max_cur < adp_max_cur) ? max_cur : adp_max_cur;
 
 	l_di->max_pwr = max_cur * bat_vol;
 	l_di->max_pwr /= POWER_UW_PER_MW;
 
 	hwlog_info("l_adp=%d, l_cable=%d, l_bat=%d, m_cur=%d, m_pwr=%d\n",
-		adp_limit, cable_limit, bat_limit, max_cur, l_di->max_pwr);
+		adp_max_cur, cable_max_cur, bat_max_cur, max_cur, l_di->max_pwr);
 
 	return max_cur;
 }
@@ -121,9 +125,9 @@ static bool dc_check_cable_type_send_done(void)
 	sc_get_di(&sc_di);
 	sc4_get_di(&sc4_di);
 
-	if ((lvc_di && lvc_di->cable_type_send_flag) ||
-		(sc_di && sc_di->cable_type_send_flag) ||
-		(sc4_di && sc4_di->cable_type_send_flag))
+	if ((lvc_di && lvc_di->cable_info.cable_type_send_flag) ||
+		(sc_di && sc_di->cable_info.cable_type_send_flag) ||
+		(sc4_di && sc4_di->cable_info.cable_type_send_flag))
 		return true;
 
 	return false;
@@ -131,14 +135,16 @@ static bool dc_check_cable_type_send_done(void)
 
 void dc_send_cable_type_uevent(void)
 {
+	unsigned int cable_type;
 	struct direct_charge_device *l_di = direct_charge_get_di();
 
-	if (!l_di || l_di->is_send_cable_type == 0)
+	if (!l_di || l_di->cable_info.is_send_cable_type == 0)
 		return;
 
 	if (dc_check_cable_type_send_done())
 		return;
 
-	power_ui_event_notify(POWER_UI_NE_CABLE_TYPE, &l_di->cable_type);
-	l_di->cable_type_send_flag = true;
+	cable_type = dc_get_cable_type_info(DC_CABLE_TYPE);
+	power_ui_event_notify(POWER_UI_NE_CABLE_TYPE, &cable_type);
+	l_di->cable_info.cable_type_send_flag = true;
 }

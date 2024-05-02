@@ -31,6 +31,37 @@ enum ion_kthread_type {
 	ION_MAX_NUM_KTHREADS
 };
 
+enum ion_pool_type {
+	ION_POOL_UNCACHED,
+	ION_POOL_CACHED,
+	ION_MAX_NUM_POOLS,
+};
+
+struct ion_pool_prefetch_ctrl {
+	enum ion_pool_type type;
+	unsigned long pool_watermark;
+	unsigned long prefill_low_percent;
+	unsigned long prefill_high_percent;
+	unsigned long alloc_warn_time_thresh;
+	struct task_struct *pool_watermark_kthread;
+	wait_queue_head_t pool_watermark_wait;
+	atomic_t wait_flag;
+	struct mutex pool_watermark_lock;
+};
+
+struct ion_msm_system_heap_stats {
+	atomic64_t alloc_total_times;
+	atomic64_t alloc_from_pool_total_times;
+	atomic64_t alloc_from_buddy_total_times;
+	atomic64_t alloc_from_pool_and_buddy_total_times;
+	atomic64_t stat_less_4ms;
+	atomic64_t stat_4to6ms;
+	atomic64_t stat_6to8ms;
+	atomic64_t stat_8to11ms;
+	atomic64_t stat_11to16ms;
+	atomic64_t stat_greater_16ms;
+};
+
 struct ion_msm_system_heap {
 	struct msm_ion_heap heap;
 	struct ion_msm_page_pool *uncached_pools[MAX_ORDER];
@@ -41,11 +72,7 @@ struct ion_msm_system_heap {
 	/* Prevents unnecessary page splitting */
 	struct mutex split_page_mutex;
 	/* prefetch */
-	unsigned long pool_watermark;
-	struct task_struct *pool_watermark_kthread;
-	wait_queue_head_t pool_watermark_wait;
-	atomic_t wait_flag;
-	struct mutex pool_watermark_lock;
+	struct ion_pool_prefetch_ctrl prefetch_ctrls[ION_MAX_NUM_POOLS];
 };
 
 struct page_info {

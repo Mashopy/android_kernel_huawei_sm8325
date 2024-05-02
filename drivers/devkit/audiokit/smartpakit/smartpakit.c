@@ -462,8 +462,6 @@ int smartpakit_dump_chips(struct smartpakit_priv *pakit_priv)
 	for (i = 0; i < (int)pakit_priv->pa_num; i++) {
 		i2c_priv_p = pakit_priv->i2c_priv[i];
 		ret = pakit_priv->ioctl_ops->dump_regs(i2c_priv_p);
-		if (ret < 0)
-			break;
 	}
 
 	return ret;
@@ -2089,7 +2087,7 @@ static void smartpakit_free_switch_ctl_gpio(unsigned int ctl_num,
 
 static void smartpakit_free_simple_pa_id_gpio(struct smartpakit_priv *pakit_priv)
 {
-	int i;
+	unsigned int i;
 	struct smartpakit_switch_node *pa_id_ctl =
 		pakit_priv->simple_pa_id.pa_id_ctl;
 	unsigned int gpio_id_num = pakit_priv->simple_pa_id.gpio_id_num;
@@ -2097,7 +2095,7 @@ static void smartpakit_free_simple_pa_id_gpio(struct smartpakit_priv *pakit_priv
 	if (gpio_id_num == 0 || !pa_id_ctl)
 		return;
 
-	for (i = 0; i < (int)gpio_id_num; i++) {
+	for (i = 0; i < gpio_id_num; i++) {
 		if (gpio_is_valid(pa_id_ctl[i].gpio)) {
 			gpio_free((unsigned int)pa_id_ctl[i].gpio);
 			pa_id_ctl[i].gpio = -EINVAL;
@@ -2231,21 +2229,21 @@ static int smartpakit_parse_dt_switch_ctl_cfg(struct device *dev,
 		return 0;
 	}
 
-	if (of_property_read_bool(node, "simple_pa_en_pinctrl")) {
+	if (of_property_read_bool(node, "switch_ctl_pinctrl")) {
 		pinctrl = devm_pinctrl_get(dev);
 		if (IS_ERR_OR_NULL(pinctrl)) {
 			hwlog_err("%s: get enable pinctrl fail %d\n", __func__, IS_ERR(pinctrl));
 			return -EINVAL;
 		}
 
-		ret = smartpakit_pinctrl_select_state(pinctrl, "simple_pa_en");
+		ret = smartpakit_pinctrl_select_state(pinctrl, "switch_ctl_active");
 		if (ret)
 			return -ENOENT;
 	}
 
 	ret = smartpakit_parse_switch_ctl_gpio(node, pakit_priv);
 	if (ret < 0)
-		hwlog_err("%s: get switch ctl config err\n", __func__);
+		hwlog_err("%s: get switch ctl config error\n", __func__);
 
 	return ret;
 }
@@ -2512,7 +2510,7 @@ static int smartpakit_get_simple_pa_id_status(struct device *dev,
 {
 	struct pinctrl *pinctrl = NULL;
 	int ret;
-	int i;
+	unsigned int i;
 	unsigned int id_status = 0;
 	struct smartpakit_switch_node *pa_id_ctl =
 		pakit_priv->simple_pa_id.pa_id_ctl;
@@ -2606,7 +2604,7 @@ static int smartpakit_save_simple_pa_id_node(struct device_node *node,
 	struct smartpakit_switch_node *ctl = NULL;
 	struct property *pp = NULL;
 	const char *pa_id_str = "gpio_pa_id";
-	int i;
+	unsigned int i;
 	int ret;
 	unsigned int pa_id_node_size;
 

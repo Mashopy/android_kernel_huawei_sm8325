@@ -635,6 +635,8 @@ struct dma_buf *dma_buf_export(const struct dma_buf_export_info *exp_info)
 	dmabuf->timestamp = sched_clock();
 	dmabuf->tgid = task_pid_nr(current->group_leader);
 	dmabuf->pid = task_pid_nr(current);
+	get_task_comm(dmabuf->exp_task_comm, current->group_leader);
+	get_task_comm(dmabuf->exp_thread_comm, current);
 
 	if (!resv) {
 		resv = (struct dma_resv *)&dmabuf[1];
@@ -1363,8 +1365,10 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 		return ret;
 
 	seq_puts(s, "\nDma-buf Objects:\n");
-	seq_printf(s, "%-8s\t%-8s\t%-8s\t%-8s\texp_name\t%-8s\t%-8s\t%-8s\n",
-		   "size", "flags", "mode", "count", "ino", "tgid", "pid");
+	seq_printf(s, "%-8s\t%-8s\t%-8s\t%-8s\texp_name\t%-8s\t%-8s\t%-8s\t"
+		   "%-16s\t%-16s\n",
+		   "size", "flags", "mode", "count", "ino", "tgid", "pid",
+		   "exp_task_comm", "exp_thread_comm");
 
 	list_for_each_entry(buf_obj, &db_list.head, list_node) {
 		ret = mutex_lock_interruptible(&buf_obj->lock);
@@ -1376,7 +1380,7 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 		}
 
 		seq_printf(s, "%08zu\t%08x\t%08x\t%08ld\t%s\t%08lu"
-						"\t%6d\t%6d\t%s\t%16llu\n",
+				"\t%6d\t%6d\t%s\t%s\t%s\t%16llu\n",
 				buf_obj->size,
 				buf_obj->file->f_flags, buf_obj->file->f_mode,
 				file_count(buf_obj->file),
@@ -1384,6 +1388,8 @@ static int dma_buf_debug_show(struct seq_file *s, void *unused)
 				to_msm_dma_buf(buf_obj)->i_ino,
 				buf_obj->tgid,
 				buf_obj->pid,
+				buf_obj->exp_task_comm,
+				buf_obj->exp_thread_comm,
 				buf_obj->name ?: "",
 				buf_obj->timestamp);
 

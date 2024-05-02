@@ -11,7 +11,9 @@
 #include <linux/kernel.h> /* add for log */
 #include <linux/ctype.h> /* add for tolower */
 #include <linux/slab.h>
+#include <linux/inet.h>
 #include <linux/jhash.h>
+#include <securec.h>
 
 #include "nf_hw_common.h"
 #include "nf_ad_filter.h"
@@ -34,6 +36,8 @@ struct list_info g_deltalist_info;
 static spinlock_t g_droplock;
 static struct ad_url g_droparr[MAX_RECENT_DROP];
 static unsigned int g_curcount;
+static struct ip_rule g_quick_app_iprule[CLOUD_IP_NUM];
+static seqlock_t g_ip_rule_lock;
 
 bool is_droplist(const char *url, int len)
 {
@@ -146,6 +150,118 @@ void add_ad_rule_to_list(struct list_info *listinfo, unsigned int uid,
 	spin_unlock_bh(&listinfo->lock[hid]);
 }
 
+static bool decode_ip_and_port(const char *ipstr, int len, int num)
+{
+	char ip_port_str[IPV4_AND_PORT_MAX_LEN + 1] = {0};
+	char ip_str[IPV4_MAX_LEN + 1] = {0};
+	char port_str[TCP_PORT_MAX_LEN + 1] = {0};
+	unsigned int tmpaddr = 0;
+	char *port = NULL;
+	int ip_len = 0;
+	int port_len = 0;
+	if (ipstr == NULL || len >= IPV4_AND_PORT_MAX_LEN || num >= CLOUD_IP_NUM)
+		return false;
+	if (memcpy_s(ip_port_str, IPV4_AND_PORT_MAX_LEN, ipstr, len) != EOK)
+		return false;
+	ip_port_str[len] = '\0';
+	port = strchr(ip_port_str, ':');
+	if (port == NULL)
+		return false;
+	ip_len = port - ip_port_str;
+	port++;
+	port_len = ip_port_str + len - port;
+	if (ip_len >= IPV4_MAX_LEN || port_len > TCP_PORT_MAX_LEN || ip_len <= 0 || port_len <= 0)
+		return false;
+	if (memcpy_s(ip_str, IPV4_MAX_LEN, ip_port_str, ip_len) != EOK)
+		return false;
+	ip_str[ip_len] = '\0';
+	if (memcpy_s(port_str, TCP_PORT_MAX_LEN, port, port_len) != EOK)
+		return false;
+	port_str[port_len] = '\0';
+	if (in4_pton(ip_str, ip_len, (unsigned char *)&tmpaddr, -1, NULL)) {
+		int port_num;
+		int ret = kstrtoint(port_str, DECIMAL, &port_num);
+		if (ret != 0 || port_num > TCP_MAX_PORT_NUM || port_num < 0)
+			return false;
+		write_seqlock(&g_ip_rule_lock);
+		g_quick_app_iprule[num].ipaddr = tmpaddr;
+		g_quick_app_iprule[num].port = port_num;
+		g_quick_app_iprule[num].valid = 1;
+		write_sequnlock(&g_ip_rule_lock);
+		return true;
+	}
+	return false;
+}
+
+static void trans_to_ip_and_port_str(const char *buf, int len)
+{
+	const char *p = buf;
+	int tmplen = 0;
+	int i = 0;
+	int ip_rule_num = 0;
+	if (buf == NULL)
+		return;
+	i = p - buf;
+	while (i < len) {
+		if (buf[i] == ',') {
+			tmplen = buf + i - p;
+			if (tmplen > 0 && decode_ip_and_port(p, tmplen, ip_rule_num))
+				ip_rule_num++;
+			p = buf + i + 1;
+		}
+		i++;
+	}
+	if (p - buf < len) {
+		tmplen = buf + len - p;
+		if (tmplen > 0 && decode_ip_and_port(p, tmplen, ip_rule_num))
+			ip_rule_num++;
+	}
+}
+
+static void add_cloud_ip_to_local(const char *src, int len)
+{
+	char buf[CLOUD_IP_NUM * IPV4_MAX_LEN + 1] = {0};
+	int count = 0;
+	if (src ==  NULL || len <= 0 || len % 2 != 0)
+		return;
+	count = len >> 1;
+	if (count >= CLOUD_IP_NUM * IPV4_MAX_LEN)
+		return;
+	if (hex2bin((unsigned char *)buf, src, count) != 0)
+		return;
+	buf[count] = '\0';
+	if (strchr(buf, '.') == NULL || strchr(buf, ':') == NULL)
+		return;
+	write_seqlock(&g_ip_rule_lock);
+	(void)memset_s(g_quick_app_iprule, sizeof(struct ip_rule) * CLOUD_IP_NUM, 0,
+		sizeof(struct ip_rule) * CLOUD_IP_NUM);
+	write_sequnlock(&g_ip_rule_lock);
+	trans_to_ip_and_port_str(buf, count);
+}
+
+static bool is_ip_and_port_match(const unsigned int ipaddr, const unsigned short port)
+{
+	int i;
+	for (i = 0; i < CLOUD_IP_NUM; i++) {
+		if (!g_quick_app_iprule[i].valid)
+			break;
+		if (ipaddr == g_quick_app_iprule[i].ipaddr && port == g_quick_app_iprule[i].port)
+			return true;
+	}
+	return false;
+}
+
+bool is_quickapp_ip_and_port(const unsigned int ipaddr, const unsigned short port)
+{
+	unsigned int seq;
+	bool result;
+	do {
+		seq = read_seqbegin(&g_ip_rule_lock);
+		result = is_ip_and_port_match(ipaddr, port);
+	} while (read_seqretry(&g_ip_rule_lock, seq));
+	return result;
+}
+
 void add_ad_uid_rule(struct list_info *listinfo, const char *rule, int len)
 {
 	/* 1001:url9,url10, 15 */
@@ -153,6 +269,8 @@ void add_ad_uid_rule(struct list_info *listinfo, const char *rule, int len)
 	unsigned int uid;
 	int temlen;
 	int i;
+	const char *ipstr = "69703A"; /* find ASCII "ip:" */
+	int ipstrlen = strlen(ipstr);
 	if (listinfo == NULL || rule == NULL)
 		return;
 	p = strstr(rule, ":");
@@ -164,15 +282,24 @@ void add_ad_uid_rule(struct list_info *listinfo, const char *rule, int len)
 	while (i < len) {
 		if (rule[i] == ',') {
 			temlen = rule + i - p;
-			if (temlen > 0)
+			if (listinfo->type == DELTA && temlen > ipstrlen && strncmp(p, ipstr, ipstrlen) == 0) {
+				temlen = temlen - ipstrlen;
+				add_cloud_ip_to_local(p + ipstrlen, temlen);
+			} else if (temlen > 0) {
 				add_ad_rule_to_list(listinfo, uid, p, temlen);
+			}
 			p = rule + i + 1;
 		}
 		i++;
 	}
 	if (p - rule < len) {
 		temlen = rule + len - p;
-		add_ad_rule_to_list(listinfo, uid, p, temlen);
+		if (listinfo->type == DELTA && temlen > ipstrlen && strncmp(p, ipstr, ipstrlen) == 0) {
+			temlen = temlen - ipstrlen;
+			add_cloud_ip_to_local(p + ipstrlen, temlen);
+		} else {
+			add_ad_rule_to_list(listinfo, uid, p, temlen);
+		}
 	}
 }
 
@@ -274,6 +401,11 @@ void clear_ad_rule(struct list_info *listinfo, int opt, const char *data)
 		return;
 	}
 	pr_info("hwad:clear_%s_rule\n", listinfo->type == AD ? "ad" : "delta");
+	if (listinfo->type == DELTA) {
+		write_seqlock(&g_ip_rule_lock);
+		(void)memset_s(g_quick_app_iprule, sizeof(struct ip_rule) * CLOUD_IP_NUM, 0, sizeof(struct ip_rule) * CLOUD_IP_NUM);
+		write_sequnlock(&g_ip_rule_lock);
+	}
 	for (i = 0; i < MAX_HASH; i++) {
 		spin_lock_bh(&listinfo->lock[i]);
 		list_for_each_entry_safe(node, next, &listinfo->head[i], list) {
@@ -483,6 +615,7 @@ void init_ad(void)
 		g_droparr[i].len = 0;
 	}
 	spin_lock_init(&g_droplock);
+	seqlock_init(&g_ip_rule_lock);
 }
 
 void uninit_ad(void)

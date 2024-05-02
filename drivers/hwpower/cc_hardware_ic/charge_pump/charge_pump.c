@@ -390,6 +390,7 @@ static int __init charge_pump_init(void)
 
 static void __exit charge_pump_exit(void)
 {
+	power_event_bnc_unregister(POWER_BNT_CONNECT, &g_charge_pump_dev->event_nb);
 	kfree(g_charge_pump_dev);
 	g_charge_pump_dev = NULL;
 }

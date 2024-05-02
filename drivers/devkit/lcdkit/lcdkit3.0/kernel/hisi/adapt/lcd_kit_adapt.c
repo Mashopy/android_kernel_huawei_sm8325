@@ -188,7 +188,7 @@ static int lcd_kit_dual_dsi_tx_sync(void *hld, struct dsi_cmd_desc *cmds)
 {
 	struct hisi_fb_data_type *hisifd = (struct hisi_fb_data_type *)hld;
 
-	if (!is_dual_mipi_panel(hld) || (disp_info->dual_dsi_send_sync == 0))
+	if (!is_dual_mipi_panel(hld) || (DISP_INFO->dual_dsi_send_sync == 0))
 		return LCD_KIT_FAIL;
 	(void)mipi_dual_dsi_cmds_tx(cmds, 1,
 		hisifd->mipi_dsi0_base, cmds, 1,
@@ -231,7 +231,7 @@ int lcd_kit_dsi_cmds_tx(void *hld, struct lcd_kit_dsi_panel_cmds *cmds)
 			continue;
 		}
 		/* separate transmission */
-		if ((disp_info != NULL) && (disp_info->transmission.separate_support)) {
+		if ((DISP_INFO != NULL) && (DISP_INFO->transmission.separate_support)) {
 			if (lcd_kit_dsi_fifo_is_empty(dsi_base_addr) == LCD_KIT_OK)
 				mipi_dsi_cmds_tx(&dsi_cmd, 1, dsi_base_addr);
 		} else {
@@ -761,7 +761,7 @@ bool lcd_kit_is_current_frame_ok_to_set_backlight(
 	uint8_t value = 0;
 	struct hisi_panel_info *pinfo = &(hisifd->panel_info);
 	uint64_t timestamp_start = ktime_to_us(ktime_get());
-	if (disp_info->frame_odd_even.support == 0)
+	if (DISP_INFO->frame_odd_even.support == 0)
 		return true;
 
 	LCD_KIT_INFO("enter");
@@ -773,14 +773,14 @@ bool lcd_kit_is_current_frame_ok_to_set_backlight(
 		LCD_KIT_DEBUG("pinfo->fps != FPS_60HZ, returned");
 		return true;
 	}
-	if (disp_info->frame_odd_even.read.cmds == NULL) {
-		LCD_KIT_ERR("disp_info->frame_odd_even.read.cmds == NULL!");
+	if (DISP_INFO->frame_odd_even.read.cmds == NULL) {
+		LCD_KIT_ERR("DISP_INFO->frame_odd_even.read.cmds == NULL!");
 		return true;
 	}
 	// sleep one frame before single_frame-update to make sure mipi is idle
 	usleep_range(frame_time_us_60hz, frame_time_us_60hz);
 	if (lcd_kit_dsi_cmds_rx(hisifd, &value, 0,
-		&disp_info->frame_odd_even.read)) { // read 1 byte, out_len: 0
+		&DISP_INFO->frame_odd_even.read)) { // read 1 byte, out_len: 0
 		LCD_KIT_ERR("read mipi_rx failed!");
 		return true;
 	}
@@ -803,7 +803,7 @@ bool lcd_kit_is_current_frame_ok_to_set_fp_backlight(
 	}
 	pinfo = &(hisifd->panel_info);
 	timestamp_start = ktime_to_us(ktime_get());
-	if (disp_info->frame_odd_even.support == 0)
+	if (DISP_INFO->frame_odd_even.support == 0)
 		return true;
 	LCD_KIT_INFO("enter curret level:%d, pwm_thre_level:%d",
 		hisifd->de_info.actual_bl_level,
@@ -820,15 +820,15 @@ bool lcd_kit_is_current_frame_ok_to_set_fp_backlight(
 		LCD_KIT_DEBUG("pinfo->fps != FPS_60HZ, returned");
 		return true;
 	}
-	if (disp_info->frame_odd_even.read.cmds == NULL) {
-		LCD_KIT_ERR("disp_info->frame_odd_even.read.cmds == NULL!");
+	if (DISP_INFO->frame_odd_even.read.cmds == NULL) {
+		LCD_KIT_ERR("DISP_INFO->frame_odd_even.read.cmds == NULL!");
 		return true;
 	}
 
 	// sleep one frame before odd_frame-update to make sure mipi is idle
 	usleep_range(frame_time_us_60hz, frame_time_us_60hz);
 	if (lcd_kit_dsi_cmds_rx(hisifd, &value, 0,
-		&disp_info->frame_odd_even.read)) { // read one byte, out_len:0
+		&DISP_INFO->frame_odd_even.read)) { // read one byte, out_len:0
 		LCD_KIT_ERR("read mipi_rx failed!");
 		return true;
 	}
@@ -840,8 +840,8 @@ bool lcd_kit_is_current_frame_ok_to_set_fp_backlight(
 static bool lcd_kit_is_need_swap_fps_gamma(struct hisi_fb_data_type *hisifd)
 {
 	char* name = NULL;
-	if (disp_info->fps_gamma.support == 0 ||
-		disp_info->fps_gamma.check_flag == 0) {
+	if (DISP_INFO->fps_gamma.support == 0 ||
+		DISP_INFO->fps_gamma.check_flag == 0) {
 		LCD_KIT_DEBUG("no need to swap due to support or check_flag");
 		return false;
 	}
@@ -850,16 +850,16 @@ static bool lcd_kit_is_need_swap_fps_gamma(struct hisi_fb_data_type *hisifd)
 		return false;
 	}
 	name = common_info->panel_model != NULL ?
-		common_info->panel_model : disp_info->compatible;
+		common_info->panel_model : DISP_INFO->compatible;
 	if (name == NULL) {
 		LCD_KIT_ERR("name is NULL!");
 		return false;
 	}
-	if (disp_info->fps_gamma.swap_support == 0) {
+	if (DISP_INFO->fps_gamma.swap_support == 0) {
 		LCD_KIT_INFO("no need to swap due to configure");
 		return false;
 	}
-	if (disp_info->panel_version.support == 0) {
+	if (DISP_INFO->panel_version.support == 0) {
 		LCD_KIT_ERR("panel_version.support == 0");
 		return false;
 	}
@@ -892,8 +892,8 @@ void lcd_kit_swap_fps_gamma_if_needed(struct hisi_fb_data_type *hisifd)
 		return;
 	}
 	if (lcd_kit_is_need_swap_fps_gamma(hisifd)) {
-		lcd_kit_swap_fps_gamma(&disp_info->fps_gamma.write_60hz,
-			&disp_info->fps_gamma.write_90hz);
+		lcd_kit_swap_fps_gamma(&DISP_INFO->fps_gamma.write_60hz,
+			&DISP_INFO->fps_gamma.write_90hz);
 		lcd_kit_write_fps_gamma_by_scene(hisifd, LCD_FPS_SCENCE_60P);
 		LCD_KIT_INFO("fps gamma swapped");
 	}
@@ -907,7 +907,7 @@ void lcd_kit_optimize_grayscale(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("hisifd is NULL");
 		return;
 	}
-	if (disp_info->panel_version.support == 0) {
+	if (DISP_INFO->panel_version.support == 0) {
 		LCD_KIT_ERR("panel_version.support == 0");
 		return;
 	}
@@ -985,7 +985,7 @@ void lcd_kit_display_effect_screen_on(struct hisi_fb_data_type *hisifd)
 
 	/* fps update */
 	if (common_info->dfr_info.fps_lock_command_support) {
-		disp_info->fps.last_update_fps = LCD_FPS_60;
+		DISP_INFO->fps.last_update_fps = LCD_FPS_60;
 		LCD_KIT_INFO("screen on,hbm&fps lock is support");
 	}
 
@@ -996,7 +996,7 @@ void lcd_kit_display_effect_screen_on(struct hisi_fb_data_type *hisifd)
 	}
 
 	/* ddic irc */
-	if (disp_info->panel_irc.support == 1) {
+	if (DISP_INFO->panel_irc.support == 1) {
 		if (lcd_kit_set_panel_irc(hisifd,
 			hisifd->de_param.ddic_irc.irc_enable) != LCD_KIT_OK)
 			LCD_KIT_ERR("lcd_kit_set_panel_irc failed!");
@@ -1014,7 +1014,7 @@ void lcd_kit_display_effect_screen_on(struct hisi_fb_data_type *hisifd)
 
 int lcd_kit_set_panel_irc(struct hisi_fb_data_type *hisifd, bool enable)
 {
-	if (disp_info->panel_irc.support != 1) {
+	if (DISP_INFO->panel_irc.support != 1) {
 		LCD_KIT_INFO("not support irc!");
 		return LCD_KIT_FAIL;
 	}
@@ -1024,12 +1024,12 @@ int lcd_kit_set_panel_irc(struct hisi_fb_data_type *hisifd, bool enable)
 		return LCD_KIT_FAIL;
 	}
 	if (enable) {
-		if (lcd_kit_dsi_cmds_tx(hisifd, &disp_info->panel_irc.on)) {
+		if (lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->panel_irc.on)) {
 			LCD_KIT_ERR("mipi_tx failed!");
 			return LCD_KIT_FAIL;
 		}
 	} else {
-		if (lcd_kit_dsi_cmds_tx(hisifd, &disp_info->panel_irc.off)) {
+		if (lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->panel_irc.off)) {
 			LCD_KIT_ERR("mipi_tx failed!");
 			return LCD_KIT_FAIL;
 		}

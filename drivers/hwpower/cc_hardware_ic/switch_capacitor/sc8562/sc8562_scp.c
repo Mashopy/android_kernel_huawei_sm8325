@@ -45,11 +45,12 @@ static bool sc8562_scp_data_valid(struct sc8562_device_info *di)
 	data_num = fifo_stat & SC8562_RX_FIFO_CNT_STAT_MASK;
 	for (i = 0; i < data_num; i++) {
 		(void)sc8562_read_byte(di, SC8562_SCP_RDATA_REG, &di->scp_data[i]);
-		hwlog_info("read scp_data=0x%x\n", di->scp_data[i]);
+		hwlog_info("ic_%u read scp_data=0x%x\n", di->ic_role, di->scp_data[i]);
 	}
-	hwlog_info("scp_stat=0x%x,fifo_stat=0x%x,rx_num=%d\n",
-		scp_stat, fifo_stat, data_num);
-	hwlog_info("scp_op_num=%d,scp_op=%d\n", di->scp_op_num, di->scp_op);
+	hwlog_info("ic_%u scp_stat=0x%x,fifo_stat=0x%x,rx_num=%d\n",
+		di->ic_role, scp_stat, fifo_stat, data_num);
+	hwlog_info("ic_%u scp_op_num=%d,scp_op=%d\n",
+		di->ic_role, di->scp_op_num, di->scp_op);
 
 	/* first scp data should be ack(0x08 or 0x88) */
 	if (((di->scp_data[0] & 0x0F) == SC8562_SCP_ACK) &&
@@ -71,16 +72,16 @@ static int sc8562_scp_cmd_transfer_check(struct sc8562_device_info *di)
 		(void)power_msleep(DT_MSLEEP_50MS, 0, NULL);
 		if (di->scp_trans_done) {
 			if (sc8562_scp_data_valid(di)) {
-				hwlog_info("scp_trans success\n");
+				hwlog_info("ic_%u scp_trans success\n", di->ic_role);
 				return 0;
 			}
-			hwlog_err("scp_trans_done, but data err\n");
+			hwlog_err("ic_%u scp_trans_done, but data err\n", di->ic_role);
 			return -EINVAL;
 		}
 		cnt++;
 	} while (cnt < SC8562_SCP_ACK_RETRY_TIME);
 
-	hwlog_err("scp adapter trans time out\n");
+	hwlog_err("ic_%u scp adapter trans time out\n", di->ic_role);
 	return -EINVAL;
 }
 
@@ -121,7 +122,7 @@ static int sc8562_scp_adapter_reg_read(u8 *val, u8 reg, struct sc8562_device_inf
 		}
 	}
 	if (i >= SC8562_SCP_RETRY_TIME) {
-		hwlog_err("ack error, retry\n");
+		hwlog_err("ic_%u ack error, retry\n", di->ic_role);
 		ret = -EINVAL;
 	}
 
@@ -169,7 +170,7 @@ static int sc8562_scp_adapter_multi_reg_read(u8 reg, u8 *val,
 		}
 	}
 	if (i >= SC8562_SCP_RETRY_TIME) {
-		hwlog_err("ack error, retry\n");
+		hwlog_err("ic_%u ack error, retry\n", di->ic_role);
 		ret = -EINVAL;
 	}
 
@@ -182,7 +183,8 @@ static int sc8562_scp_reg_read(u8 *val, u8 reg, struct sc8562_device_info *di)
 	int ret;
 
 	if (di->scp_error_flag) {
-		hwlog_err("scp timeout happened, do not read reg=0x%x\n", reg);
+		hwlog_err("ic_%u scp timeout happened, do not read reg=0x%x\n",
+			di->ic_role, reg);
 		return -EINVAL;
 	}
 
@@ -233,7 +235,7 @@ static int sc8562_scp_adapter_reg_write(u8 val, u8 reg, struct sc8562_device_inf
 			break;
 	}
 	if (i >= SC8562_SCP_RETRY_TIME) {
-		hwlog_err("ack error, retry\n");
+		hwlog_err("ic_%u ack error, retry\n", di->ic_role);
 		ret = -EINVAL;
 	}
 
@@ -263,15 +265,19 @@ static int sc8562_scp_adapter_multi_reg_write(u8 reg, int *val,
 		/* write cmd, reg, num */
 		ret += sc8562_write_byte(di, SC8562_SCP_WDATA_REG,
 			SC8562_SCP_CMD_MBRWR);
-		hwlog_info("write reg[%x]=0x%x\n", SC8562_SCP_WDATA_REG, SC8562_SCP_CMD_MBRWR);
+		hwlog_info("ic_%u write reg[%x]=0x%x\n",
+			di->ic_role, SC8562_SCP_WDATA_REG, SC8562_SCP_CMD_MBRWR);
 		ret += sc8562_write_byte(di, SC8562_SCP_WDATA_REG, reg);
-		hwlog_info("write reg[%x]=0x%x\n", SC8562_SCP_WDATA_REG, reg);
+		hwlog_info("ic_%u write reg[%x]=0x%x\n",
+			di->ic_role, SC8562_SCP_WDATA_REG, reg);
 		ret += sc8562_write_byte(di, SC8562_SCP_WDATA_REG, num);
-		hwlog_info("write reg[%x]=0x%x\n", SC8562_SCP_WDATA_REG, num);
+		hwlog_info("ic_%u write reg[%x]=0x%x\n",
+			di->ic_role, SC8562_SCP_WDATA_REG, num);
 
 		for (j = 0; j < num; j++) {
 			ret += sc8562_write_byte(di, SC8562_SCP_WDATA_REG, (u8)val[j]);
-			hwlog_info("write reg[%x]=0x%x\n", SC8562_SCP_WDATA_REG, val[j]);
+			hwlog_info("ic_%u write reg[%x]=0x%x\n",
+				di->ic_role, SC8562_SCP_WDATA_REG, val[j]);
 		}
 		/* start trans */
 		ret += sc8562_write_mask(di, SC8562_SCP_CTRL_REG,
@@ -287,7 +293,7 @@ static int sc8562_scp_adapter_multi_reg_write(u8 reg, int *val,
 		}
 	}
 	if (i >= SC8562_SCP_RETRY_TIME) {
-		hwlog_err("ack error, retry\n");
+		hwlog_err("ic_%u ack error, retry\n", di->ic_role);
 		ret = -EINVAL;
 	}
 
@@ -301,7 +307,8 @@ static int sc8562_scp_reg_write(u8 val, u8 reg, struct sc8562_device_info *di)
 	int ret;
 
 	if (di->scp_error_flag) {
-		hwlog_err("scp timeout happened, do not write reg=0x%x\n", reg);
+		hwlog_err("ic_%u scp timeout happened, do not write reg=0x%x\n",
+			di->ic_role, reg);
 		return -EINVAL;
 	}
 
@@ -321,7 +328,8 @@ static int sc8562_fcp_adapter_vol_check(int adapter_vol, struct sc8562_device_in
 
 	if ((adapter_vol < SC8562_FCP_ADAPTER_MIN_VOL) ||
 		(adapter_vol > SC8562_FCP_ADAPTER_MAX_VOL)) {
-		hwlog_err("check vol out of range, input vol = %dmV\n", adapter_vol);
+		hwlog_err("ic_%u check vol out of range, input vol = %dmV\n",
+			di->ic_role, adapter_vol);
 		return -EINVAL;
 	}
 
@@ -335,12 +343,13 @@ static int sc8562_fcp_adapter_vol_check(int adapter_vol, struct sc8562_device_in
 		(void)power_msleep(DT_MSLEEP_100MS, 0, NULL);
 	}
 	if (i == SC8562_FCP_ADAPTER_VOL_CHECK_TIME) {
-		hwlog_err("check vol timeout, input vol = %dmV\n", adapter_vol);
+		hwlog_err("ic_%u check vol timeout, input vol = %dmV\n",
+			di->ic_role, adapter_vol);
 		return -EINVAL;
 	}
 
-	hwlog_info("check vol success, input vol = %dmV, spend %dms\n",
-		adapter_vol, i * DT_MSLEEP_100MS);
+	hwlog_info("ic_%u check vol success, input vol = %dmV, spend %dms\n",
+		di->ic_role, adapter_vol, i * DT_MSLEEP_100MS);
 	return 0;
 }
 
@@ -374,7 +383,7 @@ static int sc8562_fcp_adapter_reset(void *dev_data)
 	if (ret)
 		return -EINVAL;
 
-	ret = sc8562_config_vusb_ovp_th_mv(di, SC8562_VUSB_OVP_INIT);
+	ret = sc8562_config_vusb_ovp_th_mv(di, SC8562_VUSB_VWPC_OVP_INIT);
 	ret += sc8562_config_vbus_ovp_th_mv(di, SC8562_VBUS_OVP_FBPSC_BASE, SC8562_CHG_FBYPASS_MODE);
 
 	return ret;
@@ -393,7 +402,7 @@ static int sc8562_is_fcp_charger_type(void *dev_data)
 		return 0;
 
 	if (di->dts_fcp_support == 0) {
-		hwlog_err("not support fcp\n");
+		hwlog_err("ic_%u not support fcp\n", di->ic_role);
 		return 0;
 	}
 
@@ -437,9 +446,9 @@ static int sc8562_fcp_adapter_detct_dpdm_stat(struct sc8562_device_info *di)
 
 	for (cnt = 0; cnt < SC8562_SCP_DETECT_MAX_CNT; cnt++) {
 		ret = sc8562_read_byte(di, SC8562_DPDM_STAT_REG, &stat);
-		hwlog_info("scp_dpdm_stat=0x%x\n", stat);
+		hwlog_info("ic_%u scp_dpdm_stat=0x%x\n", di->ic_role, stat);
 		if (ret) {
-			hwlog_err("read dpdm_stat_reg fail\n");
+			hwlog_err("ic_%u read dpdm_stat_reg fail\n", di->ic_role);
 			continue;
 		}
 
@@ -450,7 +459,7 @@ static int sc8562_fcp_adapter_detct_dpdm_stat(struct sc8562_device_info *di)
 		(void)power_msleep(DT_MSLEEP_100MS, 0, NULL);
 	}
 	if (cnt == SC8562_SCP_DETECT_MAX_CNT) {
-		hwlog_err("CHG_SCP_ADAPTER_DETECT_OTHER\n");
+		hwlog_err("ic_%u CHG_SCP_ADAPTER_DETECT_OTHER\n", di->ic_role);
 		return -EINVAL;
 	}
 
@@ -477,16 +486,16 @@ static int sc8562_fcp_adapter_detect_ping_stat(struct sc8562_device_info *di)
 		power_usleep(DT_USLEEP_10MS);
 
 		sc8562_read_byte(di, SC8562_SCP_STAT_REG, &scp_stat);
-		hwlog_info("scp ping detect,scp_stat:0x%x\n", scp_stat);
+		hwlog_info("ic_%u scp ping detect,scp_stat:0x%x\n", di->ic_role, scp_stat);
 		if ((((scp_stat & SC8562_NO_FIRST_SLAVE_PING_STAT_MASK) >> SC8562_NO_FIRST_SLAVE_PING_STAT_SHIFT) == 0) &&
 			(((scp_stat & SC8562_NO_TX_PKT_STAT_MASK) >> SC8562_NO_TX_PKT_STAT_SHIFT) == 1)) {
-			hwlog_info("scp adapter detect ok\n");
+			hwlog_info("ic_%u scp adapter detect ok\n", di->ic_role);
 			di->fcp_support = true;
 			break;
 		}
 	}
 	if (cnt == SC8562_SCP_PING_DETECT_MAX_CNT) {
-		hwlog_err("CHG_SCP_ADAPTER_DETECT_OTHER\n");
+		hwlog_err("ic_%u CHG_SCP_ADAPTER_DETECT_OTHER\n", di->ic_role);
 		return -EINVAL;
 	}
 
@@ -537,7 +546,7 @@ static int sc8562_fcp_adapter_detect(struct sc8562_device_info *di)
 
 	ret = sc8562_read_byte(di, SC8562_SCP_CTRL_REG, &enable);
 	if (ret || (((enable & SC8562_SCP_CTRL_SCP_EN_MASK) >> SC8562_SCP_CTRL_SCP_EN_SHIFT) == 0)) {
-		hwlog_info("scp en detect,scp_en:0x%x\n", enable);
+		hwlog_info("ic_%u scp en detect,scp_en:0x%x\n", di->ic_role, enable);
 		sc8562_fcp_adapter_detect_reset(di);
 		mutex_unlock(&di->scp_detect_lock);
 		return ADAPTER_DETECT_OTHER;
@@ -620,7 +629,7 @@ static int sc8562_scp_reg_read_block(int reg, int *val, int num,
 	for (i = 0; i < num; i++) {
 		ret = sc8562_scp_reg_read(&data, reg + i, di);
 		if (ret) {
-			hwlog_err("scp read failed, reg=0x%x\n", reg + i);
+			hwlog_err("ic_%u scp read failed, reg=0x%x\n", di->ic_role, reg + i);
 			return -EINVAL;
 		}
 		val[i] = data;
@@ -703,7 +712,7 @@ static int sc8562_scp_reg_write_block(int reg, const int *val, int num,
 	for (i = 0; i < num; i++) {
 		ret = sc8562_scp_reg_write(val[i], reg + i, di);
 		if (ret) {
-			hwlog_err("scp write failed, reg=0x%x\n", reg + i);
+			hwlog_err("ic_%u scp write failed, reg=0x%x\n", di->ic_role, reg + i);
 			return -EINVAL;
 		}
 	}
@@ -735,7 +744,7 @@ static int sc8562_fcp_reg_read_block(int reg, int *val, int num, void *dev_data)
 	for (i = 0; i < num; i++) {
 		ret = sc8562_scp_reg_read(&data, reg + i, di);
 		if (ret) {
-			hwlog_err("fcp read failed, reg=0x%x\n", reg + i);
+			hwlog_err("ic_%u fcp read failed, reg=0x%x\n", di->ic_role, reg + i);
 			return -EINVAL;
 		}
 		val[i] = data;
@@ -757,7 +766,7 @@ static int sc8562_fcp_reg_write_block(int reg, const int *val, int num,
 	for (i = 0; i < num; i++) {
 		ret = sc8562_scp_reg_write(val[i], reg + i, di);
 		if (ret) {
-			hwlog_err("fcp write failed, reg=0x%x\n", reg + i);
+			hwlog_err("ic_%u fcp write failed, reg=0x%x\n", di->ic_role, reg + i);
 			return -EINVAL;
 		}
 	}

@@ -113,23 +113,23 @@ static ssize_t lcd_fps_scence_show(struct device *dev,
 	}
 	if (fps_rate == LCD_FPS_60_HIGH)
 		fps_rate = LCD_FPS_60;
-	if (disp_info->fps.fps_need_high_60 != FPS_CONFIG_EN)
+	if (DISP_INFO->fps.fps_need_high_60 != FPS_CONFIG_EN)
 		ret = snprintf(str, sizeof(str), "current_fps:%d;default_fps:%d",
 			fps_rate, LCD_FPS_60);
 	else
 		ret = snprintf(str, sizeof(str), "current_fps:%d;default_fps:%dn",
 			fps_rate, LCD_FPS_60);
-	if (disp_info->fps.panel_support_fps_list.buf == NULL ||
-		disp_info->fps.panel_support_fps_list.cnt == 0) {
+	if (DISP_INFO->fps.panel_support_fps_list.buf == NULL ||
+		DISP_INFO->fps.panel_support_fps_list.cnt == 0) {
 		LCD_KIT_INFO("%s\n", str);
 		ret = snprintf(buf, PAGE_SIZE, "%s\n", str);
 		return ret;
 	}
 	strncat(str, ";support_fps_list:", strlen(";support_fps_list:"));
-	for (i = 0; i < disp_info->fps.panel_support_fps_list.cnt; i++) {
+	for (i = 0; i < DISP_INFO->fps.panel_support_fps_list.cnt; i++) {
 		if (i > 0)
 			strncat(str, ",", strlen(","));
-		fps_rate = disp_info->fps.panel_support_fps_list.buf[i];
+		fps_rate = DISP_INFO->fps.panel_support_fps_list.buf[i];
 		ret += snprintf(tmp, sizeof(tmp), "%d", fps_rate);
 		strncat(str, tmp, strlen(tmp));
 	}
@@ -148,7 +148,7 @@ static int lcd_fps_get_scence(int fps, int *scence)
 		*scence = LCD_FPS_SCENCE_45;
 		break;
 	case LCD_FPS_60P:
-		if (disp_info->fps.fps_need_high_60 != FPS_CONFIG_EN)
+		if (DISP_INFO->fps.fps_need_high_60 != FPS_CONFIG_EN)
 			*scence = LCD_FPS_SCENCE_60P;
 		else
 			*scence = LCD_FPS_SCENCE_60;
@@ -190,23 +190,23 @@ static ssize_t lcd_fps_order_show(struct device *dev,
 		LCD_KIT_ERR("lcd_fps_order_show buf NULL\n");
 		return LCD_KIT_FAIL;
 	}
-	if (!disp_info->fps.support || !disp_info->fps.fps_switch_support) {
+	if (!DISP_INFO->fps.support || !DISP_INFO->fps.fps_switch_support) {
 		ret = snprintf(buf, PAGE_SIZE, "0\n");
 		return ret;
 	} else {
-		if (disp_info->fps.fps_switch_order.cnt < FPS_ELEM_NUM ||
-			(disp_info->fps.fps_switch_order.cnt % FPS_ELEM_NUM) != 0) {
+		if (DISP_INFO->fps.fps_switch_order.cnt < FPS_ELEM_NUM ||
+			(DISP_INFO->fps.fps_switch_order.cnt % FPS_ELEM_NUM) != 0) {
 			ret = snprintf(buf, PAGE_SIZE, "0\n");
 			return ret;
 		}
-		if (disp_info->fps.fps_need_high_60 != FPS_CONFIG_EN)
+		if (DISP_INFO->fps.fps_need_high_60 != FPS_CONFIG_EN)
 			ret = snprintf(str, sizeof(str), "1,%d,%d", LCD_FPS_SCENCE_60P,
-				disp_info->fps.fps_switch_order.cnt / FPS_ELEM_NUM);
+				DISP_INFO->fps.fps_switch_order.cnt / FPS_ELEM_NUM);
 		else
 			ret = snprintf(str, sizeof(str), "1,%d,%d", LCD_FPS_SCENCE_60,
-				disp_info->fps.fps_switch_order.cnt / FPS_ELEM_NUM);
-		for (i = 0; i < disp_info->fps.fps_switch_order.cnt;) {
-			ret = lcd_fps_get_scence(disp_info->fps.fps_switch_order.buf[i],
+				DISP_INFO->fps.fps_switch_order.cnt / FPS_ELEM_NUM);
+		for (i = 0; i < DISP_INFO->fps.fps_switch_order.cnt;) {
+			ret = lcd_fps_get_scence(DISP_INFO->fps.fps_switch_order.buf[i],
 				&fps_index);
 			if (ret)
 				break;
@@ -215,7 +215,7 @@ static ssize_t lcd_fps_order_show(struct device *dev,
 			else
 				strncat(str, ";", strlen(";"));
 			ret += snprintf(tmp, sizeof(tmp), "%d:%d", fps_index,
-				disp_info->fps.fps_switch_order.buf[i + 1]);
+				DISP_INFO->fps.fps_switch_order.buf[i + 1]);
 			strncat(str, tmp, strlen(tmp));
 			i += FPS_ELEM_NUM;
 		}
@@ -251,7 +251,7 @@ static ssize_t lcd_fps_scence_store(struct device *dev,
 		LCD_KIT_ERR("fb%d, panel power off!\n", hisifd->index);
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->fps.support) {
+	if (DISP_INFO->fps.support) {
 		if (pdata->lcd_fps_scence_handle)
 			pdata->lcd_fps_scence_handle(hisifd->pdev, val);
 	}
@@ -273,7 +273,7 @@ static ssize_t lcd_alpm_function_show(struct device *dev,
 		LCD_KIT_ERR("lcd alpm function show buf is null!\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->alpm.support)
+	if (DISP_INFO->alpm.support)
 		ret = snprintf(buf, PAGE_SIZE, "aod_function = %d\n",
 			hisifd->aod_function);
 	return ret;
@@ -298,7 +298,7 @@ static ssize_t lcd_alpm_function_store(struct device *dev,
 		LCD_KIT_ERR("buf overflow!\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->alpm.support) {
+	if (DISP_INFO->alpm.support) {
 		ret = sscanf(buf, "%u", &hisifd->aod_function);
 		if (!ret) {
 			LCD_KIT_ERR("sscanf return invaild:%zd\n", ret);
@@ -335,7 +335,7 @@ static ssize_t lcd_alpm_setting_store(struct device *dev,
 	}
 	down(&hisifd->blank_sem);
 	if (hisifd->panel_power_on) {
-		if (disp_info->alpm.support) {
+		if (DISP_INFO->alpm.support) {
 			hisifb_activate_vsync(hisifd);
 			lcd_kit_alpm_setting(hisifd, mode);
 			hisifb_deactivate_vsync(hisifd);
@@ -475,7 +475,7 @@ static ssize_t lcd_reg_read_show(struct device *dev,
 	}
 	down(&hisifd->blank_sem);
 	if (hisifd->panel_power_on) {
-		if (disp_info->gamma_cal.support) {
+		if (DISP_INFO->gamma_cal.support) {
 			hisifb_activate_vsync(hisifd);
 			lcd_kit_read_gamma(hisifd, lcd_reg_buf,
 				LCD_REG_LENGTH_MAX);
@@ -502,7 +502,7 @@ static ssize_t lcd_reg_read_store(struct device *dev,
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->gamma_cal.support) {
+	if (DISP_INFO->gamma_cal.support) {
 		/* parse buf */
 		cur = (char *)buf;
 		token = strsep(&cur, ",");
@@ -514,8 +514,8 @@ static ssize_t lcd_reg_read_store(struct device *dev,
 				return LCD_KIT_FAIL;
 			}
 		}
-		disp_info->gamma_cal.addr = reg_value[0];
-		disp_info->gamma_cal.length = reg_value[1];
+		DISP_INFO->gamma_cal.addr = reg_value[0];
+		DISP_INFO->gamma_cal.length = reg_value[1];
 	}
 	return count;
 }
@@ -534,7 +534,7 @@ static ssize_t lcd_gamma_dynamic_store(struct device *dev, struct device_attribu
 		LCD_KIT_ERR("buf is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->gamma_cal.support) {
+	if (DISP_INFO->gamma_cal.support) {
 		if (count != GM_IGM_LEN) {
 			HISI_FB_ERR("gamma count err!count=%d\n", (int)count);
 			return LCD_KIT_FAIL;
@@ -747,7 +747,7 @@ static ssize_t lcd_func_switch_show(struct device *dev,
 			pinfo->hiace_support,
 			g_enable_effect,
 			g_debug_effect,
-			disp_info->fps.support,
+			DISP_INFO->fps.support,
 			pinfo->delay_set_bl_thr_support,
 			common_info->panel_cmd_backup.change_flag);
 	return ret;
@@ -813,11 +813,11 @@ static int lcd_get_2d_barcode(char *oem_data, struct hisi_fb_data_type *hisifd)
 
 	memset(read_value, 0, OEM_INFO_SIZE_MAX + 1);
 
-	if (disp_info->oeminfo.barcode_2d.support) {
+	if (DISP_INFO->oeminfo.barcode_2d.support) {
 		ret = lcd_kit_dsi_cmds_rx(hisifd, read_value, OEM_INFO_SIZE_MAX,
-			&disp_info->oeminfo.barcode_2d.cmds);
+			&DISP_INFO->oeminfo.barcode_2d.cmds);
 		oem_data[0] = BARCODE_2D_TYPE;
-		oem_data[1] = disp_info->oeminfo.barcode_2d.block_num;
+		oem_data[1] = DISP_INFO->oeminfo.barcode_2d.block_num;
 		strncat(oem_data, read_value, strlen(read_value));
 	}
 
@@ -831,9 +831,9 @@ static int lcd_get_brightness_colorpoint(char *oem_data,
 	struct lcd_kit_brightness_color_oeminfo *bri_col_info = NULL;
 	uint32_t value_temp;
 
-	if (disp_info->oeminfo.brightness_color_uniform.support) {
+	if (DISP_INFO->oeminfo.brightness_color_uniform.support) {
 		lcd_kit_dsi_cmds_rx(hisifd, read_value, OEM_INFO_SIZE_MAX,
-			&disp_info->oeminfo.brightness_color_uniform.brightness_color_cmds);
+			&DISP_INFO->oeminfo.brightness_color_uniform.brightness_color_cmds);
 		oem_data[0] = BRIGHTNESS_COLOROFWHITE_TYPE;
 		oem_data[1] = OEM_INFO_BLOCK_NUM * 2; // it means the second block num
 		bri_col_info = lcd_kit_get_brightness_color_oeminfo();
@@ -950,7 +950,7 @@ static ssize_t lcd_oem_info_show(struct device *dev,
 		LCD_KIT_ERR("hisifd is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (!disp_info->oeminfo.support) {
+	if (!DISP_INFO->oeminfo.support) {
 		LCD_KIT_ERR("oem info is not support\n");
 		return LCD_KIT_FAIL;
 	}
@@ -1015,7 +1015,7 @@ static ssize_t lcd_oem_info_store(struct device *dev,
 		LCD_KIT_ERR("hisifd is null\n");
 		return LCD_KIT_FAIL;
 	}
-	if (!disp_info->oeminfo.support) {
+	if (!DISP_INFO->oeminfo.support) {
 		LCD_KIT_ERR("oem info is not support\n");
 		return LCD_KIT_FAIL;
 	}
@@ -1472,7 +1472,7 @@ static ssize_t lcd_panel_version_show(struct device *dev,
 		return LCD_KIT_FAIL;
 	}
 
-	if (!disp_info->panel_version.support) {
+	if (!DISP_INFO->panel_version.support) {
 		ret = snprintf(buf, PAGE_SIZE, "VER:NA\n");
 		return ret;
 	}
@@ -1501,7 +1501,7 @@ static int lcd_check_support(int index)
 	case SUPPORT_MODE_INDEX:
 		return common_info->effect_color.support;
 	case GAMMA_DYNAMIC_INDEX:
-		return disp_info->gamma_cal.support;
+		return DISP_INFO->gamma_cal.support;
 	case FRAME_COUNT_INDEX:
 	case FRAME_UPDATE_INDEX:
 	case MIPI_DSI_CLK_UPT_INDEX:
@@ -1509,15 +1509,15 @@ static int lcd_check_support(int index)
 	case FPS_ORDER_INDEX:
 		return SYSFS_SUPPORT;
 	case ALPM_FUNCTION_INDEX:
-		return disp_info->alpm.support;
+		return DISP_INFO->alpm.support;
 	case ALPM_SETTING_INDEX:
-		return disp_info->alpm.support;
+		return DISP_INFO->alpm.support;
 	case FUNC_SWITCH_INDEX:
 		return SYSFS_SUPPORT;
 	case REG_READ_INDEX:
-		return disp_info->gamma_cal.support;
+		return DISP_INFO->gamma_cal.support;
 	case DDIC_OEM_INDEX:
-		return disp_info->oeminfo.support;
+		return DISP_INFO->oeminfo.support;
 	case BL_MODE_INDEX:
 		return SYSFS_NOT_SUPPORT;
 	case BL_SUPPORT_MODE_INDEX:
@@ -1532,7 +1532,7 @@ static int lcd_check_support(int index)
 	case PRE_CAMERA_POSITION:
 		return common_info->p_cam_position.support;
 	case PANEL_VERSION_INDEX:
-		return disp_info->panel_version.support;
+		return DISP_INFO->panel_version.support;
 	default:
 		return SYSFS_NOT_SUPPORT;
 	}

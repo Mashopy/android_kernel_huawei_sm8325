@@ -29,17 +29,6 @@ struct sk_buff *fi_get_netlink_skb(int type, int len, char **data)
 	return pskb_out;
 }
 
-void fi_update_netlink_type(struct nlmsghdr *nlh, uint16_t service)
-{
-	if (nlh == NULL) {
-		fi_loge("nlh is null pointer");
-		return;
-	}
-
-	if (service == FI_MPROUTE_SERVICE)
-		nlh->nlmsg_type |= FI_NL_MSG_TYPE_MASK;
-}
-
 void fi_enqueue_netlink_skb(struct sk_buff *pskb)
 {
 	if (skb_queue_len(&g_fi_ctx.skb_queue) > FI_NL_SKB_QUEUE_MAXLEN) {
@@ -47,6 +36,10 @@ void fi_enqueue_netlink_skb(struct sk_buff *pskb)
 		kfree_skb(pskb);
 		return;
 	}
+
+	if (g_fi_ctx.mproute_app_num > 0)
+		nlmsg_hdr(pskb)->nlmsg_type |= FI_NL_MSG_TYPE_MASK;
+
 	NETLINK_CB(pskb).dst_group = 0; /* For unicast */ /*lint !e545*/
 	skb_queue_tail(&g_fi_ctx.skb_queue, pskb);
 	up(&g_fi_ctx.netlink_sync_sema);
@@ -110,8 +103,7 @@ void fi_send_mproute_msg2daemon(const void *data, int len)
 	}
 
 	nlh = nlmsg_hdr(pskb);
-	// update netlink type for mproute
-	fi_update_netlink_type(nlh, FI_MPROUTE_SERVICE);
+	nlh->nlmsg_type |= FI_NL_MSG_TYPE_MASK;
 
 	if (data && (len > 0)) {
 		if (memcpy_s((void *)nlmsg_data(nlh), len, data, len) != EOK) {

@@ -237,10 +237,6 @@ static void recv_from_user(struct sk_buff *skb)
 		if (nlh->nlmsg_pid > 0)
 			kstate_user_pid = nlh->nlmsg_pid;
 		len = NLMSG_PAYLOAD(nlh, 0);
-		if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(struct ksmsg))) {
-			pr_err("hw_kstate %s: invalid msg length!\n", __func__);
-			return;
-		}
 		data = (struct ksmsg*)NLMSG_DATA(nlh);
 		if ((len >= (sizeof(struct ksmsg) + data->length))
 			&& (len < MAX_LENGTH) /* default size */

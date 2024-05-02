@@ -37,7 +37,7 @@
 #include <linux/sched/debug.h>
 #include <securec.h>
 #include <platform/linux/zrhung.h>
-
+#include <platform/linux/hungtask.h>
 #ifdef CONFIG_HISI_BB
 #include <linux/hisi/rdr_hisi_platform.h>
 #include <linux/hisi/rdr_pub.h>
@@ -442,7 +442,7 @@ void hung_wp_screen_send_work(struct work_struct *work)
 	u64 cur_stamp;
 	int ret;
 
-	show_state_filter(TASK_UNINTERRUPTIBLE);
+	hungtask_show_state_filter(TASK_UNINTERRUPTIBLE);
 #ifdef CONFIG_HISI_TIME
 	cur_stamp = hisi_getcurtime() / NANOS_PER_SECOND;
 #else

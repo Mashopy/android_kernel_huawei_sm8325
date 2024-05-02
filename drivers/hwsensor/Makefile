@@ -17,3 +17,5 @@ ccflags-y += -Ivendor/huawei/chipset_common/plugins/kernel/include/
 
 obj-$(CONFIG_HUAWEI_EXTRA_IR_MODE)			+= extra_ir_mode/
 obj-$(CONFIG_HUAWEI_HORIZONTAL_MODE)			+= acc_horizontal_mode/
+
+obj-y += sensors_underlight.o

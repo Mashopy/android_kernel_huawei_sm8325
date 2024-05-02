@@ -316,6 +316,15 @@ static void wlrx_fod_kfree_dev(struct wlrx_fod_dev *di)
 	kfree(di);
 }
 
+static void wlrx_fod_free_resources(struct wlrx_fod_dev *di)
+{
+	if (!di)
+		return;
+
+	if (di->dts->qval_delayed_time)
+		cancel_delayed_work_sync(&di->qval_delayed_work);
+}
+
 int wlrx_fod_init(unsigned int drv_type, struct device *dev)
 {
 	int ret;
@@ -351,6 +360,7 @@ void wlrx_fod_deinit(unsigned int drv_type)
 	if (!wltrx_is_drv_type_valid(drv_type))
 		return;
 
+	wlrx_fod_free_resources(g_rx_fod_di[drv_type]);
 	wlrx_fod_kfree_dev(g_rx_fod_di[drv_type]);
 	g_rx_fod_di[drv_type] = NULL;
 }

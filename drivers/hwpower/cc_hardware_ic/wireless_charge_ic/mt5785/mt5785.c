@@ -304,6 +304,32 @@ void mt5785_disable_irq_nosync(struct mt5785_dev_info *di)
 	mutex_unlock(&di->mutex_irq);
 }
 
+void mt5785_enable_irq_wake(struct mt5785_dev_info *di)
+{
+	if (!di)
+		return;
+
+	if (!di->irq_awake) {
+		hwlog_info("[enable_irq_wake] ++\n");
+		(void)enable_irq_wake(di->irq_int);
+		di->irq_awake = true;
+	}
+	hwlog_info("[enable_irq_wake] --\n");
+}
+
+void mt5785_disable_irq_wake(struct mt5785_dev_info *di)
+{
+	if (!di)
+		return;
+
+	if (di->irq_awake) {
+		hwlog_info("[disable_irq_wake] ++\n");
+		(void)disable_irq_wake(di->irq_int);
+		di->irq_awake = false;
+	}
+	hwlog_info("[disable_irq_wake] --\n");
+}
+
 void mt5785_chip_enable(bool enable, void *dev_data)
 {
 	int gpio_val;
@@ -384,25 +410,6 @@ static irqreturn_t mt5785_interrupt(int irq, void *_di)
 	}
 	hwlog_info("[interrupt] --\n");
 	return IRQ_HANDLED;
-}
-
-static void mt5785_fw_mtp_check(struct mt5785_dev_info *di)
-{
-	u32 mtp_check_delay;
-
-	if (power_cmdline_is_powerdown_charging_mode() ||
-		(!power_cmdline_is_factory_mode() && mt5785_rx_is_tx_exist(di))) {
-		di->g_val.mtp_chk_complete = true;
-		return;
-	}
-
-	if (!power_cmdline_is_factory_mode())
-		mtp_check_delay = di->mtp_check_delay.user;
-	else
-		mtp_check_delay = di->mtp_check_delay.fac;
-
-	INIT_DELAYED_WORK(&di->mtp_check_work, mt5785_fw_mtp_check_work);
-	schedule_delayed_work(&di->mtp_check_work, msecs_to_jiffies(mtp_check_delay));
 }
 
 static void mt5785_register_pwr_dev_info(struct mt5785_dev_info *di)
@@ -501,6 +508,8 @@ gpio_en_fail:
 static int mt5785_irq_init(struct mt5785_dev_info *di,
 	struct device_node *np)
 {
+	INIT_WORK(&di->irq_work, mt5785_irq_work);
+
 	if (power_gpio_config_interrupt(np, "gpio_int", "mt5785_int",
 		&di->gpio_int, &di->irq_int))
 		return -EINVAL;
@@ -512,9 +521,8 @@ static int mt5785_irq_init(struct mt5785_dev_info *di,
 		return -EINVAL;
 	}
 
-	enable_irq_wake(di->irq_int);
+	mt5785_enable_irq_wake(di);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, mt5785_irq_work);
 	return 0;
 }
 

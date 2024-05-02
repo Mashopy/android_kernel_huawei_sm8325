@@ -7,6 +7,7 @@
 
 #define NETLINK_DOWNLOADEVENT_TO_USER 1000
 #define DPI_RULE_MAX_SIZE 2
+#define TCP_RECOVER_RULE_MAX_SIZE 10
 
 typedef enum {
 	NETLINK_REG_TO_KERNEL = 0,
@@ -20,6 +21,7 @@ typedef enum {
 	NETLINK_MPLK_RESET_SOCKET,
 	NETLINK_MPLK_CLOSE_SOCKET,
 	NETLINK_HID2D_TYPE,
+	NETLINK_SET_TCP_RECOVER_TO_KERNEL = 13,
 } ntl_cmd_type_t;
 
 typedef enum {
@@ -48,5 +50,6 @@ void mplk_try_nw_bind(struct sock *sk);
 int mplk_sendmsg(struct sock *sk);
 int mplk_recvmsg(struct sock *sk);
 int get_mplk_somark(struct sock *sk, int mark);
+int get_tcp_recover_somark(struct sock *sk);
 
 #endif /* _NF_HW_HOOK */

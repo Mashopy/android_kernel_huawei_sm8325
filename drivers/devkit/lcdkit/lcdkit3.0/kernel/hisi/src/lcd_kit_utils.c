@@ -389,7 +389,7 @@ void lcd_kit_compress_config(struct device_node *np,
 		lcd_kit_orise2x(pinfo);
 		break;
 	case IFBC_TYPE_VESA3X_SINGLE:
-		if (!disp_info->calc_mode)
+		if (!DISP_INFO->calc_mode)
 			lcd_kit_vesa3x_single(pinfo);
 		else
 			lcd_kit_dsc_config(np, pinfo);
@@ -401,7 +401,7 @@ void lcd_kit_compress_config(struct device_node *np,
 		lcd_kit_vesa3_75x_single(pinfo);
 		break;
 	case IFBC_TYPE_VESA3X_DUAL:
-		if (!disp_info->calc_mode)
+		if (!DISP_INFO->calc_mode)
 			lcd_kit_vesa3x_dual(pinfo);
 		else
 			lcd_kit_dsc_config(np, pinfo);
@@ -461,16 +461,16 @@ int lcd_kit_rgbw_set_mode(struct hisi_fb_data_type *hisifd, int mode)
 	} else if (rgbw_mode != old_rgbw_mode) {
 		switch (mode) {
 		case RGBW_SET1_MODE:
-			ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.mode1_cmds);
+			ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.mode1_cmds);
 			break;
 		case RGBW_SET2_MODE:
-			ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.mode2_cmds);
+			ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.mode2_cmds);
 			break;
 		case RGBW_SET3_MODE:
-			ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.mode3_cmds);
+			ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.mode3_cmds);
 			break;
 		case RGBW_SET4_MODE:
-			ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.mode4_cmds);
+			ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.mode4_cmds);
 			break;
 		default:
 			HISI_FB_ERR("mode err: %d\n", hisifd->de_info.ddic_rgbw_mode);
@@ -489,9 +489,9 @@ int lcd_kit_rgbw_set_backlight(struct hisi_fb_data_type *hisifd,
 	int ret;
 
 	/* change bl level to dsi cmds */
-	disp_info->rgbw.backlight_cmds.cmds[0].payload[1] = (bl_level >> 8) & 0xff;
-	disp_info->rgbw.backlight_cmds.cmds[0].payload[2] = bl_level & 0xff;
-	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.backlight_cmds);
+	DISP_INFO->rgbw.backlight_cmds.cmds[0].payload[1] = (bl_level >> 8) & 0xff;
+	DISP_INFO->rgbw.backlight_cmds.cmds[0].payload[2] = bl_level & 0xff;
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.backlight_cmds);
 	return ret;
 }
 
@@ -502,15 +502,15 @@ static int lcd_kit_rgbw_pix_gain(struct hisi_fb_data_type *hisifd)
 	int rgbw_mode;
 	int ret = LCD_KIT_OK;
 
-	if (disp_info->rgbw.pixel_gain_limit_cmds.cmds == NULL) {
+	if (DISP_INFO->rgbw.pixel_gain_limit_cmds.cmds == NULL) {
 		LCD_KIT_DEBUG("not support pixel_gain_limit\n");
 		return LCD_KIT_OK;
 	}
 	rgbw_mode = hisifd->de_info.ddic_rgbw_mode;
 	pix_gain = (uint32_t)hisifd->de_info.pixel_gain_limit;
 	if ((pix_gain != pix_gain_old) && (rgbw_mode == RGBW_SET4_MODE)) {
-		disp_info->rgbw.pixel_gain_limit_cmds.cmds[0].payload[1] = pix_gain;
-		ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.pixel_gain_limit_cmds);
+		DISP_INFO->rgbw.pixel_gain_limit_cmds.cmds[0].payload[1] = pix_gain;
+		ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.pixel_gain_limit_cmds);
 		LCD_KIT_DEBUG("[RGBW] pixel_gain=%d,pix_gain_old=%d!\n",
 			pix_gain, pix_gain_old);
 		pix_gain_old = pix_gain;
@@ -534,10 +534,10 @@ int lcd_kit_rgbw_set_handle(struct hisi_fb_data_type *hisifd)
 
 	/* set backlight */
 	rgbw_backlight = hisifd->de_info.ddic_rgbw_backlight;
-	if (disp_info->rgbw.backlight_cmds.cmds &&
+	if (DISP_INFO->rgbw.backlight_cmds.cmds &&
 		(hisifd->bl_level && (hisifd->backlight.bl_level_old != 0)) &&
 		(rgbw_backlight != old_rgbw_backlight)) {
-		rgbw_bl_level = rgbw_backlight * disp_info->rgbw.rgbw_bl_max /
+		rgbw_bl_level = rgbw_backlight * DISP_INFO->rgbw.rgbw_bl_max /
 			hisifd->panel_info.bl_max;
 		ret = lcd_kit_rgbw_set_backlight(hisifd, rgbw_bl_level);
 		if (ret) {
@@ -596,12 +596,12 @@ static int lcd_kit_read_fps_gamma_60hz(void *hld,
 	uint8_t gamma_60hz[GAMMA_TOTAL_LEN] = {0};
 	// read otp gamma
 	if (adapt_ops->mipi_rx(hld, gamma_60hz, GAMMA_TOTAL_LEN - 1,
-		&disp_info->fps_gamma.read_otp)) {
+		&DISP_INFO->fps_gamma.read_otp)) {
 		LCD_KIT_ERR("60 hz mipi_rx failed!\n");
 		return LCD_KIT_FAIL;
 	}
 	if (lcd_kit_save_fps_gamma(
-		&(disp_info->fps_gamma.write_60hz),
+		&(DISP_INFO->fps_gamma.write_60hz),
 		gamma_60hz, GAMMA_TOTAL_LEN) != LCD_KIT_OK)
 		return LCD_KIT_FAIL;
 	return LCD_KIT_OK;
@@ -612,23 +612,23 @@ static int lcd_kit_read_fps_gamma_from_flash_single_param(uint32_t index,
 {
 	uint32_t retry_count;
 	// cmds[1].payload[2,3]: gamma address; payload[2]: high 8, [3]: low 8
-	disp_info->fps_gamma.read_flash.cmds[1].payload[2] = (index >> 8) & 0xF;
-	disp_info->fps_gamma.read_flash.cmds[1].payload[3] = index & 0xFF;
+	DISP_INFO->fps_gamma.read_flash.cmds[1].payload[2] = (index >> 8) & 0xF;
+	DISP_INFO->fps_gamma.read_flash.cmds[1].payload[3] = index & 0xFF;
 	for (retry_count = 0; retry_count < FLASH_GAMMA_SINGLE_PARAM_RETRY_MAX;
 		retry_count++) {
 		if (adapt_ops->mipi_rx(hld, param, FLASH_GAMMA_RX_BUF_SIZE - 1,
-			&disp_info->fps_gamma.read_flash) == LCD_KIT_OK &&
+			&DISP_INFO->fps_gamma.read_flash) == LCD_KIT_OK &&
 			param[0] == FLASH_GAMMA_READ_DONE) {
 			LCD_KIT_DEBUG("addr 0x%02X%02X, param 0x%02X 0x%02X\n",
-				disp_info->fps_gamma.read_flash.cmds[1].payload[2],
-				disp_info->fps_gamma.read_flash.cmds[1].payload[3],
+				DISP_INFO->fps_gamma.read_flash.cmds[1].payload[2],
+				DISP_INFO->fps_gamma.read_flash.cmds[1].payload[3],
 				param[0], param[1]);
 			return LCD_KIT_OK;
 		}
 	}
 	LCD_KIT_ERR("read failed! address 0x%02X%02X, param 0x%02X 0x%02X\n",
-		disp_info->fps_gamma.read_flash.cmds[1].payload[2],
-		disp_info->fps_gamma.read_flash.cmds[1].payload[3],
+		DISP_INFO->fps_gamma.read_flash.cmds[1].payload[2],
+		DISP_INFO->fps_gamma.read_flash.cmds[1].payload[3],
 		param[0], param[1]);
 	return LCD_KIT_FAIL;
 }
@@ -654,7 +654,7 @@ static int lcd_kit_read_fps_gamma_from_flash(void *hld,
 
 static bool lcd_kit_is_need_update_check_sum(struct hisi_fb_data_type *hisifd)
 {
-	if (disp_info->fps_gamma.support == 0) {
+	if (DISP_INFO->fps_gamma.support == 0) {
 		LCD_KIT_DEBUG("no need to update check_sum due to support");
 		return false;
 	}
@@ -662,11 +662,11 @@ static bool lcd_kit_is_need_update_check_sum(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("hisifd is NULL!");
 		return false;
 	}
-	if (disp_info->panel_version.support == 0) {
+	if (DISP_INFO->panel_version.support == 0) {
 		LCD_KIT_ERR("panel_version.support == 0");
 		return false;
 	}
-	if (disp_info->fps_gamma.check_length_update_support == 0) {
+	if (DISP_INFO->fps_gamma.check_length_update_support == 0) {
 		LCD_KIT_ERR("panel_version.support == 0");
 		return false;
 	}
@@ -685,30 +685,30 @@ static int lcd_kit_read_fps_gamma_90hz(void *hld,
 	uint8_t flash_gamma_checksum[FLASH_GAMMA_TOTAL_LEN_MAX] = {0};
 	if (lcd_kit_is_need_update_check_sum(hld)) {
 		// 452 is real gama length for sepcial panel version
-		disp_info->fps_gamma.flash_gamma_total_length = 452;
+		DISP_INFO->fps_gamma.flash_gamma_total_length = 452;
 		LCD_KIT_INFO("update check_sum, gama_length is %d",
-			disp_info->fps_gamma.flash_gamma_total_length);
+			DISP_INFO->fps_gamma.flash_gamma_total_length);
 	}
 	for (count = 0; count < FLASH_GAMMA_PARAM_RETRYT_MAX; count++) {
 		// read
 		if (lcd_kit_read_fps_gamma_from_flash(hld, adapt_ops,
 			flash_gamma_checksum,
 			FLASH_GAMMA_TOTAL_LEN_MAX,
-			disp_info->fps_gamma.flash_gamma_total_length) !=
+			DISP_INFO->fps_gamma.flash_gamma_total_length) !=
 			LCD_KIT_OK)
 			// read single param failed, return directly
 			return LCD_KIT_FAIL;
 		// checksum
 		if (lcd_kit_flash_gamma_checksum(flash_gamma_checksum,
 			FLASH_GAMMA_TOTAL_LEN_MAX,
-			disp_info->fps_gamma.flash_gamma_total_length) !=
+			DISP_INFO->fps_gamma.flash_gamma_total_length) !=
 			LCD_KIT_OK) {
 			// checksum failed, retry
 			LCD_KIT_ERR("checksum failed %d time!", count);
 		} else {
 			// succeed, save params
 			if (lcd_kit_save_fps_gamma(
-				&(disp_info->fps_gamma.write_90hz),
+				&(DISP_INFO->fps_gamma.write_90hz),
 				flash_gamma_checksum, GAMMA_TOTAL_LEN) !=
 				LCD_KIT_OK)
 				return LCD_KIT_FAIL;
@@ -723,13 +723,13 @@ int lcd_kit_read_fps_gamma(void *hld)
 {
 	int ret;
 	struct lcd_kit_adapt_ops *adapt_ops = NULL;
-	if (!disp_info->fps_gamma.support) {
+	if (!DISP_INFO->fps_gamma.support) {
 		LCD_KIT_DEBUG("fps_gamma not support\n");
 		return LCD_KIT_OK;
 	}
 	LCD_KIT_INFO("lcd_kit_read_fps_gamma\n");
 	// init check_flag
-	disp_info->fps_gamma.check_flag = 0;
+	DISP_INFO->fps_gamma.check_flag = 0;
 
 	adapt_ops = lcd_kit_get_adapt_ops();
 	if (!adapt_ops || !adapt_ops->mipi_rx) {
@@ -743,7 +743,7 @@ int lcd_kit_read_fps_gamma(void *hld)
 		return LCD_KIT_FAIL;
 	}
 	// flash gamma read enter
-	ret = adapt_ops->mipi_tx(hld, &disp_info->fps_gamma.read_flash_enter);
+	ret = adapt_ops->mipi_tx(hld, &DISP_INFO->fps_gamma.read_flash_enter);
 	if (ret != LCD_KIT_OK) {
 		LCD_KIT_ERR("90hz enter mipi_tx failed! ret = %d", ret);
 		return LCD_KIT_FAIL;
@@ -754,12 +754,12 @@ int lcd_kit_read_fps_gamma(void *hld)
 		return LCD_KIT_FAIL;
 	}
 	// flash gamma read exit
-	ret = adapt_ops->mipi_tx(hld, &disp_info->fps_gamma.read_flash_exit);
+	ret = adapt_ops->mipi_tx(hld, &DISP_INFO->fps_gamma.read_flash_exit);
 	if (ret != LCD_KIT_OK)
 		LCD_KIT_WARNING("read_flash_exit failed! ret = %d\n", ret);
 
 	// all done, set check_flag
-	disp_info->fps_gamma.check_flag = 1;
+	DISP_INFO->fps_gamma.check_flag = 1;
 	return LCD_KIT_OK;
 }
 
@@ -787,25 +787,25 @@ static int lcd_kit_write_fps_gamma_by_scene_no_lock(
 	struct hisi_fb_data_type *hisifd, const int index)
 {
 	int ret = LCD_KIT_OK;
-	if (!disp_info->fps_gamma.support) {
+	if (!DISP_INFO->fps_gamma.support) {
 		LCD_KIT_DEBUG("fps_gamma not support");
 		return LCD_KIT_OK;
 	}
-	if (!disp_info->fps_gamma.check_flag) {
+	if (!DISP_INFO->fps_gamma.check_flag) {
 		LCD_KIT_ERR("fps_gamma check_flag failed!");
 		return LCD_KIT_FAIL;
 	}
 	if (index == LCD_FPS_SCENCE_60P) {
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd,
-			&(disp_info->fps_gamma.write_60hz));
-		lcd_kit_print_fps_gamma(&(disp_info->fps_gamma.write_60hz));
+			&(DISP_INFO->fps_gamma.write_60hz));
+		lcd_kit_print_fps_gamma(&(DISP_INFO->fps_gamma.write_60hz));
 		if (ret != LCD_KIT_OK)
 			LCD_KIT_ERR("60Hz write faild! ret = %d\n", ret);
 	}
 	if (index == LCD_FPS_SCENCE_90) {
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd,
-			&(disp_info->fps_gamma.write_90hz));
-		lcd_kit_print_fps_gamma(&(disp_info->fps_gamma.write_90hz));
+			&(DISP_INFO->fps_gamma.write_90hz));
+		lcd_kit_print_fps_gamma(&(DISP_INFO->fps_gamma.write_90hz));
 		if (ret != LCD_KIT_OK)
 			LCD_KIT_ERR("90Hz write faild! ret = %d\n", ret);
 	}
@@ -869,25 +869,25 @@ int lcd_kit_write_fps_gamma_by_scene(
 	struct hisi_fb_data_type *hisifd, const int index)
 {
 	int ret = LCD_KIT_OK;
-	if (!disp_info->fps_gamma.support) {
+	if (!DISP_INFO->fps_gamma.support) {
 		LCD_KIT_DEBUG("fps_gamma not support");
 		return LCD_KIT_OK;
 	}
-	if (!disp_info->fps_gamma.check_flag) {
+	if (!DISP_INFO->fps_gamma.check_flag) {
 		LCD_KIT_ERR("fps_gamma check_flag failed!");
 		return LCD_KIT_FAIL;
 	}
 	if (index == LCD_FPS_SCENCE_60P) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&(disp_info->fps_gamma.write_60hz));
-		lcd_kit_print_fps_gamma(&(disp_info->fps_gamma.write_60hz));
+			&(DISP_INFO->fps_gamma.write_60hz));
+		lcd_kit_print_fps_gamma(&(DISP_INFO->fps_gamma.write_60hz));
 		if (ret != LCD_KIT_OK)
 			LCD_KIT_ERR("60Hz write faild! ret = %d\n", ret);
 	}
 	if (index == LCD_FPS_SCENCE_90) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&(disp_info->fps_gamma.write_90hz));
-		lcd_kit_print_fps_gamma(&(disp_info->fps_gamma.write_90hz));
+			&(DISP_INFO->fps_gamma.write_90hz));
+		lcd_kit_print_fps_gamma(&(DISP_INFO->fps_gamma.write_90hz));
 		if (ret != LCD_KIT_OK)
 			LCD_KIT_ERR("90Hz write faild! ret = %d\n", ret);
 	}
@@ -959,7 +959,7 @@ static void lcd_kit_get_dfr_hbm_combined_cmds(struct hisi_fb_data_type *hisifd,
 
 static bool lcd_kit_is_need_tx_cmd(struct hisi_panel_info *pinfo)
 {
-	if (disp_info->fps.hfps_switch_no_need_cmd != FPS_UPDATE_ENABLE)
+	if (DISP_INFO->fps.hfps_switch_no_need_cmd != FPS_UPDATE_ENABLE)
 		return true;
 	if (pinfo == NULL)
 		return true;
@@ -982,15 +982,15 @@ static int lcd_kit_updt_panel_fps(struct hisi_fb_data_type *hisifd, char fps_sce
 		return LCD_KIT_FAIL;
 	}
 	index = fps_scence;
-	cmds = &disp_info->fps.fps_to_cmds[index];
+	cmds = &DISP_INFO->fps.fps_to_cmds[index];
 	if (common_info->dfr_info.fps_lock_command_support)
 		lcd_kit_get_dfr_hbm_combined_cmds(hisifd, fps_scence, &cmds);
 	if (lcd_kit_is_need_tx_cmd(pinfo))
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd, cmds);
 	else
 		LCD_KIT_INFO("fps switch no need send cmd!\n");
-	disp_info->fps.last_update_fps = pinfo->fps_updt;
-	LCD_KIT_INFO("sending cmds fps:%d\n", disp_info->fps.last_update_fps);
+	DISP_INFO->fps.last_update_fps = pinfo->fps_updt;
+	LCD_KIT_INFO("sending cmds fps:%d\n", DISP_INFO->fps.last_update_fps);
 	lcd_kit_write_fps_gamma_by_scene_no_lock(hisifd, index);
 	lcd_kit_write_local_hbm_gamma_by_scene_no_lock(hisifd, index);
 	if ((index >= LCD_FPS_SCENCE_MAX) ||
@@ -1029,19 +1029,19 @@ static int lcd_kit_updt_low_fps(struct hisi_fb_data_type *hisifd,
 	switch (pinfo->fps_scence) {
 	case LCD_FPS_SCENCE_FUNC_DEFAULT_DISABLE:
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd,
-			&disp_info->fps.fps_to_60_cmds);
+			&DISP_INFO->fps.fps_to_60_cmds);
 		pinfo->fps_updt_support = 0;
 		pinfo->fps_updt_panel_only = 0;
 		g_last_fps_scence = LCD_FPS_SCENCE_NORMAL;
 		break;
 	case LCD_FPS_SCENCE_FUNC_DEFAULT_ENABLE:
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd,
-			&disp_info->fps.dfr_enable_cmds);
+			&DISP_INFO->fps.dfr_enable_cmds);
 		g_last_fps_scence = LCD_FPS_SCENCE_FUNC_DEFAULT_ENABLE;
 		break;
 	case LCD_FPS_SCENCE_FORCE_30FPS:
 		ret = lcd_kit_dsi_cmds_tx_no_lock(hisifd,
-			&disp_info->fps.fps_to_30_cmds);
+			&DISP_INFO->fps.fps_to_30_cmds);
 		g_last_fps_scence = LCD_FPS_SCENCE_FORCE_30FPS;
 		break;
 	default:
@@ -1132,28 +1132,28 @@ void lcd_kit_fps_updt_porch(struct hisi_panel_info *pinfo, uint32_t scence)
 	}
 	switch (scence) {
 	case LCD_KIT_FPS_SCENCE_IDLE:
-		pinfo->ldi_updt.h_back_porch = disp_info->fps.low_frame_porch.buf[0];
-		pinfo->ldi_updt.h_front_porch = disp_info->fps.low_frame_porch.buf[1];
-		pinfo->ldi_updt.h_pulse_width = disp_info->fps.low_frame_porch.buf[2];
-		pinfo->ldi_updt.v_back_porch = disp_info->fps.low_frame_porch.buf[3];
-		pinfo->ldi_updt.v_front_porch = disp_info->fps.low_frame_porch.buf[4];
-		pinfo->ldi_updt.v_pulse_width = disp_info->fps.low_frame_porch.buf[5];
+		pinfo->ldi_updt.h_back_porch = DISP_INFO->fps.low_frame_porch.buf[0];
+		pinfo->ldi_updt.h_front_porch = DISP_INFO->fps.low_frame_porch.buf[1];
+		pinfo->ldi_updt.h_pulse_width = DISP_INFO->fps.low_frame_porch.buf[2];
+		pinfo->ldi_updt.v_back_porch = DISP_INFO->fps.low_frame_porch.buf[3];
+		pinfo->ldi_updt.v_front_porch = DISP_INFO->fps.low_frame_porch.buf[4];
+		pinfo->ldi_updt.v_pulse_width = DISP_INFO->fps.low_frame_porch.buf[5];
 		break;
 	case LCD_KIT_FPS_SCENCE_EBOOK:
-		pinfo->ldi_updt.h_back_porch = disp_info->fps.low_frame_porch.buf[0];
-		pinfo->ldi_updt.h_front_porch = disp_info->fps.low_frame_porch.buf[1];
-		pinfo->ldi_updt.h_pulse_width = disp_info->fps.low_frame_porch.buf[2];
-		pinfo->ldi_updt.v_back_porch = disp_info->fps.low_frame_porch.buf[3];
-		pinfo->ldi_updt.v_front_porch = disp_info->fps.low_frame_porch.buf[4];
-		pinfo->ldi_updt.v_pulse_width = disp_info->fps.low_frame_porch.buf[5];
+		pinfo->ldi_updt.h_back_porch = DISP_INFO->fps.low_frame_porch.buf[0];
+		pinfo->ldi_updt.h_front_porch = DISP_INFO->fps.low_frame_porch.buf[1];
+		pinfo->ldi_updt.h_pulse_width = DISP_INFO->fps.low_frame_porch.buf[2];
+		pinfo->ldi_updt.v_back_porch = DISP_INFO->fps.low_frame_porch.buf[3];
+		pinfo->ldi_updt.v_front_porch = DISP_INFO->fps.low_frame_porch.buf[4];
+		pinfo->ldi_updt.v_pulse_width = DISP_INFO->fps.low_frame_porch.buf[5];
 		break;
 	default:
-		pinfo->ldi_updt.h_back_porch = disp_info->fps.normal_frame_porch.buf[0];
-		pinfo->ldi_updt.h_front_porch = disp_info->fps.normal_frame_porch.buf[1];
-		pinfo->ldi_updt.h_pulse_width = disp_info->fps.normal_frame_porch.buf[2];
-		pinfo->ldi_updt.v_back_porch = disp_info->fps.normal_frame_porch.buf[3];
-		pinfo->ldi_updt.v_front_porch = disp_info->fps.normal_frame_porch.buf[4];
-		pinfo->ldi_updt.v_pulse_width = disp_info->fps.normal_frame_porch.buf[5];
+		pinfo->ldi_updt.h_back_porch = DISP_INFO->fps.normal_frame_porch.buf[0];
+		pinfo->ldi_updt.h_front_porch = DISP_INFO->fps.normal_frame_porch.buf[1];
+		pinfo->ldi_updt.h_pulse_width = DISP_INFO->fps.normal_frame_porch.buf[2];
+		pinfo->ldi_updt.v_back_porch = DISP_INFO->fps.normal_frame_porch.buf[3];
+		pinfo->ldi_updt.v_front_porch = DISP_INFO->fps.normal_frame_porch.buf[4];
+		pinfo->ldi_updt.v_pulse_width = DISP_INFO->fps.normal_frame_porch.buf[5];
 		break;
 	}
 }
@@ -1165,32 +1165,32 @@ static int lcd_get_dual_cmd_by_type(unsigned char type,
 {
 	switch (type) {
 	case LCD_DEMURA_WRITE_PREPARE:
-		*cmds0 = &(disp_info->demura.d0_w_pre_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_pre_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_pre_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_pre_cmds);
 		break;
 	case LCD_DEMURA_WRITE_FIRST:
-		*cmds0 = &(disp_info->demura.d0_w_fir_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_fir_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_fir_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_fir_cmds);
 		break;
 	case LCD_DEMURA_WRITE_CONTINUE:
-		*cmds0 = &(disp_info->demura.d0_w_con_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_con_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_con_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_con_cmds);
 		break;
 	case LCD_DEMURA_WRITE_END:
-		*cmds0 = &(disp_info->demura.d0_w_end_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_end_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_end_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_end_cmds);
 		break;
 	case LCD_DEMURA_WRITE_IRDROP_PREPARE:
-		*cmds0 = &(disp_info->demura.d0_w_ird_pre_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_ird_pre_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_ird_pre_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_ird_pre_cmds);
 		break;
 	case LCD_DEMURA_WRITE_IRDROP:
-		*cmds0 = &(disp_info->demura.d0_w_ird_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_ird_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_ird_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_ird_cmds);
 		break;
 	case LCD_DEMURA_WRITE_IRDROP_END:
-		*cmds0 = &(disp_info->demura.d0_w_ird_end_cmds);
-		*cmds1 = &(disp_info->demura.d1_w_ird_end_cmds);
+		*cmds0 = &(DISP_INFO->demura.d0_w_ird_end_cmds);
+		*cmds1 = &(DISP_INFO->demura.d1_w_ird_end_cmds);
 		break;
 	default:
 		LCD_KIT_ERR("[DEMURA]invalid type\n");
@@ -1298,16 +1298,16 @@ int lcd_get_demura_handle(struct hisi_fb_data_type *hisifd,
 	}
 	switch (read_type) {
 	case LCD_DEMURA_READ_FIRST:
-		cmds = &(disp_info->demura.r_fir_cmds);
+		cmds = &(DISP_INFO->demura.r_fir_cmds);
 		break;
 	case LCD_DEMURA_READ_CONTINUE:
-		cmds = &(disp_info->demura.r_con_cmds);
+		cmds = &(DISP_INFO->demura.r_con_cmds);
 		break;
 	case LCD_DEMURA_READ_CHECKSUM:
-		cmds = &(disp_info->demura.rr_chksum_cmds);
+		cmds = &(DISP_INFO->demura.rr_chksum_cmds);
 		break;
 	case LCD_DEMURA_READ_WRITED_CHKSUM:
-		cmds = &(disp_info->demura.rw_chksum_cmds);
+		cmds = &(DISP_INFO->demura.rw_chksum_cmds);
 		break;
 	default:
 		LCD_KIT_ERR("[DEMURA]invalid type\n");
@@ -1341,7 +1341,7 @@ static int lcd_kit_get_fps_para(int scence, int *fps,
 		*fps = LCD_FPS_45;
 		break;
 	case LCD_FPS_SCENCE_60P:
-		if (disp_info->fps.fps_need_high_60 == FPS_CONFIG_EN)
+		if (DISP_INFO->fps.fps_need_high_60 == FPS_CONFIG_EN)
 			*fps = LCD_FPS_60_HIGH;
 		else
 			*fps = LCD_FPS_60;
@@ -1363,7 +1363,7 @@ static int lcd_kit_get_fps_para(int scence, int *fps,
 		return LCD_KIT_FAIL;
 	}
 	index = scence;
-	timing = &disp_info->fps.fps_dsi_timming[index];
+	timing = &DISP_INFO->fps.fps_dsi_timming[index];
 	if (timing->buf == NULL ||
 		timing->cnt < FPS_DSI_TIMMING_PARA_NUM)
 		return LCD_KIT_FAIL;
@@ -1383,10 +1383,10 @@ static void lcd_kit_dsc_switch_proc(int scence, struct hisi_fb_data_type *hisifd
 			pinfo->mipi_updt.dynamic_dsc_en = FPS_UPDATE_ENABLE;
 		return;
 	}
-	if (disp_info->fps.fps_ifbc_type != IFBC_TYPE_NONE) {
+	if (DISP_INFO->fps.fps_ifbc_type != IFBC_TYPE_NONE) {
 		if (scence >= LCD_FPS_SCENCE_60P &&
 			scence <= LCD_FPS_SCENCE_180) {
-			pinfo->ifbc_type = disp_info->fps.fps_ifbc_type;
+			pinfo->ifbc_type = DISP_INFO->fps.fps_ifbc_type;
 			pinfo->mipi_updt.dynamic_dsc_en = FPS_UPDATE_ENABLE;
 		} else if (!pinfo->dynamic_dsc_en) {
 			pinfo->ifbc_type = IFBC_TYPE_NONE;
@@ -1394,7 +1394,7 @@ static void lcd_kit_dsc_switch_proc(int scence, struct hisi_fb_data_type *hisifd
 		}
 	}
 	LCD_KIT_INFO("fps_ifbc_type:%d,ifbc_type:%d\n",
-		disp_info->fps.fps_ifbc_type,
+		DISP_INFO->fps.fps_ifbc_type,
 		pinfo->ifbc_type);
 }
 
@@ -1405,10 +1405,10 @@ static bool lcd_kit_fps_check_delay(struct hisi_panel_info *pinfo)
 	struct timeval afe_tv;
 	struct timeval record_tv;
 
-	if (disp_info->fps.fps_can_update_flag)
+	if (DISP_INFO->fps.fps_can_update_flag)
 		return true;
-	record_tv.tv_sec = disp_info->quickly_sleep_out.panel_on_record_tv.tv_sec;
-	record_tv.tv_usec = disp_info->quickly_sleep_out.panel_on_record_tv.tv_usec;
+	record_tv.tv_sec = DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_sec;
+	record_tv.tv_usec = DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_usec;
 	/* first high fsp switch */
 	if (record_tv.tv_sec == 0 && record_tv.tv_usec == 0 &&
 		pinfo->fps == LCD_FPS_60P) {
@@ -1424,10 +1424,10 @@ static bool lcd_kit_fps_check_delay(struct hisi_panel_info *pinfo)
 		tv.tv_usec - record_tv.tv_usec;
 	/* change us to ms */
 	delta_time /= 1000;
-	if (delta_time < disp_info->fps.fps_check_panel_on_delay)
+	if (delta_time < DISP_INFO->fps.fps_check_panel_on_delay)
 		return false;
 	else
-		disp_info->fps.fps_can_update_flag = true;
+		DISP_INFO->fps.fps_can_update_flag = true;
 	return true;
 }
 
@@ -1440,7 +1440,7 @@ static bool lcd_kit_can_switch_fps(struct hisi_panel_info *pinfo)
 			pinfo->fps_updt);
 		return false;
 	}
-	if (disp_info->fps.fps_check_panel_on_delay > 0 &&
+	if (DISP_INFO->fps.fps_check_panel_on_delay > 0 &&
 		!lcd_kit_fps_check_delay(pinfo)) {
 		LCD_KIT_INFO("the delay time after display on is not satisfied\n");
 		return false;
@@ -1477,8 +1477,8 @@ static int lcd_kit_updt_mipi_fps(struct hisi_fb_data_type *hisifd, int scence)
 		if (ret == 0)
 			LCD_KIT_INFO("wait time out and set fps doing\n");
 	}
-	pinfo->send_dfr_cmd_in_vactive = disp_info->fps.fps_send_dfr_cmd_in_vactive;
-	pinfo->dfr_delay_time = disp_info->fps.fps_effective_frame_count;
+	pinfo->send_dfr_cmd_in_vactive = DISP_INFO->fps.fps_send_dfr_cmd_in_vactive;
+	pinfo->dfr_delay_time = DISP_INFO->fps.fps_effective_frame_count;
 	pinfo->mipi_updt.frame_rate = frm_rate;
 	pinfo->mipi_updt.take_effect_delayed_frm_cnt = 0;
 	pinfo->mipi_updt.hsa = fps_timing->buf[FPS_HSA_PARA_INDEX];
@@ -1545,32 +1545,32 @@ void lcd_kit_disp_on_check_delay(void)
 	LCD_KIT_INFO("set backlight at %lu seconds %lu mil seconds\n",
 		tv.tv_sec, tv.tv_usec);
 	/* change s to us */
-	delta_time = (tv.tv_sec - disp_info->quickly_sleep_out.panel_on_record_tv.tv_sec) * 1000000 +
-		tv.tv_usec - disp_info->quickly_sleep_out.panel_on_record_tv.tv_usec;
+	delta_time = (tv.tv_sec - DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_sec) * 1000000 +
+		tv.tv_usec - DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_usec;
 	/* change us to ms */
 	delta_time /= 1000;
-	if (delta_time >= disp_info->quickly_sleep_out.interval) {
+	if (delta_time >= DISP_INFO->quickly_sleep_out.interval) {
 		LCD_KIT_INFO("%lu > %d, no need delay\n", delta_time,
-			disp_info->quickly_sleep_out.interval);
+			DISP_INFO->quickly_sleep_out.interval);
 		goto check_delay_end;
 	}
-	delay_margin = disp_info->quickly_sleep_out.interval - delta_time;
+	delay_margin = DISP_INFO->quickly_sleep_out.interval - delta_time;
 	if (delay_margin > max_margin) {
 		LCD_KIT_INFO("something maybe error");
 		goto check_delay_end;
 	}
 	msleep(delay_margin);
 check_delay_end:
-	disp_info->quickly_sleep_out.panel_on_tag = false;
+	DISP_INFO->quickly_sleep_out.panel_on_tag = false;
 }
 
 void lcd_kit_disp_on_record_time(void)
 {
-	do_gettimeofday(&disp_info->quickly_sleep_out.panel_on_record_tv);
+	do_gettimeofday(&DISP_INFO->quickly_sleep_out.panel_on_record_tv);
 	LCD_KIT_INFO("display on at %lu seconds %lu mil seconds\n",
-		disp_info->quickly_sleep_out.panel_on_record_tv.tv_sec,
-		disp_info->quickly_sleep_out.panel_on_record_tv.tv_usec);
-	disp_info->quickly_sleep_out.panel_on_tag = true;
+		DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_sec,
+		DISP_INFO->quickly_sleep_out.panel_on_record_tv.tv_usec);
+	DISP_INFO->quickly_sleep_out.panel_on_tag = true;
 }
 
 int lcd_kit_get_bl_set_type(struct hisi_panel_info *pinfo)
@@ -1601,17 +1601,17 @@ int lcd_kit_alpm_setting(struct hisi_fb_data_type *hisifd, uint32_t mode)
 		if (common_info->esd.support)
 			common_info->esd.status = ESD_STOP;
 		mutex_unlock(&COMMON_LOCK->mipi_lock);
-		ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->alpm.off_cmds);
+		ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->alpm.off_cmds);
 		break;
 	case ALPM_ON_MIDDLE_LIGHT:
-		ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->alpm.high_light_cmds);
+		ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->alpm.high_light_cmds);
 		mutex_lock(&COMMON_LOCK->mipi_lock);
 		if (common_info->esd.support)
 			common_info->esd.status = ESD_RUNNING;
 		mutex_unlock(&COMMON_LOCK->mipi_lock);
 		break;
 	case ALPM_EXIT:
-		ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->alpm.exit_cmds);
+		ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->alpm.exit_cmds);
 		mutex_lock(&COMMON_LOCK->mipi_lock);
 		if (common_info->esd.support)
 			common_info->esd.status = ESD_RUNNING;
@@ -1619,7 +1619,7 @@ int lcd_kit_alpm_setting(struct hisi_fb_data_type *hisifd, uint32_t mode)
 		hisifd->aod_mode = 0;
 		break;
 	case ALPM_ON_LOW_LIGHT:
-		ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->alpm.low_light_cmds);
+		ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->alpm.low_light_cmds);
 		mutex_lock(&COMMON_LOCK->mipi_lock);
 		if (common_info->esd.support)
 			common_info->esd.status = ESD_RUNNING;
@@ -1961,12 +1961,12 @@ int lcd_kit_rgbw_set_bl(struct hisi_fb_data_type *hisifd, uint32_t level)
 	uint32_t rgbw_level;
 	int ret;
 
-	rgbw_level = level * disp_info->rgbw.rgbw_bl_max / hisifd->panel_info.bl_max;
+	rgbw_level = level * DISP_INFO->rgbw.rgbw_bl_max / hisifd->panel_info.bl_max;
 	/* change bl level to dsi cmds */
-	disp_info->rgbw.backlight_cmds.cmds[0].payload[1] = (rgbw_level >> 8) & 0xff;
-	disp_info->rgbw.backlight_cmds.cmds[0].payload[2] = rgbw_level & 0xff;
+	DISP_INFO->rgbw.backlight_cmds.cmds[0].payload[1] = (rgbw_level >> 8) & 0xff;
+	DISP_INFO->rgbw.backlight_cmds.cmds[0].payload[2] = rgbw_level & 0xff;
 	hisifb_activate_vsync(hisifd);
-	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->rgbw.backlight_cmds);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->rgbw.backlight_cmds);
 	hisifb_deactivate_vsync(hisifd);
 	// delay 2 frame time
 	msleep(38);
@@ -1986,7 +1986,7 @@ int lcd_kit_blpwm_set_backlight(struct hisi_fb_data_type *hisifd, uint32_t level
 		return LCD_KIT_FAIL;
 	}
 	bl_level = (level < hisifd->panel_info.bl_max) ? level : hisifd->panel_info.bl_max;
-	if (disp_info->rgbw.support && disp_info->rgbw.backlight_cmds.cmds) {
+	if (DISP_INFO->rgbw.support && DISP_INFO->rgbw.backlight_cmds.cmds) {
 		if (hisifd->backlight.bl_level_old == 0 && level != 0) {
 			ret = lcd_kit_rgbw_set_bl(hisifd, bl_level);
 			if (ret)
@@ -2014,31 +2014,31 @@ static void lcd_last_time_clear(uint8_t curr_mode)
 	do_gettimeofday(&curr_time);
 	switch (curr_mode) {
 	case EN_DISPLAY_REGION_A:
-		disp_info->dbv_stat.last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION] = curr_time;
 		break;
 	case EN_DISPLAY_REGION_B:
-		disp_info->dbv_stat.last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.pwon_last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.hbm_last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION] = curr_time;
 		break;
 	case EN_DISPLAY_REGION_AB:
 	case EN_DISPLAY_REGION_AB_FOLDED:
-		disp_info->dbv_stat.last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.last_time[FOLD_REGION] = curr_time;
-		disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.pwon_last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.pwon_last_time[FOLD_REGION] = curr_time;
-		disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.hbm_last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.hbm_last_time[FOLD_REGION] = curr_time;
-		disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION] = curr_time;
-		disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION] = curr_time;
-		disp_info->dbv_stat.hbmon_last_time[FOLD_REGION] = curr_time;
+		DISP_INFO->dbv_stat.last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.last_time[FOLD_REGION] = curr_time;
+		DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.pwon_last_time[FOLD_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbm_last_time[FOLD_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION] = curr_time;
+		DISP_INFO->dbv_stat.hbmon_last_time[FOLD_REGION] = curr_time;
 		break;
 	default:
 		break;
@@ -2051,17 +2051,17 @@ static void lcd_set_dbv_stat_primary_region(unsigned int level,
 	uint32_t delta;
 	struct timeval curr_time, tmp;
 	do_gettimeofday(&curr_time);
-	tmp = disp_info->dbv_stat.last_time[PRIMARY_REGION];
+	tmp = DISP_INFO->dbv_stat.last_time[PRIMARY_REGION];
 
 	/* change s to ms */
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[PRIMARY_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[PRIMARY_REGION] += (ori_level * delta);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[PRIMARY_REGION]);
+	DISP_INFO->dbv_stat.dbv[PRIMARY_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[PRIMARY_REGION] += (ori_level * delta);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[PRIMARY_REGION]);
 	LCD_KIT_DEBUG("dbv[PRIMARY_REGION]:%d, ori_dbv[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[PRIMARY_REGION],
-		disp_info->dbv_stat.ori_dbv[PRIMARY_REGION]);
+		DISP_INFO->dbv_stat.dbv[PRIMARY_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[PRIMARY_REGION]);
 }
 
 static void lcd_set_dbv_stat_slave_region(unsigned int level,
@@ -2070,17 +2070,17 @@ static void lcd_set_dbv_stat_slave_region(unsigned int level,
 	uint32_t delta;
 	struct timeval curr_time, tmp;
 	do_gettimeofday(&curr_time);
-	tmp = disp_info->dbv_stat.last_time[SLAVE_REGION];
+	tmp = DISP_INFO->dbv_stat.last_time[SLAVE_REGION];
 
 	/* change s to ms */
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[SLAVE_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[SLAVE_REGION] += (ori_level * delta);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[SLAVE_REGION]);
+	DISP_INFO->dbv_stat.dbv[SLAVE_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[SLAVE_REGION] += (ori_level * delta);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[SLAVE_REGION]);
 	LCD_KIT_DEBUG("dbv[SLAVE_REGION]:%d, ori_dbv[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[SLAVE_REGION],
-		disp_info->dbv_stat.ori_dbv[SLAVE_REGION]);
+		DISP_INFO->dbv_stat.dbv[SLAVE_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[SLAVE_REGION]);
 }
 
 static void lcd_set_dbv_stat_fold_region(unsigned int level,
@@ -2089,17 +2089,17 @@ static void lcd_set_dbv_stat_fold_region(unsigned int level,
 	uint32_t delta;
 	struct timeval curr_time, tmp;
 	do_gettimeofday(&curr_time);
-	tmp = disp_info->dbv_stat.last_time[FOLD_REGION];
+	tmp = DISP_INFO->dbv_stat.last_time[FOLD_REGION];
 
 	/* change s to ms */
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[FOLD_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[FOLD_REGION] += (ori_level * delta);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[FOLD_REGION]);
+	DISP_INFO->dbv_stat.dbv[FOLD_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[FOLD_REGION] += (ori_level * delta);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[FOLD_REGION]);
 	LCD_KIT_DEBUG("dbv[FOLD_REGION]:%d, ori_dbv[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[FOLD_REGION],
-		disp_info->dbv_stat.ori_dbv[FOLD_REGION]);
+		DISP_INFO->dbv_stat.dbv[FOLD_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[FOLD_REGION]);
 }
 
 static void lcd_set_dbv_stat_max_region(unsigned int level,
@@ -2108,35 +2108,35 @@ static void lcd_set_dbv_stat_max_region(unsigned int level,
 	uint32_t delta;
 	struct timeval curr_time, tmp;
 	do_gettimeofday(&curr_time);
-	tmp = disp_info->dbv_stat.last_time[PRIMARY_REGION];
+	tmp = DISP_INFO->dbv_stat.last_time[PRIMARY_REGION];
 
 	/* change s to ms */
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[PRIMARY_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[PRIMARY_REGION] += (ori_level * delta);
-	tmp = disp_info->dbv_stat.last_time[SLAVE_REGION];
+	DISP_INFO->dbv_stat.dbv[PRIMARY_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[PRIMARY_REGION] += (ori_level * delta);
+	tmp = DISP_INFO->dbv_stat.last_time[SLAVE_REGION];
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[SLAVE_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[SLAVE_REGION] += (ori_level * delta);
-	tmp = disp_info->dbv_stat.last_time[FOLD_REGION];
+	DISP_INFO->dbv_stat.dbv[SLAVE_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[SLAVE_REGION] += (ori_level * delta);
+	tmp = DISP_INFO->dbv_stat.last_time[FOLD_REGION];
 	delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 		(curr_time.tv_usec - tmp.tv_usec) / 1000;
-	disp_info->dbv_stat.dbv[FOLD_REGION] += (level * delta);
-	disp_info->dbv_stat.ori_dbv[FOLD_REGION] += (level * delta);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[PRIMARY_REGION]);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[SLAVE_REGION]);
-	do_gettimeofday(&disp_info->dbv_stat.last_time[FOLD_REGION]);
+	DISP_INFO->dbv_stat.dbv[FOLD_REGION] += (level * delta);
+	DISP_INFO->dbv_stat.ori_dbv[FOLD_REGION] += (level * delta);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[PRIMARY_REGION]);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[SLAVE_REGION]);
+	do_gettimeofday(&DISP_INFO->dbv_stat.last_time[FOLD_REGION]);
 	LCD_KIT_DEBUG("dbv[PRIMARY_REGION]:%d, ori_dbv[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[PRIMARY_REGION],
-		disp_info->dbv_stat.ori_dbv[PRIMARY_REGION]);
+		DISP_INFO->dbv_stat.dbv[PRIMARY_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[PRIMARY_REGION]);
 	LCD_KIT_DEBUG("dbv[SLAVE_REGION]:%d, ori_dbv[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[SLAVE_REGION],
-		disp_info->dbv_stat.ori_dbv[SLAVE_REGION]);
+		DISP_INFO->dbv_stat.dbv[SLAVE_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[SLAVE_REGION]);
 	LCD_KIT_DEBUG("dbv[FOLD_REGION]:%d, ori_dbv[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[FOLD_REGION],
-		disp_info->dbv_stat.ori_dbv[FOLD_REGION]);
+		DISP_INFO->dbv_stat.dbv[FOLD_REGION],
+		DISP_INFO->dbv_stat.ori_dbv[FOLD_REGION]);
 }
 
 static void _lcd_set_dbv_stat(int region, unsigned int level,
@@ -2170,42 +2170,42 @@ static void _lcd_set_hbm_stat(struct hisi_fb_data_type *hisifd, int region, unsi
 	do_gettimeofday(&curr_time);
 	switch (region) {
 	case PRIMARY_REGION:
-		tmp = disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[PRIMARY_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION]);
+		DISP_INFO->dbv_stat.hbm[PRIMARY_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION]);
 		break;
 	case SLAVE_REGION:
-		tmp = disp_info->dbv_stat.hbm_last_time[SLAVE_REGION];
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[SLAVE_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[SLAVE_REGION]);
+		DISP_INFO->dbv_stat.hbm[SLAVE_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION]);
 		break;
 	case FOLD_REGION:
-		tmp = disp_info->dbv_stat.hbm_last_time[FOLD_REGION];
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[FOLD_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.hbm[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[FOLD_REGION]);
 		break;
 	case REGION_MAX:
-		tmp = disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[PRIMARY_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.hbm_last_time[SLAVE_REGION];
+		DISP_INFO->dbv_stat.hbm[PRIMARY_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[SLAVE_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.hbm_last_time[FOLD_REGION];
+		DISP_INFO->dbv_stat.hbm[SLAVE_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.hbm_last_time[FOLD_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbm[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[PRIMARY_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[SLAVE_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.hbm_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.hbm[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[PRIMARY_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[SLAVE_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbm_last_time[FOLD_REGION]);
 		break;
 	default:
 		break;
@@ -2222,46 +2222,46 @@ static void _lcd_set_pwon_stat(int region, unsigned int level)
 	do_gettimeofday(&curr_time);
 	switch (region) {
 	case PRIMARY_REGION:
-		tmp = disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[PRIMARY_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION]);
+		DISP_INFO->dbv_stat.pwon[PRIMARY_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION]);
 		break;
 	case SLAVE_REGION:
-		tmp = disp_info->dbv_stat.pwon_last_time[SLAVE_REGION];
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[SLAVE_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[SLAVE_REGION]);
+		DISP_INFO->dbv_stat.pwon[SLAVE_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION]);
 		break;
 	case FOLD_REGION:
-		tmp = disp_info->dbv_stat.pwon_last_time[FOLD_REGION];
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[FOLD_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.pwon[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[FOLD_REGION]);
 		break;
 	case REGION_MAX:
-		tmp = disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[PRIMARY_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.pwon_last_time[SLAVE_REGION];
+		DISP_INFO->dbv_stat.pwon[PRIMARY_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[SLAVE_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.pwon_last_time[FOLD_REGION];
+		DISP_INFO->dbv_stat.pwon[SLAVE_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.pwon_last_time[FOLD_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.pwon[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[PRIMARY_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[SLAVE_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.pwon_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.pwon[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[PRIMARY_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[SLAVE_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.pwon_last_time[FOLD_REGION]);
 		break;
 	default:
 		break;
@@ -2276,46 +2276,46 @@ static void _lcd_set_hbmon_stat(struct hisi_fb_data_type *hisifd, int region, un
 	do_gettimeofday(&curr_time);
 	switch (region) {
 	case PRIMARY_REGION:
-		tmp = disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[PRIMARY_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION]);
+		DISP_INFO->dbv_stat.hbmon[PRIMARY_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION]);
 		break;
 	case SLAVE_REGION:
-		tmp = disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION];
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[SLAVE_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION]);
+		DISP_INFO->dbv_stat.hbmon[SLAVE_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION]);
 		break;
 	case FOLD_REGION:
-		tmp = disp_info->dbv_stat.hbmon_last_time[FOLD_REGION];
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[FOLD_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.hbmon[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[FOLD_REGION]);
 		break;
 	case REGION_MAX:
-		tmp = disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION];
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION];
 		/* change s to ms */
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[PRIMARY_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION];
+		DISP_INFO->dbv_stat.hbmon[PRIMARY_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[SLAVE_REGION] += (level * delta);
-		tmp = disp_info->dbv_stat.hbmon_last_time[FOLD_REGION];
+		DISP_INFO->dbv_stat.hbmon[SLAVE_REGION] += (level * delta);
+		tmp = DISP_INFO->dbv_stat.hbmon_last_time[FOLD_REGION];
 		delta = (curr_time.tv_sec - tmp.tv_sec) * 1000 +
 			(curr_time.tv_usec - tmp.tv_usec) / 1000;
-		disp_info->dbv_stat.hbmon[FOLD_REGION] += (level * delta);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[PRIMARY_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[SLAVE_REGION]);
-		do_gettimeofday(&disp_info->dbv_stat.hbmon_last_time[FOLD_REGION]);
+		DISP_INFO->dbv_stat.hbmon[FOLD_REGION] += (level * delta);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[PRIMARY_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[SLAVE_REGION]);
+		do_gettimeofday(&DISP_INFO->dbv_stat.hbmon_last_time[FOLD_REGION]);
 		break;
 	default:
 		break;
@@ -2332,7 +2332,7 @@ static void lcd_set_dbv_stat(struct hisi_fb_data_type *hisifd,
 	struct hisi_panel_info *pinfo = NULL;
 	int region;
 
-	if (!disp_info->dbv_stat.support)
+	if (!DISP_INFO->dbv_stat.support)
 		return;
 	pinfo = &(hisifd->panel_info);
 	if (!pinfo)
@@ -2367,12 +2367,12 @@ static void lcd_set_dbv_stat(struct hisi_fb_data_type *hisifd,
 	_lcd_set_hbmon_stat(hisifd, region, last_level);
 	last_level = level;
 	last_ori_level = hisifd->bl_level;
-	LCD_KIT_INFO("disp_info->dbv_stat.dbv[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[PRIMARY_REGION]);
-	LCD_KIT_DEBUG("disp_info->dbv_stat.dbv[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[SLAVE_REGION]);
-	LCD_KIT_DEBUG("disp_info->dbv_stat.dbv[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[FOLD_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.dbv[PRIMARY_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[PRIMARY_REGION]);
+	LCD_KIT_DEBUG("DISP_INFO->dbv_stat.dbv[SLAVE_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[SLAVE_REGION]);
+	LCD_KIT_DEBUG("DISP_INFO->dbv_stat.dbv[FOLD_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[FOLD_REGION]);
 }
 
 static void _lcd_get_dbv_stat(struct hisi_fb_data_type *hisifd,
@@ -2403,15 +2403,15 @@ static void _lcd_get_dbv_stat(struct hisi_fb_data_type *hisifd,
 	}
 	_lcd_set_dbv_stat(region, hisifd->de_info.actual_bl_level,
 		hisifd->bl_level);
-	LCD_KIT_INFO("disp_info->dbv_stat.dbv[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[PRIMARY_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.dbv[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[SLAVE_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.dbv[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.dbv[FOLD_REGION]);
-	memcpy(dbv_stat, disp_info->dbv_stat.dbv, dbv_len);
-	memset(disp_info->dbv_stat.dbv, 0,
-		sizeof(disp_info->dbv_stat.dbv));
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.dbv[PRIMARY_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[PRIMARY_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.dbv[SLAVE_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[SLAVE_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.dbv[FOLD_REGION]:%d\n",
+		DISP_INFO->dbv_stat.dbv[FOLD_REGION]);
+	memcpy(dbv_stat, DISP_INFO->dbv_stat.dbv, dbv_len);
+	memset(DISP_INFO->dbv_stat.dbv, 0,
+		sizeof(DISP_INFO->dbv_stat.dbv));
 }
 
 static void _lcd_get_hbm_stat(struct hisi_fb_data_type *hisifd,
@@ -2441,15 +2441,15 @@ static void _lcd_get_hbm_stat(struct hisi_fb_data_type *hisifd,
 		break;
 	}
 	_lcd_set_hbm_stat(hisifd, region, hisifd->de_info.actual_bl_level);
-	LCD_KIT_INFO("disp_info->dbv_stat.hbm[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.hbm[PRIMARY_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.hbm[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.hbm[SLAVE_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.hbm[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.hbm[FOLD_REGION]);
-	memcpy(hbm_stat, disp_info->dbv_stat.hbm, hbm_len);
-	memset(disp_info->dbv_stat.hbm, 0,
-		sizeof(disp_info->dbv_stat.hbm));
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.hbm[PRIMARY_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbm[PRIMARY_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.hbm[SLAVE_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbm[SLAVE_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.hbm[FOLD_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbm[FOLD_REGION]);
+	memcpy(hbm_stat, DISP_INFO->dbv_stat.hbm, hbm_len);
+	memset(DISP_INFO->dbv_stat.hbm, 0,
+		sizeof(DISP_INFO->dbv_stat.hbm));
 }
 
 static void _lcd_get_pwon_stat(struct hisi_fb_data_type *hisifd,
@@ -2479,15 +2479,15 @@ static void _lcd_get_pwon_stat(struct hisi_fb_data_type *hisifd,
 		break;
 	}
 	_lcd_set_pwon_stat(region, hisifd->de_info.actual_bl_level);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.pwon[PRIMARY_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.pwon[SLAVE_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.pwon[FOLD_REGION]);
-	memcpy(pwon_stat, disp_info->dbv_stat.pwon, pwon_len);
-	memset(disp_info->dbv_stat.pwon, 0,
-		sizeof(disp_info->dbv_stat.pwon));
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[PRIMARY_REGION]:%d\n",
+		DISP_INFO->dbv_stat.pwon[PRIMARY_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[SLAVE_REGION]:%d\n",
+		DISP_INFO->dbv_stat.pwon[SLAVE_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[FOLD_REGION]:%d\n",
+		DISP_INFO->dbv_stat.pwon[FOLD_REGION]);
+	memcpy(pwon_stat, DISP_INFO->dbv_stat.pwon, pwon_len);
+	memset(DISP_INFO->dbv_stat.pwon, 0,
+		sizeof(DISP_INFO->dbv_stat.pwon));
 }
 
 static void _lcd_get_hbmon_stat(struct hisi_fb_data_type *hisifd,
@@ -2517,25 +2517,25 @@ static void _lcd_get_hbmon_stat(struct hisi_fb_data_type *hisifd,
 		break;
 	}
 	_lcd_set_hbmon_stat(hisifd, region, hisifd->de_info.actual_bl_level);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[PRIMARY_REGION]:%d\n",
-		disp_info->dbv_stat.hbmon[PRIMARY_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[SLAVE_REGION]:%d\n",
-		disp_info->dbv_stat.hbmon[SLAVE_REGION]);
-	LCD_KIT_INFO("disp_info->dbv_stat.pwon[FOLD_REGION]:%d\n",
-		disp_info->dbv_stat.hbmon[FOLD_REGION]);
-	memcpy(hbmon_stat, disp_info->dbv_stat.hbmon, hbmon_size);
-	memset(disp_info->dbv_stat.hbmon, 0,
-		sizeof(disp_info->dbv_stat.hbmon));
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[PRIMARY_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbmon[PRIMARY_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[SLAVE_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbmon[SLAVE_REGION]);
+	LCD_KIT_INFO("DISP_INFO->dbv_stat.pwon[FOLD_REGION]:%d\n",
+		DISP_INFO->dbv_stat.hbmon[FOLD_REGION]);
+	memcpy(hbmon_stat, DISP_INFO->dbv_stat.hbmon, hbmon_size);
+	memset(DISP_INFO->dbv_stat.hbmon, 0,
+		sizeof(DISP_INFO->dbv_stat.hbmon));
 }
 
 void clear_time_by_region(int region)
 {
 	struct timeval tmp;
 	do_gettimeofday(&tmp);
-	disp_info->dbv_stat.last_time[region] = tmp;
-	disp_info->dbv_stat.hbm_last_time[region] = tmp;
-	disp_info->dbv_stat.pwon_last_time[region] = tmp;
-	disp_info->dbv_stat.hbmon_last_time[region] = tmp;
+	DISP_INFO->dbv_stat.last_time[region] = tmp;
+	DISP_INFO->dbv_stat.hbm_last_time[region] = tmp;
+	DISP_INFO->dbv_stat.pwon_last_time[region] = tmp;
+	DISP_INFO->dbv_stat.hbmon_last_time[region] = tmp;
 }
 
 void lcd_set_dbv_stat_by_region(struct hisi_fb_data_type *hisifd,
@@ -2551,7 +2551,7 @@ void lcd_set_dbv_stat_by_region(struct hisi_fb_data_type *hisifd,
 void lcd_switch_region(struct hisi_fb_data_type *hisifd,
 	uint8_t curr_mode, uint8_t pre_mode)
 {
-	if (!disp_info->dbv_stat.support)
+	if (!DISP_INFO->dbv_stat.support)
 		return;
 	if (!hisifd) {
 		LCD_KIT_ERR("hisifd is null!\n");
@@ -2593,7 +2593,7 @@ int lcd_get_dbv_stat(struct hisi_fb_data_type *hisifd,
 {
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (!disp_info->dbv_stat.support)
+	if (!DISP_INFO->dbv_stat.support)
 		return LCD_KIT_OK;
 	if (!hisifd) {
 		LCD_KIT_ERR("hisifd is null\n");
@@ -2614,10 +2614,10 @@ int lcd_get_dbv_stat(struct hisi_fb_data_type *hisifd,
 	}
 	_lcd_get_dbv_stat(hisifd, param.dbv_acc, param.size_dbv_acc);
 	if (param.original_dbv_acc) {
-		memcpy(param.original_dbv_acc, disp_info->dbv_stat.ori_dbv,
+		memcpy(param.original_dbv_acc, DISP_INFO->dbv_stat.ori_dbv,
 			param.size_original_dbv_acc);
-		memset(disp_info->dbv_stat.ori_dbv, 0,
-			sizeof(disp_info->dbv_stat.ori_dbv));
+		memset(DISP_INFO->dbv_stat.ori_dbv, 0,
+			sizeof(DISP_INFO->dbv_stat.ori_dbv));
 	}
 	_lcd_get_hbm_stat(hisifd, param.hbm_acc, param.size_hbm_acc);
 	_lcd_get_pwon_stat(hisifd, param.screen_on_duration, param.size_screen_on_duration);
@@ -2717,9 +2717,9 @@ int lcd_kit_dsi_fifo_is_empty(const char __iomem *dsi_base)
 		pkg_status = inp32(dsi_base + MIPIDSI_CMD_PKT_STATUS_OFFSET);
 		phy_status = inp32(dsi_base + MIPIDSI_PHY_STATUS_OFFSET);
 		/* separate transmission */
-		if ((disp_info != NULL) && (disp_info->transmission.separate_support)) {
+		if ((DISP_INFO != NULL) && (DISP_INFO->transmission.separate_support)) {
 			if ((pkg_status & 0x1) == 0x1 && !(phy_status & 0x2) &&
-				(pkg_status & disp_info->transmission.separate_status_flag)) {
+				(pkg_status & DISP_INFO->transmission.separate_status_flag)) {
 				is_timeout = 0;
 				break;
 			}
@@ -2758,7 +2758,7 @@ static void lcd_kit_vesa_para_parse(struct device_node *np,
 	lcd_kit_parse_u32(np, "lcd-kit,vesa-slice-height",
 		&pinfo->vesa_dsc.slice_height, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,vesa-calc-mode",
-		&disp_info->calc_mode, 0);
+		&DISP_INFO->calc_mode, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,vesa-native-422",
 		&pinfo->vesa_dsc.native_422, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,vesa-dsc-version",
@@ -2770,13 +2770,13 @@ bool lcd_is_support_dfr(void)
 	int index;
 	struct lcd_kit_array_data *fps_timing = NULL;
 
-	if (disp_info->fps.support != FPS_CONFIG_EN ||
-		disp_info->fps.panel_support_fps_list.buf == NULL ||
-		disp_info->fps.panel_support_fps_list.cnt <= MIN_FPS_LIST)
+	if (DISP_INFO->fps.support != FPS_CONFIG_EN ||
+		DISP_INFO->fps.panel_support_fps_list.buf == NULL ||
+		DISP_INFO->fps.panel_support_fps_list.cnt <= MIN_FPS_LIST)
 		return false;
 	/* hisi interface current only support high fps switch */
 	for (index = LCD_FPS_SCENCE_60P; index < LCD_FPS_SCENCE_180; index++) {
-		fps_timing = &disp_info->fps.fps_dsi_timming[index];
+		fps_timing = &DISP_INFO->fps.fps_dsi_timming[index];
 		if (fps_timing->buf != NULL)
 			return true;
 	}
@@ -2787,10 +2787,10 @@ bool lcd_is_high_fps_state(struct hisi_fb_data_type *hisifd)
 {
 	struct hisi_panel_info *pinfo = NULL;
 
-	if (hisifd == NULL || disp_info == NULL)
+	if (hisifd == NULL || DISP_INFO == NULL)
 		return false;
 	pinfo = &(hisifd->panel_info);
-	if (disp_info->fps.fps_disable_dsi_clk_upt == FPS_UPDATE_ENABLE &&
+	if (DISP_INFO->fps.fps_disable_dsi_clk_upt == FPS_UPDATE_ENABLE &&
 		(pinfo->fps_updt > LCD_FPS_60 || pinfo->fps > LCD_FPS_60))
 		return true;
 	return false;
@@ -2802,15 +2802,15 @@ static void lcd_kit_fps_init(const struct device_node *np, struct hisi_panel_inf
 		/* For hwc get panel support fps capability, e.g. 0:60fps; 1:90fps; 2:120fps */
 		lcd_kit_parse_u32(np, "lcd-kit,fps-dfr-support-value",
 			&pinfo->dfr_support_value, 1);
-		pinfo->dfr_method = disp_info->fps.fps_switch_mode;
-		disp_info->fps.last_update_fps = LCD_FPS_60;
-		disp_info->fps.fps_can_update_flag = false;
-		if (disp_info->fps.fps_ifbc_type != IFBC_TYPE_NONE &&
+		pinfo->dfr_method = DISP_INFO->fps.fps_switch_mode;
+		DISP_INFO->fps.last_update_fps = LCD_FPS_60;
+		DISP_INFO->fps.fps_can_update_flag = false;
+		if (DISP_INFO->fps.fps_ifbc_type != IFBC_TYPE_NONE &&
 			pinfo->ifbc_type == IFBC_TYPE_NONE) {
 			pinfo->dynamic_dsc_support = FPS_UPDATE_ENABLE;
-			pinfo->dynamic_dsc_ifbc_type = disp_info->fps.fps_ifbc_type;
+			pinfo->dynamic_dsc_ifbc_type = DISP_INFO->fps.fps_ifbc_type;
 		}
-		if (disp_info->fps.fps_disable_dsi_clk_upt == FPS_UPDATE_ENABLE)
+		if (DISP_INFO->fps.fps_disable_dsi_clk_upt == FPS_UPDATE_ENABLE)
 			pinfo->dfr_constraint |= BIT(0);
 	}
 	pinfo->fps_updt_support = FPS_UPDATE_DISABLE;
@@ -3467,8 +3467,8 @@ void lcd_kit_pinfo_init(struct device_node *np, struct hisi_panel_info *pinfo)
 	if ((pinfo->bl_set_type == BL_SET_BY_BLPWM) &&
 		(pinfo->blpwm_input_disable == 0))
 		pinfo->blpwm_input_ena = 1;
-	pinfo->cascadeic_support = disp_info->cascade_ic.support;
-	pinfo->rgbw_support = disp_info->rgbw.support;
+	pinfo->cascadeic_support = DISP_INFO->cascade_ic.support;
+	pinfo->rgbw_support = DISP_INFO->rgbw.support;
 	pinfo->lcd_uninit_step_support = 1;
 	// change MHZ to HZ
 	pinfo->pxl_clk_rate = pinfo->pxl_clk_rate * 1000000UL;
@@ -3476,7 +3476,7 @@ void lcd_kit_pinfo_init(struct device_node *np, struct hisi_panel_info *pinfo)
 	// change MHZ to HZ
 	pinfo->mipi.max_tx_esc_clk = pinfo->mipi.max_tx_esc_clk * 1000000;
 	pinfo->panel_name = common_info->panel_name;
-	pinfo->board_version = disp_info->board_version;
+	pinfo->board_version = DISP_INFO->board_version;
 
 	pinfo->local_hbm_support = common_info->hbm.local_hbm_support;
 
@@ -3521,43 +3521,43 @@ void lcd_kit_pinfo_init(struct device_node *np, struct hisi_panel_info *pinfo)
 static int lcd_kit_panel_version_read(struct hisi_fb_data_type *hisifd)
 {
 	int ret;
-	if (disp_info->panel_version.enter_cmds.cmds != NULL) {
+	if (DISP_INFO->panel_version.enter_cmds.cmds != NULL) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->panel_version.enter_cmds);
+			&DISP_INFO->panel_version.enter_cmds);
 		if (ret)
 			return LCD_KIT_FAIL;
 	}
 	ret = lcd_kit_dsi_cmds_rx(hisifd,
-		(uint8_t *)disp_info->panel_version.read_value,
+		(uint8_t *)DISP_INFO->panel_version.read_value,
 		VERSION_VALUE_NUM_MAX - 1,
-		&disp_info->panel_version.cmds);
+		&DISP_INFO->panel_version.cmds);
 	if (ret)
 		return LCD_KIT_FAIL;
-	if (disp_info->panel_version.exit_cmds.cmds != NULL) {
+	if (DISP_INFO->panel_version.exit_cmds.cmds != NULL) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->panel_version.exit_cmds);
+			&DISP_INFO->panel_version.exit_cmds);
 		if (ret)
 			return LCD_KIT_FAIL;
 	}
-	if (disp_info->panel_version.secend_enter_cmds.cmds != NULL) {
+	if (DISP_INFO->panel_version.secend_enter_cmds.cmds != NULL) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->panel_version.secend_enter_cmds);
+			&DISP_INFO->panel_version.secend_enter_cmds);
 		if (ret)
 			return LCD_KIT_FAIL;
 	}
-	if (disp_info->panel_version.secend_cmds.cmds != NULL) {
+	if (DISP_INFO->panel_version.secend_cmds.cmds != NULL) {
 		ret = lcd_kit_dsi_cmds_rx(hisifd,
-			(uint8_t *)disp_info->panel_version.read_value +
-				(int)disp_info->panel_version.value_number -
-				disp_info->panel_version.secend_value_number,
+			(uint8_t *)DISP_INFO->panel_version.read_value +
+				(int)DISP_INFO->panel_version.value_number -
+				DISP_INFO->panel_version.secend_value_number,
 			VERSION_VALUE_NUM_MAX - 1,
-			&disp_info->panel_version.secend_cmds);
+			&DISP_INFO->panel_version.secend_cmds);
 		if (ret)
 			return LCD_KIT_FAIL;
 	}
-	if (disp_info->panel_version.secend_exit_cmds.cmds != NULL) {
+	if (DISP_INFO->panel_version.secend_exit_cmds.cmds != NULL) {
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->panel_version.secend_exit_cmds);
+			&DISP_INFO->panel_version.secend_exit_cmds);
 		if (ret)
 			return LCD_KIT_FAIL;
 	}
@@ -3576,21 +3576,21 @@ int lcd_kit_panel_version_init(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("read panel version cmd fail\n");
 		return LCD_KIT_FAIL;
 	}
-	for (i = 0; i < (int)disp_info->panel_version.version_number; i++) {
-		for (j = 0; j < (int)disp_info->panel_version.value_number; j++) {
+	for (i = 0; i < (int)DISP_INFO->panel_version.version_number; i++) {
+		for (j = 0; j < (int)DISP_INFO->panel_version.value_number; j++) {
 			LCD_KIT_INFO("read_value[%d]:0x%x\n", j,
-				disp_info->panel_version.read_value[j]);
+				DISP_INFO->panel_version.read_value[j]);
 			LCD_KIT_INFO("expected_value[%d].buf[%d]:0x%x\n", i, j,
-				disp_info->panel_version.value.arry_data[i].buf[j]);
-			if (disp_info->panel_version.read_value[j] !=
-				disp_info->panel_version.value.arry_data[i].buf[j])
+				DISP_INFO->panel_version.value.arry_data[i].buf[j]);
+			if (DISP_INFO->panel_version.read_value[j] !=
+				DISP_INFO->panel_version.value.arry_data[i].buf[j])
 				break;
 
-			if (j == ((int)disp_info->panel_version.value_number - 1)) {
+			if (j == ((int)DISP_INFO->panel_version.value_number - 1)) {
 				memcpy(hisifd->panel_info.lcd_panel_version, " VER:", strlen(" VER:") + 1);
 				strncat(hisifd->panel_info.lcd_panel_version,
-					disp_info->panel_version.lcd_version_name[i],
-					strlen(disp_info->panel_version.lcd_version_name[i]));
+					DISP_INFO->panel_version.lcd_version_name[i],
+					strlen(DISP_INFO->panel_version.lcd_version_name[i]));
 				LCD_KIT_INFO("Panel version is %s\n",
 					hisifd->panel_info.lcd_panel_version);
 				return LCD_KIT_OK;
@@ -3598,7 +3598,7 @@ int lcd_kit_panel_version_init(struct hisi_fb_data_type *hisifd)
 		}
 	}
 
-	if (i == disp_info->panel_version.version_number) {
+	if (i == DISP_INFO->panel_version.version_number) {
 		LCD_KIT_INFO("panel_version not find\n");
 		return LCD_KIT_FAIL;
 	}
@@ -3612,140 +3612,140 @@ void lcd_kit_parse_effect(struct device_node *np)
 
 	/* gamma calibration */
 	lcd_kit_parse_u32(np, "lcd-kit,gamma-cal-support",
-		&disp_info->gamma_cal.support, 0);
-	if (disp_info->gamma_cal.support)
+		&DISP_INFO->gamma_cal.support, 0);
+	if (DISP_INFO->gamma_cal.support)
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,gamma-cal-cmds",
 			"lcd-kit,gamma-cal-cmds-state",
-			&disp_info->gamma_cal.cmds);
+			&DISP_INFO->gamma_cal.cmds);
 	/* brightness and color uniform */
 	lcd_kit_parse_u32(np,
 		"lcd-kit,brightness-color-uniform-support",
-		&disp_info->oeminfo.brightness_color_uniform.support, 0);
-	if (disp_info->oeminfo.brightness_color_uniform.support)
+		&DISP_INFO->oeminfo.brightness_color_uniform.support, 0);
+	if (DISP_INFO->oeminfo.brightness_color_uniform.support)
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,brightness-color-cmds",
 			"lcd-kit,brightness-color-cmds-state",
-			&disp_info->oeminfo.brightness_color_uniform.brightness_color_cmds);
+			&DISP_INFO->oeminfo.brightness_color_uniform.brightness_color_cmds);
 	/* oem information */
 	lcd_kit_parse_u32(np, "lcd-kit,oem-info-support",
-		&disp_info->oeminfo.support, 0);
-	if (disp_info->oeminfo.support) {
+		&DISP_INFO->oeminfo.support, 0);
+	if (DISP_INFO->oeminfo.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,oem-barcode-2d-support",
-			&disp_info->oeminfo.barcode_2d.support, 0);
-		if (disp_info->oeminfo.barcode_2d.support) {
+			&DISP_INFO->oeminfo.barcode_2d.support, 0);
+		if (DISP_INFO->oeminfo.barcode_2d.support) {
 			lcd_kit_parse_u32(np,
 				"lcd-kit,oem-barcode-2d-block-num",
-				&disp_info->oeminfo.barcode_2d.block_num, 3);
+				&DISP_INFO->oeminfo.barcode_2d.block_num, 3);
 			lcd_kit_parse_dcs_cmds(np, "lcd-kit,barcode-2d-cmds",
 				"lcd-kit,barcode-2d-cmds-state",
-				&disp_info->oeminfo.barcode_2d.cmds);
+				&DISP_INFO->oeminfo.barcode_2d.cmds);
 		}
 	}
 	/* rgbw */
 	lcd_kit_parse_u32(np, "lcd-kit,rgbw-support",
-		&disp_info->rgbw.support, 0);
-	if (disp_info->rgbw.support) {
+		&DISP_INFO->rgbw.support, 0);
+	if (DISP_INFO->rgbw.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,rgbw-bl-max",
-			&disp_info->rgbw.rgbw_bl_max, 0);
+			&DISP_INFO->rgbw.rgbw_bl_max, 0);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-mode1-cmds",
 			"lcd-kit,rgbw-mode1-cmds-state",
-			&disp_info->rgbw.mode1_cmds);
+			&DISP_INFO->rgbw.mode1_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-mode2-cmds",
 			"lcd-kit,rgbw-mode2-cmds-state",
-			&disp_info->rgbw.mode2_cmds);
+			&DISP_INFO->rgbw.mode2_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-mode3-cmds",
 			"lcd-kit,rgbw-mode3-cmds-state",
-			&disp_info->rgbw.mode3_cmds);
+			&DISP_INFO->rgbw.mode3_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-mode4-cmds",
 			"lcd-kit,rgbw-mode4-cmds-state",
-			&disp_info->rgbw.mode4_cmds);
+			&DISP_INFO->rgbw.mode4_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-backlight-cmds",
 			"lcd-kit,rgbw-backlight-cmds-state",
-			&disp_info->rgbw.backlight_cmds);
+			&DISP_INFO->rgbw.backlight_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-saturation-cmds",
 			"lcd-kit,rgbw-saturation-cmds-state",
-			&disp_info->rgbw.saturation_ctrl_cmds);
+			&DISP_INFO->rgbw.saturation_ctrl_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-frame-gain-limit-cmds",
 			"lcd-kit,rgbw-frame-gain-limit-cmds-state",
-			&disp_info->rgbw.frame_gain_limit_cmds);
+			&DISP_INFO->rgbw.frame_gain_limit_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-frame-gain-speed-cmds",
 			"lcd-kit,rgbw-frame-gain-speed-cmds-state",
-			&disp_info->rgbw.frame_gain_speed_cmds);
+			&DISP_INFO->rgbw.frame_gain_speed_cmds);
 		lcd_kit_parse_dcs_cmds(np,
 			"lcd-kit,rgbw-color-distor-allowance-cmds",
 			"lcd-kit,rgbw-color-distor-allowance-cmds-state",
-			&disp_info->rgbw.color_distor_allowance_cmds);
+			&DISP_INFO->rgbw.color_distor_allowance_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-pixel-gain-limit-cmds",
 			"lcd-kit,rgbw-pixel-gain-limit-cmds-state",
-			&disp_info->rgbw.pixel_gain_limit_cmds);
+			&DISP_INFO->rgbw.pixel_gain_limit_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-pixel-gain-speed-cmds",
 			"lcd-kit,rgbw-pixel-gain-speed-cmds-state",
-			&disp_info->rgbw.pixel_gain_speed_cmds);
+			&DISP_INFO->rgbw.pixel_gain_speed_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,rgbw-pwm-gain-cmds",
 			"lcd-kit,rgbw-pwm-gain-cmds-state",
-			&disp_info->rgbw.pwm_gain_cmds);
+			&DISP_INFO->rgbw.pwm_gain_cmds);
 	}
 	/* demura */
 	ret = lcd_kit_parse_u32(np, "lcd-kit,demura-support",
-		&disp_info->demura.support, 0);
+		&DISP_INFO->demura.support, 0);
 	if (ret) {
 		LCD_KIT_INFO("of_property_read_u32:demura-support not find\n");
-		disp_info->demura.support = NOT_SUPPORT;
+		DISP_INFO->demura.support = NOT_SUPPORT;
 	}
-	if (disp_info->demura.support) {
+	if (DISP_INFO->demura.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-read-fir-cmds",
 			"lcd-kit,demura-read-fir-cmds-state",
-			&disp_info->demura.r_fir_cmds);
+			&DISP_INFO->demura.r_fir_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-read-con-cmds",
 			"lcd-kit,demura-read-con-cmds-state",
-			&disp_info->demura.r_con_cmds);
+			&DISP_INFO->demura.r_con_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-read-chksum-cmds",
 			"lcd-kit,demura-read-chksum-cmds-state",
-			&disp_info->demura.rr_chksum_cmds);
+			&DISP_INFO->demura.rr_chksum_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-rw-chksum-cmds",
 			"lcd-kit,demura-rw-chksum-cmds-state",
-			&disp_info->demura.rw_chksum_cmds);
+			&DISP_INFO->demura.rw_chksum_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi0-pre-cmds",
 			"lcd-kit,demura-dsi0-pre-cmds-state",
-			&disp_info->demura.d0_w_pre_cmds);
+			&DISP_INFO->demura.d0_w_pre_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi1-pre-cmds",
 			"lcd-kit,demura-dsi1-pre-cmds-state",
-			&disp_info->demura.d1_w_pre_cmds);
+			&DISP_INFO->demura.d1_w_pre_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi0-w-fir-cmds",
 			"lcd-kit,demura-dsi0-w-fir-cmds-state",
-			&disp_info->demura.d0_w_fir_cmds);
+			&DISP_INFO->demura.d0_w_fir_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi1-w-fir-cmds",
 			"lcd-kit,demura-dsi1-w-fir-cmds-state",
-			&disp_info->demura.d1_w_fir_cmds);
+			&DISP_INFO->demura.d1_w_fir_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi0-w-con-cmds",
 			"lcd-kit,demura-dsi1-w-con-cmds-state",
-			&disp_info->demura.d0_w_con_cmds);
+			&DISP_INFO->demura.d0_w_con_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi1-w-con-cmds",
 			"lcd-kit,demura-dsi1-w-con-cmds-state",
-			&disp_info->demura.d1_w_con_cmds);
+			&DISP_INFO->demura.d1_w_con_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi0-w-end-cmds",
 			"lcd-kit,demura-dsi0-w-end-cmds-state",
-			&disp_info->demura.d0_w_end_cmds);
+			&DISP_INFO->demura.d0_w_end_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi1-w-end-cmds",
 			"lcd-kit,demura-dsi1-w-end-cmds-state",
-			&disp_info->demura.d1_w_end_cmds);
+			&DISP_INFO->demura.d1_w_end_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi0-w-irdrop-cmds",
 			"lcd-kit,demura-dsi0-w-irdrop-cmds-state",
-			&disp_info->demura.d0_w_ird_cmds);
+			&DISP_INFO->demura.d0_w_ird_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-dsi1-w-irdrop-cmds",
 			"lcd-kit,demura-dsi1-w-irdrop-cmds-state",
-			&disp_info->demura.d1_w_ird_cmds);
+			&DISP_INFO->demura.d1_w_ird_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-d0-w-ird-pre-cmds",
 			"lcd-kit,demura-d0-w-ird-pre-cmds-state",
-			&disp_info->demura.d0_w_ird_pre_cmds);
+			&DISP_INFO->demura.d0_w_ird_pre_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-d1-w-ird-pre-cmds",
 			"lcd-kit,demura-d1-w-ird-pre-cmds-state",
-			&disp_info->demura.d1_w_ird_pre_cmds);
+			&DISP_INFO->demura.d1_w_ird_pre_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-d0-w-ird-end-cmds",
 			"lcd-kit,demura-d0-w-ird-end-cmds-state",
-			&disp_info->demura.d0_w_ird_end_cmds);
+			&DISP_INFO->demura.d0_w_ird_end_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,demura-d1-w-ird-end-cmds",
 			"lcd-kit,demura-d1-w-ird-end-cmds-state",
-			&disp_info->demura.d1_w_ird_end_cmds);
+			&DISP_INFO->demura.d1_w_ird_end_cmds);
 	}
 }
 
@@ -3753,42 +3753,42 @@ static void lcd_kit_parse_fps_gamma(struct device_node *np)
 {
 	/* fps gamma code */
 	lcd_kit_parse_u32(np, "lcd-kit,fps-gamma-support",
-		&disp_info->fps_gamma.support, 0);
+		&DISP_INFO->fps_gamma.support, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-gamma-length-support",
-		&disp_info->fps_gamma.check_length_update_support, 0);
+		&DISP_INFO->fps_gamma.check_length_update_support, 0);
 
-	if (disp_info->fps_gamma.support) {
+	if (DISP_INFO->fps_gamma.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,flash-gamma-total-length",
-			&disp_info->fps_gamma.flash_gamma_total_length,
+			&DISP_INFO->fps_gamma.flash_gamma_total_length,
 			FLASH_GAMMA_TOTAL_LEN_MAX);
-		if (disp_info->fps_gamma.flash_gamma_total_length <=
+		if (DISP_INFO->fps_gamma.flash_gamma_total_length <=
 			GAMMA_TOTAL_LEN ||
-			disp_info->fps_gamma.flash_gamma_total_length >
+			DISP_INFO->fps_gamma.flash_gamma_total_length >
 			FLASH_GAMMA_TOTAL_LEN_MAX) {
 				LCD_KIT_ERR("invalid flash length!");
-				disp_info->fps_gamma.support = 0;
+				DISP_INFO->fps_gamma.support = 0;
 				return;
 		}
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,otp-gamma-read-cmds",
 			"lcd-kit,otp-gamma-read-cmds-state",
-			&disp_info->fps_gamma.read_otp);
+			&DISP_INFO->fps_gamma.read_otp);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,flash-gamma-read-enter"
 			"-cmds", "lcd-kit,flash-gamma-read-enter-cmds-state",
-			&disp_info->fps_gamma.read_flash_enter);
+			&DISP_INFO->fps_gamma.read_flash_enter);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,flash-gamma-read-cmds",
 			"lcd-kit,flash-gamma-read-cmds-state",
-			&disp_info->fps_gamma.read_flash);
+			&DISP_INFO->fps_gamma.read_flash);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,flash-gamma-read-exit-cmds",
 			"lcd-kit,flash-gamma-read-exit-cmds-state",
-			&disp_info->fps_gamma.read_flash_exit);
+			&DISP_INFO->fps_gamma.read_flash_exit);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,gamma-write-cmds",
 			"lcd-kit,gamma-write-cmds-state",
-			&disp_info->fps_gamma.write_60hz);
+			&DISP_INFO->fps_gamma.write_60hz);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,gamma-write-cmds",
 			"lcd-kit,gamma-write-cmds-state",
-			&disp_info->fps_gamma.write_90hz);
+			&DISP_INFO->fps_gamma.write_90hz);
 		lcd_kit_parse_u32(np, "lcd-kit,fps-gamma-swap-support",
-			&disp_info->fps_gamma.swap_support, 0);
+			&DISP_INFO->fps_gamma.swap_support, 0);
 	}
 }
 
@@ -3796,11 +3796,11 @@ static void lcd_kit_parse_frame_odd_even(struct device_node *node)
 {
 	/* odd even frame code */
 	lcd_kit_parse_u32(node, "lcd-kit,frame-odd-even-support",
-		&disp_info->frame_odd_even.support, 0);
-	if (disp_info->frame_odd_even.support)
+		&DISP_INFO->frame_odd_even.support, 0);
+	if (DISP_INFO->frame_odd_even.support)
 		lcd_kit_parse_dcs_cmds(node, "lcd-kit,odd-even-read-cmds",
 			"lcd-kit,odd-even-read-cmds-state",
-			&disp_info->frame_odd_even.read);
+			&DISP_INFO->frame_odd_even.read);
 }
 
 void lcd_kit_parse_fps(struct device_node *np)
@@ -3808,53 +3808,53 @@ void lcd_kit_parse_fps(struct device_node *np)
 	int index;
 
 	lcd_kit_parse_u32(np, "lcd-kit,fps-switch-test-support",
-		&disp_info->fps.fps_switch_support, 0);
+		&DISP_INFO->fps.fps_switch_support, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-effect-delay-frame-cnt",
-		&disp_info->fps.fps_effective_frame_count, 0);
+		&DISP_INFO->fps.fps_effective_frame_count, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-send-dfr-cmd-in-vactive",
-		&disp_info->fps.fps_send_dfr_cmd_in_vactive, 0);
+		&DISP_INFO->fps.fps_send_dfr_cmd_in_vactive, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-switch-mode",
-		&disp_info->fps.fps_switch_mode, 1);
+		&DISP_INFO->fps.fps_switch_mode, 1);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-need-high-60-mode",
-		&disp_info->fps.fps_need_high_60, 0);
+		&DISP_INFO->fps.fps_need_high_60, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-need-extend-cmd",
-		&disp_info->fps.fps_need_extend_cmds, 0);
+		&DISP_INFO->fps.fps_need_extend_cmds, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-ifbc-type",
-		&disp_info->fps.fps_ifbc_type, 0);
+		&DISP_INFO->fps.fps_ifbc_type, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-disable-dsi-clk-upt",
-		&disp_info->fps.fps_disable_dsi_clk_upt, 0);
+		&DISP_INFO->fps.fps_disable_dsi_clk_upt, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-high-mode-switch-no-tx-cmd",
-		&disp_info->fps.hfps_switch_no_need_cmd, 0);
+		&DISP_INFO->fps.hfps_switch_no_need_cmd, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-check-after-power-on-delay",
-		&disp_info->fps.fps_check_panel_on_delay, 0);
+		&DISP_INFO->fps.fps_check_panel_on_delay, 0);
 	index = LCD_FPS_SCENCE_60P;
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-60-cmds",
 		"lcd-kit,fps-to-60-cmds-state",
-		&disp_info->fps.fps_to_cmds[index]);
+		&DISP_INFO->fps.fps_to_cmds[index]);
 	lcd_kit_parse_array_data(np, "lcd-kit,fps-60-dsi-timming",
-		&disp_info->fps.fps_dsi_timming[index]);
+		&DISP_INFO->fps.fps_dsi_timming[index]);
 	index = LCD_FPS_SCENCE_60;
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-normal-60-cmds",
 		"lcd-kit,fps-to-normal-60-cmds-state",
-		&disp_info->fps.fps_to_cmds[index]);
+		&DISP_INFO->fps.fps_to_cmds[index]);
 	lcd_kit_parse_array_data(np, "lcd-kit,fps-normal-60-dsi-timming",
-		&disp_info->fps.fps_dsi_timming[index]);
+		&DISP_INFO->fps.fps_dsi_timming[index]);
 	index = LCD_FPS_SCENCE_90;
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-90-cmds",
-		"lcd-kit,fps-to-90-cmds-state", &disp_info->fps.fps_to_cmds[index]);
+		"lcd-kit,fps-to-90-cmds-state", &DISP_INFO->fps.fps_to_cmds[index]);
 	lcd_kit_parse_array_data(np, "lcd-kit,fps-90-dsi-timming",
-		&disp_info->fps.fps_dsi_timming[index]);
+		&DISP_INFO->fps.fps_dsi_timming[index]);
 	index = LCD_FPS_SCENCE_120;
 	lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-120-cmds",
-		"lcd-kit,fps-to-120-cmds-state", &disp_info->fps.fps_to_cmds[index]);
+		"lcd-kit,fps-to-120-cmds-state", &DISP_INFO->fps.fps_to_cmds[index]);
 	lcd_kit_parse_array_data(np, "lcd-kit,fps-120-dsi-timming",
-		&disp_info->fps.fps_dsi_timming[index]);
+		&DISP_INFO->fps.fps_dsi_timming[index]);
 	lcd_kit_parse_array_data(np, "lcd-kit,fps-switch-order",
-		&disp_info->fps.fps_switch_order);
+		&DISP_INFO->fps.fps_switch_order);
 	lcd_kit_parse_array_data(np, "lcd-kit,panel-support-fps-list",
-		&disp_info->fps.panel_support_fps_list);
+		&DISP_INFO->fps.panel_support_fps_list);
 	lcd_kit_parse_u32(np, "lcd-kit,fps-need_update_on",
-		&disp_info->fps.fps_need_update_on, 0);
+		&DISP_INFO->fps.fps_need_update_on, 0);
 	// parse fps gamma if needed
 	lcd_kit_parse_fps_gamma(np);
 	// parse frame odd even if needed
@@ -3864,12 +3864,12 @@ void lcd_kit_parse_fps(struct device_node *np)
 static void lcd_kit_parse_amoled_power_ic_check(struct device_node *np)
 {
 	lcd_kit_parse_u32(np, "lcd-kit,amoled-power-ic-check-support",
-		&disp_info->amoled_power_ic_check.support, 0);
-	if (disp_info->amoled_power_ic_check.support) {
+		&DISP_INFO->amoled_power_ic_check.support, 0);
+	if (DISP_INFO->amoled_power_ic_check.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,amoled-power-ic-check-gpio",
-			&disp_info->amoled_power_ic_check.gpio, 0);
+			&DISP_INFO->amoled_power_ic_check.gpio, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,amoled-power-ic-check-expect-value",
-			&disp_info->amoled_power_ic_check.expect_value, 0);
+			&DISP_INFO->amoled_power_ic_check.expect_value, 0);
 	}
 }
 
@@ -3877,14 +3877,14 @@ static void lcd_kit_parse_panel_irc(struct device_node *np)
 {
 	/* panel irc code */
 	lcd_kit_parse_u32(np, "lcd-kit,irc-support",
-		&disp_info->panel_irc.support, 0);
-	if (disp_info->panel_irc.support) {
+		&DISP_INFO->panel_irc.support, 0);
+	if (DISP_INFO->panel_irc.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,irc-on-cmds",
 			"lcd-kit,irc-on-cmds-state",
-			&disp_info->panel_irc.on);
+			&DISP_INFO->panel_irc.on);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,irc-off-cmds",
 			"lcd-kit,irc-off-cmds-state",
-			&disp_info->panel_irc.off);
+			&DISP_INFO->panel_irc.off);
 	}
 }
 
@@ -3894,142 +3894,142 @@ void lcd_kit_parse_util(struct device_node *np)
 	int i, ret;
 
 	/* alpm */
-	lcd_kit_parse_u32(np, "lcd-kit,alpm-support", &disp_info->alpm.support, 0);
-	if (disp_info->alpm.support) {
+	lcd_kit_parse_u32(np, "lcd-kit,alpm-support", &DISP_INFO->alpm.support, 0);
+	if (DISP_INFO->alpm.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,alpm-low-light-cmds",
 			"lcd-kit,alpm-low-light-cmds-state",
-			&disp_info->alpm.low_light_cmds);
+			&DISP_INFO->alpm.low_light_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,alpm-off-cmds",
 			"lcd-kit,alpm-off-cmds-state",
-			&disp_info->alpm.off_cmds);
+			&DISP_INFO->alpm.off_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,alpm-exit-cmds",
 			"lcd-kit,alpm-exit-cmds-state",
-			&disp_info->alpm.exit_cmds);
+			&DISP_INFO->alpm.exit_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,alpm-high-light-cmds",
 			"lcd-kit,alpm-high-light-cmds-state",
-			&disp_info->alpm.high_light_cmds);
+			&DISP_INFO->alpm.high_light_cmds);
 	}
 	/* quickly sleep out */
 	lcd_kit_parse_u32(np, "lcd-kit,quickly-sleep-out-support",
-		&disp_info->quickly_sleep_out.support, 0);
-	if (disp_info->quickly_sleep_out.support)
+		&DISP_INFO->quickly_sleep_out.support, 0);
+	if (DISP_INFO->quickly_sleep_out.support)
 		lcd_kit_parse_u32(np,
 			"lcd-kit,quickly-sleep-out-interval",
-			&disp_info->quickly_sleep_out.interval, 0);
+			&DISP_INFO->quickly_sleep_out.interval, 0);
 	/* fps */
 	lcd_kit_parse_u32(np, "lcd-kit,fps-support",
-		&disp_info->fps.support, 0);
-	if (disp_info->fps.support) {
+		&DISP_INFO->fps.support, 0);
+	if (DISP_INFO->fps.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-dfr-disable-cmds",
 			"lcd-kit,fps-dfr-disable-cmds-state",
-			&disp_info->fps.dfr_disable_cmds);
+			&DISP_INFO->fps.dfr_disable_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-dfr-enable-cmds",
 			"lcd-kit,fps-dfr-enable-cmds-state",
-			&disp_info->fps.dfr_enable_cmds);
+			&DISP_INFO->fps.dfr_enable_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-30-cmds",
 			"lcd-kit,fps-to-30-cmds-state",
-			&disp_info->fps.fps_to_30_cmds);
+			&DISP_INFO->fps.fps_to_30_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,fps-to-60-cmds",
 			"lcd-kit,fps-to-60-cmds-state",
-			&disp_info->fps.fps_to_60_cmds);
+			&DISP_INFO->fps.fps_to_60_cmds);
 		lcd_kit_parse_fps(np);
 	}
 
 	lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-support",
-				&disp_info->pwrkey_press.support, 0);
-	if (disp_info->pwrkey_press.support) {
+				&DISP_INFO->pwrkey_press.support, 0);
+	if (DISP_INFO->pwrkey_press.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-rst-addr",
-				&disp_info->pwrkey_press.rst_addr, 0);
+				&DISP_INFO->pwrkey_press.rst_addr, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-pwroff-flag",
-				&disp_info->pwrkey_press.power_off_flag, 0);
+				&DISP_INFO->pwrkey_press.power_off_flag, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-esd-status",
-				&disp_info->pwrkey_press.esd_status, 0);
+				&DISP_INFO->pwrkey_press.esd_status, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-rst-time1",
-				&disp_info->pwrkey_press.configtime1, 0);
+				&DISP_INFO->pwrkey_press.configtime1, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-rst-time2",
-				&disp_info->pwrkey_press.configtime2, 0);
+				&DISP_INFO->pwrkey_press.configtime2, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-rst-time3",
-				&disp_info->pwrkey_press.configtime3, 0);
+				&DISP_INFO->pwrkey_press.configtime3, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pwrkey-press-rst-time4",
-				&disp_info->pwrkey_press.configtime4, 0);
+				&DISP_INFO->pwrkey_press.configtime4, 0);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,quick-power-off-cmds",
 				"lcd-kit,quick-power-off-cmds-state",
-				&disp_info->pwrkey_press.cmds);
+				&DISP_INFO->pwrkey_press.cmds);
 	}
 	lcd_kit_parse_u32(np, "lcd-kit,pwr-off-time-optimize-support",
-		&disp_info->pwr_off_optimize_info.support, 0);
-	if (disp_info->pwr_off_optimize_info.support)
+		&DISP_INFO->pwr_off_optimize_info.support, 0);
+	if (DISP_INFO->pwr_off_optimize_info.support)
 		lcd_kit_parse_u32(np, "lcd-kit,pwr-off-time-work-delay",
-			&disp_info->pwr_off_optimize_info.delay_time, 0);
+			&DISP_INFO->pwr_off_optimize_info.delay_time, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,cascade-ic-support",
-				&disp_info->cascade_ic.support, 0);
-	if (disp_info->cascade_ic.support) {
+				&DISP_INFO->cascade_ic.support, 0);
+	if (DISP_INFO->cascade_ic.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,cascade-ic-region-a-cmds",
 				"lcd-kit,cascade-ic-region-a-cmds-state",
-				&disp_info->cascade_ic.region_a_cmds);
+				&DISP_INFO->cascade_ic.region_a_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,cascade-ic-region-b-cmds",
 				"lcd-kit,cascade-ic-region-b-cmds-state",
-				&disp_info->cascade_ic.region_b_cmds);
+				&DISP_INFO->cascade_ic.region_b_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,cascade-ic-region-ab-cmds",
 				"lcd-kit,cascade-ic-region-ab-cmds-state",
-				&disp_info->cascade_ic.region_ab_cmds);
+				&DISP_INFO->cascade_ic.region_ab_cmds);
 		lcd_kit_parse_dcs_cmds(np,
 				"lcd-kit,cascade-ic-region-ab-fold-cmds",
 				"lcd-kit,cascade-ic-region-ab-fold-cmds-state",
-				&disp_info->cascade_ic.region_ab_fold_cmds);
+				&DISP_INFO->cascade_ic.region_ab_fold_cmds);
 	}
 	/* panel version */
 	lcd_kit_parse_u32(np, "lcd-kit,panel-version-support",
-		&disp_info->panel_version.support, 0);
-	if (disp_info->panel_version.support) {
+		&DISP_INFO->panel_version.support, 0);
+	if (DISP_INFO->panel_version.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-version-enter-cmds",
 			"lcd-kit,panel-version-enter-cmds-state",
-			&disp_info->panel_version.enter_cmds);
+			&DISP_INFO->panel_version.enter_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-version-cmds",
 			"lcd-kit,panel-version-cmds-state",
-			&disp_info->panel_version.cmds);
+			&DISP_INFO->panel_version.cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-version-exit-cmds",
 			"lcd-kit,panel-version-exit-cmds-state",
-			&disp_info->panel_version.exit_cmds);
+			&DISP_INFO->panel_version.exit_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-secend-version-enter-cmds",
 			"lcd-kit,panel-secend-version-enter-cmds-state",
-			&disp_info->panel_version.secend_enter_cmds);
+			&DISP_INFO->panel_version.secend_enter_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-secend-version-cmds",
 			"lcd-kit,panel-secend-version-cmds-state",
-			&disp_info->panel_version.secend_cmds);
+			&DISP_INFO->panel_version.secend_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,panel-secend-version-exit-cmds",
 			"lcd-kit,panel-secend-version-exit-cmds-state",
-			&disp_info->panel_version.secend_exit_cmds);
-		disp_info->panel_version.value_number =
-			disp_info->panel_version.cmds.cmds->dlen -
-			disp_info->panel_version.cmds.cmds->payload[1];
-		if (disp_info->panel_version.secend_cmds.cmds != NULL) {
-			disp_info->panel_version.secend_value_number =
-				disp_info->panel_version.secend_cmds.cmds->dlen -
-				disp_info->panel_version.secend_cmds.cmds->payload[1];
-			disp_info->panel_version.value_number += disp_info->panel_version.secend_value_number;
+			&DISP_INFO->panel_version.secend_exit_cmds);
+		DISP_INFO->panel_version.value_number =
+			DISP_INFO->panel_version.cmds.cmds->dlen -
+			DISP_INFO->panel_version.cmds.cmds->payload[1];
+		if (DISP_INFO->panel_version.secend_cmds.cmds != NULL) {
+			DISP_INFO->panel_version.secend_value_number =
+				DISP_INFO->panel_version.secend_cmds.cmds->dlen -
+				DISP_INFO->panel_version.secend_cmds.cmds->payload[1];
+			DISP_INFO->panel_version.value_number += DISP_INFO->panel_version.secend_value_number;
 			LCD_KIT_INFO("value_num=%d secend_value_number = %d\n",
-				disp_info->panel_version.value_number,
-				disp_info->panel_version.secend_value_number);
+				DISP_INFO->panel_version.value_number,
+				DISP_INFO->panel_version.secend_value_number);
 		}
 		lcd_kit_parse_arrays_data(np, "lcd-kit,panel-version-value",
-			&disp_info->panel_version.value,
-			disp_info->panel_version.value_number);
-		disp_info->panel_version.version_number =
-			disp_info->panel_version.value.cnt;
+			&DISP_INFO->panel_version.value,
+			DISP_INFO->panel_version.value_number);
+		DISP_INFO->panel_version.version_number =
+			DISP_INFO->panel_version.value.cnt;
 
 		LCD_KIT_INFO("Panel version value_num=%d version_num = %d\n",
-			disp_info->panel_version.value_number,
-			disp_info->panel_version.version_number);
-		if (disp_info->panel_version.version_number > 0) {
+			DISP_INFO->panel_version.value_number,
+			DISP_INFO->panel_version.version_number);
+		if (DISP_INFO->panel_version.version_number > 0) {
 			ret = lcd_kit_parse_string_array(np,
 				"lcd-kit,panel-version",
 				(const char **)&name[0],
-				disp_info->panel_version.version_number);
+				DISP_INFO->panel_version.version_number);
 			if (ret < 0)
 				LCD_KIT_INFO("Panel version parse fail\n");
-			for (i = 0; i < (int)disp_info->panel_version.version_number; i++) {
-				strncpy(disp_info->panel_version.lcd_version_name[i],
+			for (i = 0; i < (int)DISP_INFO->panel_version.version_number; i++) {
+				strncpy(DISP_INFO->panel_version.lcd_version_name[i],
 					name[i], LCD_PANEL_VERSION_SIZE - 1);
 				LCD_KIT_INFO("Panel version name[%d] = %s\n",
 					i, name[i]);
@@ -4038,98 +4038,98 @@ void lcd_kit_parse_util(struct device_node *np)
 	}
 	/* gamma otp */
 	lcd_kit_parse_u32(np, "lcd-kit,otp-gamma-support",
-		&disp_info->otp_gamma.support, 0);
-	if (disp_info->otp_gamma.support) {
+		&DISP_INFO->otp_gamma.support, 0);
+	if (DISP_INFO->otp_gamma.support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,elvss-cmds",
 			"lcd-kit,elvss-cmds-state",
-			&disp_info->otp_gamma.elvss_cmds);
+			&DISP_INFO->otp_gamma.elvss_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,otp-gamma-cmds",
 			"lcd-kit,otp-gamma-cmds-state",
-			&disp_info->otp_gamma.gamma_cmds);
+			&DISP_INFO->otp_gamma.gamma_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,otp-gray-cmds",
 			"lcd-kit,otp-gray-cmds-state",
-			&disp_info->otp_gamma.gray_cmds);
+			&DISP_INFO->otp_gamma.gray_cmds);
 	}
 	/* separate transmission */
 	lcd_kit_parse_u32(np, "lcd-kit,separate-transmission-support",
-		&disp_info->transmission.separate_support, 0);
-	if (disp_info->transmission.separate_support)
+		&DISP_INFO->transmission.separate_support, 0);
+	if (DISP_INFO->transmission.separate_support)
 		lcd_kit_parse_u32(np, "lcd-kit,separate-transmission-status-flag",
-			&disp_info->transmission.separate_status_flag, 0x8000);
+			&DISP_INFO->transmission.separate_status_flag, 0x8000);
 	/* pcd errflag */
 	lcd_kit_parse_u32(np, "lcd-kit,pcd-errflag-check-support",
-		&disp_info->pcd_errflag.pcd_errflag_check_support, 0);
+		&DISP_INFO->pcd_errflag.pcd_errflag_check_support, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,gpio-pcd",
-		&disp_info->pcd_errflag.gpio_pcd, 0);
+		&DISP_INFO->pcd_errflag.gpio_pcd, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,gpio-errflag",
-		&disp_info->pcd_errflag.gpio_errflag, 0);
+		&DISP_INFO->pcd_errflag.gpio_errflag, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,pcd-cmds-support",
-		&disp_info->pcd_errflag.pcd_support, 0);
+		&DISP_INFO->pcd_errflag.pcd_support, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,pcd-power-on-support",
-		&disp_info->pcd_errflag.power_on_support, 1);
-	if (disp_info->pcd_errflag.pcd_support) {
+		&DISP_INFO->pcd_errflag.power_on_support, 1);
+	if (DISP_INFO->pcd_errflag.pcd_support) {
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,start-pcd-check-cmds",
 			"lcd-kit,start-pcd-check-cmds-state",
-			&disp_info->pcd_errflag.start_pcd_check_cmds);
+			&DISP_INFO->pcd_errflag.start_pcd_check_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,pcd-read-cmds",
 			"lcd-kit,pcd-read-cmds-state",
-			&disp_info->pcd_errflag.read_pcd_cmds);
+			&DISP_INFO->pcd_errflag.read_pcd_cmds);
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,switch-page-cmds",
 			"lcd-kit,switch-page-cmds-state",
-			&disp_info->pcd_errflag.switch_page_cmds);
+			&DISP_INFO->pcd_errflag.switch_page_cmds);
 		lcd_kit_parse_array_data(np, "lcd-kit,pcd-check-reg-value",
-			&disp_info->pcd_errflag.pcd_value);
+			&DISP_INFO->pcd_errflag.pcd_value);
 		lcd_kit_parse_u32(np, "lcd-kit,pcd-check-reg-value-compare-mode",
-			&disp_info->pcd_errflag.pcd_value_compare_mode, 0);
+			&DISP_INFO->pcd_errflag.pcd_value_compare_mode, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,exp-pcd-mask",
-			&disp_info->pcd_errflag.exp_pcd_mask, 0);
+			&DISP_INFO->pcd_errflag.exp_pcd_mask, 0);
 		lcd_kit_parse_u32(np, "lcd-kit,pcd-det-num",
-			&disp_info->pcd_errflag.pcd_det_num, 1);
+			&DISP_INFO->pcd_errflag.pcd_det_num, 1);
 	}
 	lcd_kit_parse_u32(np, "lcd-kit,errflag-cmds-support",
-		&disp_info->pcd_errflag.errflag_support, 0);
-	if (disp_info->pcd_errflag.errflag_support)
+		&DISP_INFO->pcd_errflag.errflag_support, 0);
+	if (DISP_INFO->pcd_errflag.errflag_support)
 		lcd_kit_parse_dcs_cmds(np, "lcd-kit,errflag-read-cmds",
 			"lcd-kit,errflag-read-cmds-state",
-			&disp_info->pcd_errflag.read_errflag_cmds);
+			&DISP_INFO->pcd_errflag.read_errflag_cmds);
 	lcd_kit_parse_u32(np, "lcd-kit,dbv-stat-support",
-		&disp_info->dbv_stat.support, 0);
+		&DISP_INFO->dbv_stat.support, 0);
 	/* power ic error flag check */
 	lcd_kit_parse_amoled_power_ic_check(np);
 	/* elvdd detect */
 	lcd_kit_parse_u32(np, "lcd-kit,elvdd-detect-support",
-		&disp_info->elvdd_detect.support, 0);
-	if (disp_info->elvdd_detect.support) {
+		&DISP_INFO->elvdd_detect.support, 0);
+	if (DISP_INFO->elvdd_detect.support) {
 		lcd_kit_parse_u32(np, "lcd-kit,elvdd-detect-type",
-			&disp_info->elvdd_detect.detect_type, 0);
-		if (disp_info->elvdd_detect.detect_type ==
+			&DISP_INFO->elvdd_detect.detect_type, 0);
+		if (DISP_INFO->elvdd_detect.detect_type ==
 			ELVDD_MIPI_CHECK_MODE) {
 			lcd_kit_parse_dcs_cmds(np, "lcd-kit,elvdd-detect-cmds",
 				"lcd-kit,elvdd-detect-cmds-state",
-				&disp_info->elvdd_detect.cmds);
+				&DISP_INFO->elvdd_detect.cmds);
 		} else {
 			lcd_kit_parse_u32(np,
 				"lcd-kit,elvdd-detect-gpio",
-				&disp_info->elvdd_detect.detect_gpio, 0);
+				&DISP_INFO->elvdd_detect.detect_gpio, 0);
 			lcd_kit_parse_u32(np,
 				"lcd-kit,elvdd-detect-gpio-type",
-				&disp_info->elvdd_detect.detect_gpio_type, 0);
+				&DISP_INFO->elvdd_detect.detect_gpio_type, 0);
 		}
 		lcd_kit_parse_u32(np,
 			"lcd-kit,elvdd-detect-value",
-			&disp_info->elvdd_detect.exp_value, 0);
+			&DISP_INFO->elvdd_detect.exp_value, 0);
 		lcd_kit_parse_u32(np,
 			"lcd-kit,elvdd-value-mask",
-			&disp_info->elvdd_detect.exp_value_mask, 0);
+			&DISP_INFO->elvdd_detect.exp_value_mask, 0);
 		lcd_kit_parse_u32(np,
 			"lcd-kit,elvdd-delay",
-			&disp_info->elvdd_detect.delay, 0);
+			&DISP_INFO->elvdd_detect.delay, 0);
 	}
 	lcd_kit_parse_panel_irc(np);
 	lcd_kit_parse_u32(np, "lcd-kit,panel-dual-dsi-send-sync",
-		&disp_info->dual_dsi_send_sync, 0);
+		&DISP_INFO->dual_dsi_send_sync, 0);
 	lcd_kit_parse_u32(np, "lcd-kit,mipi-cmd-always-lp-mode",
-		&disp_info->mipi_cmds_always_run_in_lpmode, 0);
+		&DISP_INFO->mipi_cmds_always_run_in_lpmode, 0);
 }
 
 void lcd_kit_parse_dt(struct device_node *np)
@@ -4166,9 +4166,9 @@ int lcd_kit_start_pcd_check(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("hisifd is NULL\n");
 		return -1;
 	}
-	if (disp_info->pcd_errflag.pcd_support)
+	if (DISP_INFO->pcd_errflag.pcd_support)
 		ret = lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->pcd_errflag.start_pcd_check_cmds);
+			&DISP_INFO->pcd_errflag.start_pcd_check_cmds);
 	return ret;
 }
 
@@ -4178,7 +4178,7 @@ static int lcd_kit_judge_pcd_dmd(uint8_t *read_val,
 	int i;
 	uint32_t exp_pcd_value_mask;
 
-	exp_pcd_value_mask = disp_info->pcd_errflag.exp_pcd_mask;
+	exp_pcd_value_mask = DISP_INFO->pcd_errflag.exp_pcd_mask;
 	if (read_val == NULL || expect_val == NULL) {
 		LCD_KIT_ERR("read_val or expect_val is NULL\n");
 		return LCD_KIT_FAIL;
@@ -4265,7 +4265,7 @@ void lcd_kit_ddic_lv_detect_dmd_report(
 void pcd_test(uint8_t *result, uint8_t *pcd_read_val)
 {
 	error_num_pcd++;
-	if (error_num_pcd >= disp_info->pcd_errflag.pcd_det_num) {
+	if (error_num_pcd >= DISP_INFO->pcd_errflag.pcd_det_num) {
 		LCD_KIT_INFO("pcd detect num = %d\n", error_num_pcd);
 		lcd_kit_pcd_dmd_report(pcd_read_val, LCD_KIT_PCD_SIZE);
 		*result |= PCD_FAIL;
@@ -4287,16 +4287,16 @@ int lcd_kit_check_pcd_errflag_check(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("hisifd is NULL\n");
 		return -1;
 	}
-	if (disp_info->pcd_errflag.pcd_support) {
+	if (DISP_INFO->pcd_errflag.pcd_support) {
 		(void)lcd_kit_dsi_cmds_tx(hisifd,
-			&disp_info->pcd_errflag.switch_page_cmds);
+			&DISP_INFO->pcd_errflag.switch_page_cmds);
 		ret = lcd_kit_dsi_cmds_rx(hisifd, read_pcd, LCD_KIT_PCD_SIZE - 1,
-			&disp_info->pcd_errflag.read_pcd_cmds);
-		expect_value = disp_info->pcd_errflag.pcd_value.buf;
-		expect_value_cnt = disp_info->pcd_errflag.pcd_value.cnt;
+			&DISP_INFO->pcd_errflag.read_pcd_cmds);
+		expect_value = DISP_INFO->pcd_errflag.pcd_value.buf;
+		expect_value_cnt = disp_DISP_INFOinfo->pcd_errflag.pcd_value.cnt;
 		if (ret == LCD_KIT_OK) {
 			if (lcd_kit_judge_pcd_dmd(read_pcd, expect_value, expect_value_cnt,
-				disp_info->pcd_errflag.pcd_value_compare_mode) == LCD_KIT_OK) {
+				DISP_INFO->pcd_errflag.pcd_value_compare_mode) == LCD_KIT_OK) {
 				pcd_test(&result, read_pcd);
 			} else {
 				LCD_KIT_INFO("pcd detect num = %d\n", error_num_pcd);
@@ -4310,10 +4310,10 @@ int lcd_kit_check_pcd_errflag_check(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_INFO("pcd check result is %d\n", result);
 	}
 	/* Reserve interface, redevelop when needed */
-	if (disp_info->pcd_errflag.errflag_support) {
+	if (DISP_INFO->pcd_errflag.errflag_support) {
 		(void)lcd_kit_dsi_cmds_rx(hisifd, read_errflag,
 			LCD_KIT_ERRFLAG_SIZE - 1,
-			&disp_info->pcd_errflag.read_errflag_cmds);
+			&DISP_INFO->pcd_errflag.read_errflag_cmds);
 		for (i = 0; i < LCD_KIT_ERRFLAG_SIZE; i++) {
 			if (read_errflag[i] != 0) {
 				result |= ERRFLAG_FAIL;
@@ -4349,12 +4349,12 @@ static int lcd_kit_gpio_pcd_errflag_read(const int gpio_no, int *read_value)
 
 int lcd_kit_gpio_pcd_errflag_check(void)
 {
-	int pcd_gpio = disp_info->pcd_errflag.gpio_pcd;
-	int errflag_gpio = disp_info->pcd_errflag.gpio_errflag;
+	int pcd_gpio = DISP_INFO->pcd_errflag.gpio_pcd;
+	int errflag_gpio = DISP_INFO->pcd_errflag.gpio_errflag;
 	int pcd_gpio_value = 0;
 	int errflag_gpio_value = 0;
 
-	if (!disp_info->pcd_errflag.pcd_errflag_check_support) {
+	if (!DISP_INFO->pcd_errflag.pcd_errflag_check_support) {
 		LCD_KIT_INFO("no support pcd_errflag check, default pass\n");
 		return PCD_ERRFLAG_SUCCESS;
 	}
@@ -4390,20 +4390,20 @@ int lcd_kit_gpio_pcd_errflag_check(void)
 int lcd_kit_read_gamma(struct hisi_fb_data_type *hisifd, uint8_t *read_value,
 	int len)
 {
-	if (disp_info == NULL) {
-		LCD_KIT_ERR("disp_info null pointer\n");
+	if (DISP_INFO == NULL) {
+		LCD_KIT_ERR("DISP_INFO null pointer\n");
 		return LCD_KIT_FAIL;
 	}
-	if (disp_info->gamma_cal.cmds.cmds == NULL) {
+	if (DISP_INFO->gamma_cal.cmds.cmds == NULL) {
 		LCD_KIT_ERR("gamma_cal cmds null pointer\n");
 		return LCD_KIT_FAIL;
 	}
 	/* change addr to dsi cmds */
-	disp_info->gamma_cal.cmds.cmds->payload[1] = (disp_info->gamma_cal.addr >> 8) & 0xff;
-	disp_info->gamma_cal.cmds.cmds->payload[0] = disp_info->gamma_cal.addr & 0xff;
-	disp_info->gamma_cal.cmds.cmds->dlen = disp_info->gamma_cal.length;
+	DISP_INFO->gamma_cal.cmds.cmds->payload[1] = (DISP_INFO->gamma_cal.addr >> 8) & 0xff;
+	DISP_INFO->gamma_cal.cmds.cmds->payload[0] = DISP_INFO->gamma_cal.addr & 0xff;
+	DISP_INFO->gamma_cal.cmds.cmds->dlen = DISP_INFO->gamma_cal.length;
 	lcd_kit_dsi_cmds_rx(hisifd, read_value, len - 1,
-		&disp_info->gamma_cal.cmds);
+		&DISP_INFO->gamma_cal.cmds);
 	return LCD_KIT_OK;
 }
 
@@ -4567,9 +4567,9 @@ static void parse_fps_func_switch(struct hisi_panel_info *pinfo,
 	if (strncmp("fps_func_switch:", command, strlen("fps_func_switch:")))
 		return;
 	if (command[strlen("fps_func_switch:")] == '0')
-		disp_info->fps.support = 0;
+		DISP_INFO->fps.support = 0;
 	else
-		disp_info->fps.support = 1;
+		DISP_INFO->fps.support = 1;
 }
 
 static void parse_blpwm_input_ena(struct hisi_panel_info *pinfo,
@@ -4629,7 +4629,7 @@ static void parse_ddic_rgbw(struct hisi_panel_info *pinfo, const char *command)
 		return;
 	if (command[strlen("ddic_rgbw_support:")] == '0') {
 		pinfo->rgbw_support = 0;
-		disp_info->rgbw.support = 0;
+		DISP_INFO->rgbw.support = 0;
 	} else {
 		pinfo->rgbw_support = 1;
 	}
@@ -4677,7 +4677,7 @@ static int lcd_kit_get_project_id(char *buff)
 		LCD_KIT_ERR("buff is null\n");
 		return LCD_KIT_FAIL;
 	}
-	strncpy(buff, disp_info->project_id.id, strlen(disp_info->project_id.id));
+	strncpy(buff, DISP_INFO->project_id.id, strlen(DISP_INFO->project_id.id));
 	return LCD_KIT_OK;
 }
 
@@ -4685,8 +4685,8 @@ int lcd_kit_get_online_status(void)
 {
 	int status = LCD_ONLINE;
 
-	if (!strncmp(disp_info->compatible, LCD_KIT_DEFAULT_PANEL,
-		strlen(disp_info->compatible)))
+	if (!strncmp(DISP_INFO->compatible, LCD_KIT_DEFAULT_PANEL,
+		strlen(DISP_INFO->compatible)))
 		/* panel is online */
 		status = LCD_OFFLINE;
 	LCD_KIT_INFO("status = %d\n", status);
@@ -4862,11 +4862,11 @@ void lcd_kit_set_mipi_link(struct hisi_fb_data_type *hisifd,
 		LCD_KIT_INFO("lowpower stage, can not set!\n");
 		return;
 	}
-	if (disp_info->mipi_cmds_always_run_in_lpmode)
+	if (DISP_INFO->mipi_cmds_always_run_in_lpmode)
 		link_state = LCD_KIT_DSI_LP_MODE;
 	dsi_base_addr = lcd_kit_get_dsi_base_addr(hisifd);
 	if (is_mipi_cmd_panel(hisifd)) {
-		if (!disp_info->mipi_cmds_always_run_in_lpmode) {
+		if (!DISP_INFO->mipi_cmds_always_run_in_lpmode) {
 			/* wait fifo empty */
 			(void)lcd_kit_dsi_fifo_is_empty(dsi_base_addr);
 			if (is_dual_mipi_panel(hisifd))
@@ -4957,22 +4957,22 @@ int lcd_kit_set_otp_gamma(struct hisi_fb_data_type *hisifd)
 		return LCD_KIT_FAIL;
 	}
 	if (!first_set) {
-		cmds = disp_info->otp_gamma.gamma_cmds.cmds;
+		cmds = DISP_INFO->otp_gamma.gamma_cmds.cmds;
 		for (i = 0; i < (GAMMA_MAX - GAMMA_HEAD_LEN); i++) {
-			temp = disp_info->otp_gamma.gamma[i + GAMMA_HEAD_LEN];
+			temp = DISP_INFO->otp_gamma.gamma[i + GAMMA_HEAD_LEN];
 			if (cmds && cmds->payload)
 				cmds->payload[i + 1] = temp;
 		}
 		first_set = true;
 	}
 	/* adjust elvss */
-	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->otp_gamma.elvss_cmds);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->otp_gamma.elvss_cmds);
 	if (ret) {
 		LCD_KIT_ERR("send adjust elvss cmd error\n");
 		return ret;
 	}
 	/* send otp gamma */
-	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->otp_gamma.gamma_cmds);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->otp_gamma.gamma_cmds);
 	if (ret) {
 		LCD_KIT_ERR("send otp gamma cmd error\n");
 		return ret;
@@ -4993,18 +4993,18 @@ int lcd_kit_set_otp_gray(struct hisi_fb_data_type *hisifd)
 	}
 	if (!first_set) {
 		/* get gray cmds:0xC7 */
-		cmds = disp_info->otp_gamma.gray_cmds.cmds;
+		cmds = DISP_INFO->otp_gamma.gray_cmds.cmds;
 		cmds++;
 		/* set up gray cmds */
 		for (i = 0; i < (GAMMA_MAX - GAMMA_HEAD_LEN); i++) {
-			temp = disp_info->otp_gamma.gamma[i + GAMMA_HEAD_LEN];
+			temp = DISP_INFO->otp_gamma.gamma[i + GAMMA_HEAD_LEN];
 			if (cmds && cmds->payload)
 				cmds->payload[i + 1] = temp;
 		}
 		first_set = true;
 	}
 	/* send otp gray */
-	ret = lcd_kit_dsi_cmds_tx(hisifd, &disp_info->otp_gamma.gray_cmds);
+	ret = lcd_kit_dsi_cmds_tx(hisifd, &DISP_INFO->otp_gamma.gray_cmds);
 	if (ret) {
 		LCD_KIT_ERR("send otp gray cmd error\n");
 		return ret;
@@ -5017,7 +5017,7 @@ int lcd_kit_write_otp_gamma(u8 *buf)
 	int ret = LCD_KIT_OK;
 	struct hisi_fb_data_type *hisifd = NULL;
 
-	if (!disp_info->otp_gamma.support) {
+	if (!DISP_INFO->otp_gamma.support) {
 		LCD_KIT_INFO("not support otp gamma\n");
 		return ret;
 	}
@@ -5039,7 +5039,7 @@ int lcd_kit_write_otp_gamma(u8 *buf)
 		return ret;
 	}
 	/* copy to gamma buffer */
-	memcpy(disp_info->otp_gamma.gamma, buf, GAMMA_MAX);
+	memcpy(DISP_INFO->otp_gamma.gamma, buf, GAMMA_MAX);
 	down(&hisifd->blank_sem);
 	if (!hisifd->panel_power_on) {
 		LCD_KIT_ERR("panel is power off\n");
@@ -5357,10 +5357,10 @@ static int lcd_kit_get_sn_code(void)
 			pinfo->sn_code_length = LCD_KIT_SN_CODE_LENGTH;
 			return LCD_KIT_OK;
 		}
-		if (disp_info && disp_info->oeminfo.barcode_2d.support) {
+		if (DISP_INFO && DISP_INFO->oeminfo.barcode_2d.support) {
 			ret = lcd_kit_dsi_cmds_rx(hisifd, read_value,
 				OEM_INFO_SIZE_MAX,
-				&disp_info->oeminfo.barcode_2d.cmds);
+				&DISP_INFO->oeminfo.barcode_2d.cmds);
 			if (ret != 0) {
 				LCD_KIT_ERR("get sn_code error!\n");
 				return LCD_KIT_FAIL;
@@ -5406,16 +5406,16 @@ static void lcd_kit_fps_dsc_config(struct device_node *np,
 	struct hisi_panel_info *pinfo)
 {
 	if (pinfo->ifbc_type != IFBC_TYPE_NONE ||
-		disp_info->fps.support != FPS_CONFIG_EN ||
-		disp_info->fps.fps_ifbc_type == IFBC_TYPE_NONE)
+		DISP_INFO->fps.support != FPS_CONFIG_EN ||
+		DISP_INFO->fps.fps_ifbc_type == IFBC_TYPE_NONE)
 		return;
-	lcd_kit_compress_config(np, disp_info->fps.fps_ifbc_type, pinfo);
+	lcd_kit_compress_config(np, DISP_INFO->fps.fps_ifbc_type, pinfo);
 }
 
 static void lcd_kit_effect_para_is_from_dts(struct device_node *np)
 {
 	lcd_kit_parse_u8(np, "lcd-kit,parse-effect-from-dts",
-		&disp_info->effect_para_is_from_dts, 0);
+		&DISP_INFO->effect_para_is_from_dts, 0);
 }
 
 static void lcd_kit_effect_get_data_from_dts(struct device_node *np,
@@ -5501,24 +5501,24 @@ int lcd_kit_utils_init(struct device_node *np, struct hisi_panel_info *pinfo)
 	lcd_kit_ops_register(&g_lcd_ops);
 	/* effect init */
 	lcd_kit_effect_para_is_from_dts(np);
-	if (disp_info->effect_para_is_from_dts) {
+	if (DISP_INFO->effect_para_is_from_dts) {
 		LCD_KIT_INFO("get effect para from dts\n");
 		lcd_kit_effect_get_data_from_dts(np, pinfo);
 	} else {
 		LCD_KIT_INFO("get effect para from head file\n");
 		lcd_kit_effect_get_data(lcd_kit_get_panel_id(
-			disp_info->product_id, disp_info->compatible),
+			DISP_INFO->product_id, DISP_INFO->compatible),
 			pinfo);
 	}
 	/* Read gamma data from shared memory */
-	if (disp_info->gamma_cal.support)
+	if (DISP_INFO->gamma_cal.support)
 		hisifb_update_gm_from_reserved_mem(pinfo->gamma_lut_table_R,
 			pinfo->gamma_lut_table_G, pinfo->gamma_lut_table_B,
 			pinfo->igm_lut_table_R,	pinfo->igm_lut_table_G,
 			pinfo->igm_lut_table_B);
 
-	if (disp_info->oeminfo.support) {
-		if (disp_info->oeminfo.brightness_color_uniform.support) {
+	if (DISP_INFO->oeminfo.support) {
+		if (DISP_INFO->oeminfo.brightness_color_uniform.support) {
 			lcd_kit_read_calicolordata_from_share_mem(&g_brightness_color_oeminfo);
 			lcd_kit_set_actual_bl_max_nit();
 		}

@@ -345,6 +345,8 @@ static int wlad_init_irq(struct wlad_device_info *di, struct device_node *np)
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, wlad_irq_work);
+
 	if (power_gpio_config_interrupt(np,
 		"gpio_int", "wlc_int", &di->gpio_int, &di->irq_int))
 		return -EINVAL;
@@ -361,7 +363,6 @@ static int wlad_init_irq(struct wlad_device_info *di, struct device_node *np)
 	}
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, wlad_irq_work);
 
 	return 0;
 }

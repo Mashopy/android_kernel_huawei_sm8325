@@ -5,6 +5,8 @@ obj-$(CONFIG_LCD_KIT_QCOM) 	+= lcd_kit_drm_panel.o
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= lcd_kit_pinctrl.o
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= bias/
 obj-$(CONFIG_LCD_KIT_QCOM) 	+= backlight/
+obj-$(CONFIG_LCD_KIT_QCOM)	+= hybrid/
+obj-$(CONFIG_LCD_KIT_QCOM)	+= crop/
 
 ifneq ($(TARGET_BUILD_VARIANT),user)
 EXTRA_CFLAGS += -DLCD_KIT_DEBUG_ENABLE
@@ -19,6 +21,8 @@ EXTRA_CFLAGS +=-I$(srctree)/drivers/staging/android \
 		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/include \
 		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/adapt \
 		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/src/backlight \
+		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/src/hybrid \
+		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/src/crop \
 		-I$(srctree)/include/drm \
 		-I$(srctree)/include/uapi/drm \
 		-I$(srctree)/drivers/gpu/drm \
@@ -28,3 +32,7 @@ EXTRA_CFLAGS +=-I$(srctree)/drivers/staging/android \
 		-I$(srctree)/techpack/display/include/uapi/display \
 		-I$(srctree)/drivers/clk/qcom \
 		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/common/displayengine/include
+
+ifeq ($(CONFIG_MATTING_ALGO_TASK),y)
+EXTRA_CFLAGS += -I$(srctree)/../../vendor/huawei/extra/kernel/drivers/sensor/ext_inputhub/matting_algo_task
+endif

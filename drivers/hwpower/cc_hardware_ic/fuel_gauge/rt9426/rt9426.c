@@ -43,6 +43,16 @@ HWLOG_REGIST();
 #define CC_THRESHOLD               450
 #define NODE_NAME_MAX              20
 
+#define WORK_INTERVAL_SLOW         60000 /* 60s */
+#define WORK_INTERVAL_FAST         20000 /* 20s */
+#define WORK_CAPACITY_HIGH         95
+#define WORK_TIME_FOR_FCC_INIT     8000 /* 8s */
+#define RT9426_DEFAULT_NV_VALUE    0x0
+#define RT9426_DEFAULT_MOD_RATIO   2
+#define RT9426_FCC_PERCENT_BASE    100
+#define RT9426_MODIFY_FCC_MIN      100
+#define RT9426_BATT_REMOVE_CYCLE   2
+
 struct rt9426_fc_setting {
 	int fc_th;
 	int fc_ith;
@@ -74,6 +84,7 @@ struct rt9426_platform_data {
 	int ffc_vterm; /* hex for register */
 	int non_ffc_vterm; /* hex for register */
 	int dynamic_change_iterm_en;
+	int dynamic_change_iterm_disabled_in_dc;
 	int fc_low_curr_vdelta;
 	int fc_low_curr_idelta;
 	int fc_low_curr_cnt;
@@ -134,7 +145,11 @@ struct rt9426_platform_data {
 
 	struct glc_temp_comp_data glc_data;
 	int ground_loop_comp_en;
+	int ir_comp_en;
+	int compensation_r;
 	u32 thirdparty_ffc_buck_para_flag;
+	int support_fcc_modify;
+	int fcc_modify_ratio;
 };
 
 struct rt9426_chip {
@@ -168,6 +183,12 @@ struct rt9426_chip {
 	int v_gain;
 	int ocv_index;
 	int lowtemp_edv;
+	int last_fcc;
+	int mod_fcc;
+	int work_interval;
+	int skip_cycle_debug;
+	struct delayed_work fcc_monitor_work;
+	struct delayed_work fcc_init_work;
 };
 
 struct rt9426_display_data {
@@ -734,10 +755,10 @@ static int rt9426_get_log_head(char *buffer, int size, void *dev_data)
 
 	if (di->pdata->ic_role == RT9426_IC_TYPE_MAIN)
 		snprintf(buffer, size,
-			"    Temp   Vbat   Ibat   AIbat   Rm   Soc   Fcc   flag2   flag3   addr_70   ");
+			"Temp   Vbat   Ibat   AIbat   Rm     Soc    Fcc    flag2   flag3   addr_70   ");
 	else
 		snprintf(buffer, size,
-			"   Temp1  Vbat1  Ibat1  AIbat1  Rm1  Soc1  Fcc1   flag2_1 flag3_1 addr_70_1 ");
+			"Temp1  Vbat1  Ibat1  AIbat1  Rm1    Soc1   Fcc1   flag2_1 flag3_1 addr_70_1 ");
 
 	return 0;
 }
@@ -792,7 +813,7 @@ static int rt9426_dump_log_data(char *buffer, int size, void *dev_data)
 	flag3 = rt9426_reg_read_word(di->i2c, RT9426_REG_FLAG3);
 	addr_70 = rt9426_reg_read_word(di->i2c, RT9426_REG_UN_FLT_SOC);
 
-	snprintf(buffer, size, "    %-7d%-7d%-7d%-7d%-7d%-5d%-5d%-5x%-5x%-5x",
+	snprintf(buffer, size, "%-7d%-7d%-7d%-8d%-7d%-7d%-7d%-8x%-8x%-10x",
 		g_dis_data.temp, g_dis_data.vbat, g_dis_data.ibat,
 		g_dis_data.avg_ibat, g_dis_data.rm, g_dis_data.soc,
 		g_dis_data.fcc, flag2, flag3, addr_70);
@@ -999,6 +1020,12 @@ static void rt9426_dynamic_change_term_setting(struct rt9426_chip *chip,
 	if (!chip || !ndata)
 		return;
 
+	if (chip->pdata->dynamic_change_iterm_disabled_in_dc &&
+		ndata->dc_mode) {
+		dev_info(chip->dev, "disable iterm set in dc mode");
+		return;
+	}
+
 	/* handling dynamic iterm setting only when charging */
 	regval = rt9426_reg_read_word(chip->i2c, RT9426_REG_FLAG1);
 	if (regval & BIT(0))
@@ -1108,6 +1135,15 @@ static void rt9426_adjust_fcc_learning_rate(struct rt9426_chip *chip)
 	}
 }
 
+static int rt9426_support_fcc_modify(struct rt9426_chip *chip)
+{
+	if (chip->pdata->support_fcc_modify &&
+		(chip->pdata->ic_role == RT9426_IC_TYPE_MAIN))
+		return 1;
+
+	return 0;
+}
+
 static int rt9426_event_notifier_call(struct notifier_block *nb,
 	unsigned long event, void *data)
 {
@@ -1124,6 +1160,17 @@ static int rt9426_event_notifier_call(struct notifier_block *nb,
 		break;
 	case POWER_NE_CHARGING_START:
 		chip->pdata->fc_low_curr_cnt = 0;
+		if (rt9426_support_fcc_modify(chip)) {
+			hwlog_info("charge start event\n");
+			queue_delayed_work(system_power_efficient_wq, &chip->fcc_monitor_work,
+				msecs_to_jiffies(chip->work_interval));
+		}
+		break;
+	case POWER_NE_CHARGING_STOP:
+		if (rt9426_support_fcc_modify(chip)) {
+			hwlog_info("charge stop event\n");
+			cancel_delayed_work_sync(&chip->fcc_monitor_work);
+		}
 		break;
 	default:
 		return NOTIFY_OK;
@@ -2315,6 +2362,7 @@ static struct device_attribute rt9426_fuelgauge_attrs[] = {
 	rt9426_attr(CALIB_VOLTAGE),
 	rt9426_attr(CALIB_FACTOR),
 	rt9426_attr(FORCE_SHUTDOWN),
+	rt9426_attr(skip_cycle),
 };
 
 enum {
@@ -2356,12 +2404,13 @@ enum {
 	CALIB_VOLTAGE,
 	CALIB_FACTOR,
 	FORCE_SHUTDOWN,
+	SKIP_CYCLE,
 };
 
 static ssize_t rt9426_show_attrs(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-	struct rt9426_chip *chip = dev_get_drvdata(dev->parent);
+	struct rt9426_chip *chip = dev_get_drvdata(dev);
 	const ptrdiff_t offset = attr - rt9426_fuelgauge_attrs;
 	int i = 0;
 
@@ -2392,6 +2441,9 @@ static ssize_t rt9426_show_attrs(struct device *dev,
 		i = scnprintf(buf, PAGE_SIZE, "%d\n", rt9426_get_volt_by_conversion(chip));
 		rt9426_exit_calibration_mode(chip);
 		break;
+	case SKIP_CYCLE:
+		i = scnprintf(buf, PAGE_SIZE, "%d\n", chip->skip_cycle_debug);
+		break;
 	default:
 		i = -EINVAL;
 		break;
@@ -2402,7 +2454,7 @@ static ssize_t rt9426_show_attrs(struct device *dev,
 static ssize_t rt9426_store_attrs(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct rt9426_chip *chip = dev_get_drvdata(dev->parent);
+	struct rt9426_chip *chip = dev_get_drvdata(dev);
 	const ptrdiff_t offset = attr - rt9426_fuelgauge_attrs;
 	int ret;
 	int x;
@@ -2808,6 +2860,13 @@ static ssize_t rt9426_store_attrs(struct device *dev,
 		ret = x ? rt9426_enter_shutdown_mode(chip) : rt9426_exit_shutdown_mode(chip);
 		if (ret)
 			return ret;
+		ret = count;
+		break;
+	case SKIP_CYCLE:
+		if (kstrtoint(buf, 0, &x) || x < 0 || x > 1)
+			return -EINVAL;
+
+		chip->skip_cycle_debug = x;
 		ret = count;
 		break;
 	default:
@@ -3632,6 +3691,8 @@ static void rt9426_parse_iterm_setting(struct device *dev, struct device_node *n
 		&pdata->fc_delta_ith_for_spd_th, RT9426_FC_DELTA_ITH_FOR_SPD_TH);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "rt,dynamic_change_iterm_en",
 		&pdata->dynamic_change_iterm_en, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "rt,dynamic_change_iterm_disabled_in_dc",
+		&pdata->dynamic_change_iterm_disabled_in_dc, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "rt,fcc_lr_adjust_en",
 		&pdata->fcc_lr_adjust_en, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "rt,fcc_lr_cycle_th",
@@ -3812,6 +3873,10 @@ static int rt9426_parse_dt(struct device *dev, struct rt9426_platform_data *pdat
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "rt_config_ver",
 		&pdata->rt_config_ver, RT9426_DRIVER_VER);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "support_fcc_modify",
+		&pdata->support_fcc_modify, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "fcc_modify_ratio",
+		&pdata->fcc_modify_ratio, RT9426_DEFAULT_MOD_RATIO);
 
 	pdata->force_use_aux_cali_para =
 		of_property_read_bool(np, "force_use_aux_cali_para");
@@ -3838,6 +3903,10 @@ static int rt9426_parse_dt(struct device *dev, struct rt9426_platform_data *pdat
 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "thirdparty_ffc_buck_para_flag",
 		&pdata->thirdparty_ffc_buck_para_flag, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ir_comp_en",
+		&pdata->ir_comp_en, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "compensation_r",
+		&pdata->compensation_r, 0);
 
 	return rt9426_parse_sub_param(dev, pdata);
 }
@@ -3940,11 +4009,20 @@ static int rt9426_read_battery_soc(void *dev_data)
 static int rt9426_read_battery_vol(void *dev_data)
 {
 	struct rt9426_chip *chip = dev_data;
+	int cur, vol;
 
 	if (!chip)
 		return 0;
 
-	return rt9426_get_display_data(chip, RT9426_DISPLAY_VBAT);
+	vol = rt9426_get_display_data(chip, RT9426_DISPLAY_VBAT);
+	if (chip->pdata->ir_comp_en) {
+		cur = rt9426_get_display_data(chip, RT9426_DISPLAY_IBAT);
+		vol -= cur * chip->pdata->compensation_r / POWER_UV_PER_MV;
+		dev_info(chip->dev, "vbatt_comp=%d, cur=%d, compr=%d\n",
+			vol, cur, chip->pdata->compensation_r);
+	}
+
+	return vol;
 }
 
 static int rt9426_read_battery_current(void *dev_data)
@@ -3967,12 +4045,30 @@ static int rt9426_read_battery_avg_current(void *dev_data)
 	return rt9426_get_display_data(chip, RT9426_DISPLAY_AVG_IBAT);
 }
 
-static int rt9426_read_battery_fcc(void *dev_data)
+static int rt9426_get_battery_modify_fcc(struct rt9426_chip *chip)
+{
+	int mod_fcc;
+	int design_fcc = rt9426_get_display_data(chip, RT9426_DISPLAY_DISIGN_FCC);
+	int reg_fcc = rt9426_get_display_data(chip, RT9426_DISPLAY_FCC);
+
+	mod_fcc = reg_fcc + design_fcc * chip->pdata->fcc_modify_ratio / RT9426_FCC_PERCENT_BASE;
+	if ((mod_fcc > design_fcc) || (mod_fcc <= 0)) {
+		dev_notice(chip->dev, "mod fcc invalid, mod_fcc=%d\n", mod_fcc);
+		mod_fcc = design_fcc;
+	}
+
+	return mod_fcc;
+}
+
+static int rt9426_get_battery_fcc(void *dev_data)
 {
 	struct rt9426_chip *chip = dev_data;
 
 	if (!chip)
 		return 0;
+
+	if (rt9426_support_fcc_modify(chip))
+		return chip->mod_fcc;
 
 	return rt9426_get_display_data(chip, RT9426_DISPLAY_FCC);
 }
@@ -4116,7 +4212,7 @@ static struct coul_interface_ops rt9426_ops = {
 	.get_battery_current = rt9426_read_battery_current,
 	.get_battery_avg_current = rt9426_read_battery_avg_current,
 	.get_battery_temperature = rt9426_read_battery_temperature,
-	.get_battery_fcc = rt9426_read_battery_fcc,
+	.get_battery_fcc = rt9426_get_battery_fcc,
 	.get_battery_cycle = rt9426_read_battery_cycle,
 	.set_battery_low_voltage = rt9426_set_battery_low_voltage,
 	.set_battery_last_capacity = rt9426_set_last_capacity,
@@ -4136,7 +4232,7 @@ static struct coul_interface_ops rt9426_aux_ops = {
 	.get_battery_current = rt9426_read_battery_current,
 	.get_battery_avg_current = rt9426_read_battery_avg_current,
 	.get_battery_temperature = rt9426_read_battery_temperature,
-	.get_battery_fcc = rt9426_read_battery_fcc,
+	.get_battery_fcc = rt9426_get_battery_fcc,
 	.get_battery_cycle = rt9426_read_battery_cycle,
 	.set_battery_low_voltage = rt9426_set_battery_low_voltage,
 	.set_battery_last_capacity = rt9426_set_last_capacity,
@@ -4253,8 +4349,8 @@ static int rt9426_enable_cali_mode(int enable, void *dev_data)
 
 static struct coul_cali_ops rt9426_cali_ops = {
 	.dev_name = "aux",
-	.get_current = rt9426_get_calibration_curr,
-	.get_voltage = rt9426_get_calibration_vol,
+	.get_cali_current = rt9426_get_calibration_curr,
+	.get_cali_voltage = rt9426_get_calibration_vol,
 	.set_current_offset = rt9426_set_current_offset,
 	.set_current_gain = rt9426_set_current_gain,
 	.set_voltage_gain = rt9426_set_voltage_gain,
@@ -4264,8 +4360,8 @@ static struct coul_cali_ops rt9426_cali_ops = {
 /* main battery gauge use aux calibration data for compatible */
 static struct coul_cali_ops rt9426_aux_cali_ops = {
 	.dev_name = "main",
-	.get_current = rt9426_get_calibration_curr,
-	.get_voltage = rt9426_get_calibration_vol,
+	.get_cali_current = rt9426_get_calibration_curr,
+	.get_cali_voltage = rt9426_get_calibration_vol,
 	.set_current_gain = rt9426_set_current_gain,
 	.set_voltage_gain = rt9426_set_voltage_gain,
 	.set_cali_mode = rt9426_enable_cali_mode,
@@ -4348,6 +4444,125 @@ static int rt9426_irq_init(struct rt9426_chip *chip)
 	return ret;
 }
 
+static int rt9426_read_fcc_nv(struct rt9426_chip *chip)
+{
+	struct hw_coul_nv_info nv_info;
+
+	memset(&nv_info, RT9426_DEFAULT_NV_VALUE, sizeof(nv_info));
+	if (power_nv_read(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info))) {
+		dev_notice(chip->dev, "nv read fail\n");
+		return 0;
+	}
+	dev_notice(chip->dev, "cycle=%d, io_s=%d, nv_fcc=%d\n",
+		nv_info.cycle_count, nv_info.io_status, nv_info.fcc);
+
+	return nv_info.fcc;
+}
+
+static void rt9426_save_fcc_nv(struct rt9426_chip *chip, int fcc)
+{
+	struct hw_coul_nv_info nv_info;
+
+	dev_notice(chip->dev, "need save nv fcc=%d\n", fcc);
+
+	memset(&nv_info, RT9426_DEFAULT_NV_VALUE, sizeof(nv_info));
+	if (power_nv_read(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info))) {
+		dev_notice(chip->dev, "nv read fail\n");
+		return;
+	}
+
+	nv_info.fcc = fcc;
+
+	if (power_nv_write(POWER_NV_HWCOUL, &nv_info, sizeof(nv_info)))
+		dev_notice(chip->dev, "nv write fail\n");
+	dev_notice(chip->dev, "nv save succ\n");
+}
+
+static void rt9426_update_modify_fcc(struct rt9426_chip *chip)
+{
+	int cycle = rt9426_get_cyccnt(chip);
+
+	if (!chip->skip_cycle_debug && cycle < RT9426_MODIFY_FCC_MIN) {
+		dev_notice(chip->dev, "cycle is low and no need modify, cycle=%d\n", cycle);
+		return;
+	}
+
+	chip->mod_fcc = rt9426_get_battery_modify_fcc(chip);
+	dev_notice(chip->dev, "update modify fcc=%d\n", chip->mod_fcc);
+	/* save mod fcc to nv */
+	rt9426_save_fcc_nv(chip, chip->mod_fcc);
+}
+
+static void rt9426_fcc_init_work(struct work_struct *work)
+{
+	int reg_fcc;
+	int nv_fcc;
+	int design_fcc;
+	int cycle;
+	struct rt9426_chip *chip = container_of(work, struct rt9426_chip,
+		fcc_init_work.work);
+
+	reg_fcc = rt9426_get_display_data(chip, RT9426_DISPLAY_FCC);
+	design_fcc = rt9426_get_display_data(chip, RT9426_DISPLAY_DISIGN_FCC);
+	cycle = rt9426_get_cyccnt(chip);
+	chip->last_fcc = reg_fcc;
+
+	/* need reset fcc' if battery have changed */
+	if ((cycle <= RT9426_BATT_REMOVE_CYCLE) &&
+		power_platform_is_battery_changed()) {
+		chip->mod_fcc = reg_fcc;
+		dev_notice(chip->dev, "battery removed, reset fcc=%d\n", chip->mod_fcc);
+		/* save mod_fcc to nv */
+		rt9426_save_fcc_nv(chip, chip->mod_fcc);
+		return;
+	}
+
+	/* read mod_fcc from nv */
+	nv_fcc = rt9426_read_fcc_nv(chip);
+	if ((nv_fcc > 0) && (nv_fcc <= design_fcc))
+		chip->mod_fcc = nv_fcc;
+	else
+		chip->mod_fcc = reg_fcc;
+
+	dev_notice(chip->dev, "mod_fcc=%d, nv_fcc=%d, reg_fcc=%d, dc_fcc=%d\n",
+		chip->mod_fcc, nv_fcc, reg_fcc, design_fcc);
+}
+
+static void rt9426_set_work_interval(struct rt9426_chip *chip, int capacity)
+{
+	if (capacity > WORK_CAPACITY_HIGH)
+		chip->work_interval = WORK_INTERVAL_FAST;
+	else
+		chip->work_interval = WORK_INTERVAL_SLOW;
+}
+
+static void rt9426_fcc_monitor_work(struct work_struct *work)
+{
+	int capacity;
+	int now_fcc;
+	struct rt9426_chip *chip = container_of(work, struct rt9426_chip,
+		fcc_monitor_work.work);
+
+	if (!chip)
+		return;
+
+	capacity = rt9426_get_soc(chip);
+	now_fcc = rt9426_get_display_data(chip, RT9426_DISPLAY_FCC);
+	dev_notice(chip->dev, "soc=%d, new_fcc=%d, old_fcc=%d, mod_fcc=%d\n",
+		capacity, now_fcc, chip->last_fcc, chip->mod_fcc);
+	if (now_fcc != chip->last_fcc) {
+		dev_notice(chip->dev, "fcc learn succ, new_fcc=%d, old_fcc=%d\n",
+			now_fcc, chip->last_fcc);
+		chip->last_fcc = now_fcc;
+		rt9426_update_modify_fcc(chip);
+		return;
+	}
+
+	rt9426_set_work_interval(chip, capacity);
+	queue_delayed_work(system_power_efficient_wq, &chip->fcc_monitor_work,
+		msecs_to_jiffies(chip->work_interval));
+}
+
 static int rt9426_i2c_probe(struct i2c_client *i2c,
 	const struct i2c_device_id *id)
 {
@@ -4390,6 +4605,7 @@ static int rt9426_i2c_probe(struct i2c_client *i2c,
 	chip->ocv_checksum_dtsi = pdata->ocv_table[9].data[4];
 	chip->low_v_smooth_en = false;
 	chip->pdata->fc_low_curr_cnt = 0;
+	chip->skip_cycle_debug = 0;
 
 	mutex_init(&chip->update_lock);
 	mutex_init(&chip->var_lock);
@@ -4457,6 +4673,15 @@ static int rt9426_i2c_probe(struct i2c_client *i2c,
 	power_event_bnc_register(POWER_BNT_BUCK_CHARGE, &chip->event_nb);
 	power_event_bnc_register(POWER_BNT_CHARGING, &chip->event_nb);
 
+	if (rt9426_support_fcc_modify(chip)) {
+		chip->work_interval = WORK_INTERVAL_SLOW;
+		chip->mod_fcc = rt9426_get_battery_modify_fcc(chip);
+		INIT_DELAYED_WORK(&chip->fcc_monitor_work, rt9426_fcc_monitor_work);
+		INIT_DELAYED_WORK(&chip->fcc_init_work, rt9426_fcc_init_work);
+		queue_delayed_work(system_power_efficient_wq, &chip->fcc_init_work,
+			msecs_to_jiffies(WORK_TIME_FOR_FCC_INIT));
+	}
+
 	dev_info(chip->dev, "chip ver = 0x%04x\n", chip->ic_ver);
 	power_dev_info = power_devices_info_register();
 	if (power_dev_info) {
@@ -4476,6 +4701,10 @@ static int rt9426_i2c_remove(struct i2c_client *i2c)
 	if (!chip->pdata->disable_under_vol_irq) {
 		rt9426_irq_enable(chip, false);
 		rt9426_irq_deinit(chip);
+	}
+	if (rt9426_support_fcc_modify(chip)) {
+		cancel_delayed_work_sync(&chip->fcc_monitor_work);
+		cancel_delayed_work_sync(&chip->fcc_init_work);
 	}
 	mutex_destroy(&chip->var_lock);
 	mutex_destroy(&chip->retry_lock);

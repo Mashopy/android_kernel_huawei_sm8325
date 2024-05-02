@@ -114,6 +114,7 @@ struct mt5785_rx_ldo_cfg {
 struct mt5785_tx_init_para {
 	u16 ping_interval;
 	u16 ping_freq;
+	u32 ocp_th;
 };
 
 struct mt5785_tx_fod_para {
@@ -146,6 +147,7 @@ struct mt5785_dev_info {
 	struct mt5785_tx_init_para tx_init_para;
 	struct mt5785_tx_fod_para tx_fod;
 	struct mt5785_mtp_check_delay mtp_check_delay;
+	struct wakeup_source *fw_wakelock;
 	unsigned int ic_type;
 	int rx_ss_good_lth;
 	int gpio_en;
@@ -159,6 +161,7 @@ struct mt5785_dev_info {
 	u32 tx_ept_type;
 	bool need_ignore_irq;
 	bool irq_active;
+	bool irq_awake;
 	u32 tx_ping_freq;
 	int cali_a;
 	int cali_b;
@@ -185,6 +188,8 @@ int mt5785_get_chip_info(struct mt5785_dev_info *di, struct mt5785_chip_info *in
 int mt5785_get_chip_info_str(char *info_str, int len, void *dev_data);
 void mt5785_enable_irq(struct mt5785_dev_info *di);
 void mt5785_disable_irq_nosync(struct mt5785_dev_info *di);
+void mt5785_enable_irq_wake(struct mt5785_dev_info *di);
+void mt5785_disable_irq_wake(struct mt5785_dev_info *di);
 void mt5785_chip_enable(bool enable, void *dev_data);
 bool mt5785_is_chip_enable(void *dev_data);
 bool mt5785_is_pwr_good(struct mt5785_dev_info *di);
@@ -205,7 +210,7 @@ int mt5785_rx_ops_register(struct wltrx_ic_ops *ops, struct mt5785_dev_info *di)
 int mt5785_qi_ops_register(struct wltrx_ic_ops *ops, struct mt5785_dev_info *di);
 
 /* mt5785 fw */
-void mt5785_fw_mtp_check_work(struct work_struct *work);
+void mt5785_fw_mtp_check(struct mt5785_dev_info *di);
 int mt5785_fw_sram_update(void *dev_data);
 int mt5785_fw_get_mtp_ver(struct mt5785_dev_info *di, u16 *fw);
 int mt5785_fw_ops_register(struct wltrx_ic_ops *ops, struct mt5785_dev_info *di);

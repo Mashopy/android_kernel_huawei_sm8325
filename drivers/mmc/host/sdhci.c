@@ -32,6 +32,13 @@
 #include <linux/mmc/slot-gpio.h>
 
 #include "sdhci.h"
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/sd.h>
+#include <linux/mmc/dsm_emmc.h>
+#endif
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/mago_mmc_host.h>
+#endif
 
 #define DRIVER_NAME "sdhci"
 
@@ -49,6 +56,87 @@ static unsigned int debug_quirks2;
 static void sdhci_enable_preset_value(struct sdhci_host *host, bool enable);
 
 static bool sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd);
+
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#define SDHCI_DSM_ERR_INT_STATUS 16
+#define SDHCI_ERR_CMD_INDEX_MASK 0x3f
+#define SDHCI_DMD_ERR_MASK 0xffffffff
+
+void sdhci_dsm_set_host_status(struct sdhci_host *host, u32 error_bits)
+{
+	host->cmd_data_status |= error_bits;
+}
+
+void sdhci_dsm_work(struct work_struct *work)
+{
+	struct mmc_card *card = NULL;
+	struct sdhci_host *host = container_of(work, struct sdhci_host, dsm_work);
+	u32 error_bits, opcode;
+	u64 para;
+	unsigned long flags;
+
+	spin_lock_irqsave(&host->sdhci_dsm_lock, flags);
+	para = host->para;
+	host->para = 0;
+	spin_unlock_irqrestore(&host->sdhci_dsm_lock, flags);
+	card = host->mmc->card;
+	opcode = para & SDHCI_ERR_CMD_INDEX_MASK;
+	error_bits = ((para >> SDHCI_DSM_ERR_INT_STATUS) & SDHCI_DMD_ERR_MASK);
+	if (error_bits & SDHCI_INT_TIMEOUT)
+		DSM_EMMC_LOG(card, DSM_EMMC_RW_TIMEOUT_ERR,
+			"opcode:%u failed, status:0x%x\n", opcode, error_bits);
+	else if (error_bits & SDHCI_INT_DATA_CRC)
+		DSM_EMMC_LOG(card, DSM_EMMC_DATA_CRC,
+			"opcode:%u failed, status:0x%x\n", opcode, error_bits);
+	else if (error_bits & SDHCI_INT_CRC)
+		DSM_EMMC_LOG(card, DSM_EMMC_COMMAND_CRC,
+			"opcode:%u failed, status:0x%x\n", opcode, error_bits);
+	else
+		DSM_EMMC_LOG(card, DSM_EMMC_HOST_ERR,
+			"opcode:%u failed, status:0x%x\n", opcode, error_bits);
+}
+
+static inline void sdhci_dsm_host_error_filter(
+	struct sdhci_host *host, struct mmc_request *mrq, u32 *error_bits)
+{
+	if (mrq->cmd) {
+		if (mrq->cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200) {
+			*error_bits = 0;
+		} else if (host->mmc->ios.clock <= 400000UL) { /* set mmc clk 400k */
+			if (((mrq->cmd->opcode == SD_IO_RW_DIRECT) ||
+				    (mrq->cmd->opcode == SD_SEND_IF_COND) ||
+				    (mrq->cmd->opcode == SD_IO_SEND_OP_COND) ||
+				    (mrq->cmd->opcode == MMC_APP_CMD)))
+				*error_bits = 0;
+			else if (mrq->cmd->opcode == MMC_SEND_STATUS)
+				*error_bits &= ~SDHCI_INT_CRC;
+		}
+	}
+}
+
+void sdhci_dsm_handle(struct sdhci_host *host, struct mmc_request *mrq)
+{
+	u32 error_bits = host->cmd_data_status;
+
+	if (error_bits) {
+		host->cmd_data_status = 0;
+		sdhci_dsm_host_error_filter(host, mrq, &error_bits);
+		if (error_bits) {
+			host->para = (((u64)error_bits << SDHCI_DSM_ERR_INT_STATUS) |
+				((mrq->cmd ? mrq->cmd->opcode : 0) & SDHCI_ERR_CMD_INDEX_MASK));
+			queue_work(system_freezable_wq, &host->dsm_work);
+		}
+	}
+}
+
+void sdhci_dsm_report(struct mmc_host *host, struct mmc_request *mrq)
+{
+	struct sdhci_host *sdhci_host = mmc_priv(host);
+
+	sdhci_dsm_set_host_status(sdhci_host, SDHCI_INT_TIMEOUT);
+	sdhci_dsm_handle(sdhci_host, mrq);
+}
+#endif
 
 void sdhci_dumpregs(struct sdhci_host *host)
 {
@@ -1486,6 +1574,9 @@ static bool sdhci_send_command(struct sdhci_host *host, struct mmc_command *cmd)
 		timeout += 10 * HZ;
 	sdhci_mod_timer(host, cmd->mrq, timeout);
 
+#ifdef CONFIG_DISK_MAGO
+	cmd->mrq->req_start_time = jiffies;
+#endif
 	sdhci_writew(host, SDHCI_MAKE_CMD(cmd->opcode, flags), SDHCI_COMMAND);
 	mmc_log_string(host->mmc,
 		"updated ARGUMENT=0x%08x ARGUMENT_MODE=0x%08x COMMAND=0x%08x\n",
@@ -2930,7 +3021,10 @@ static bool sdhci_request_done(struct sdhci_host *host)
 	}
 
 	host->mrqs_done[i] = NULL;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if (!strcmp(mmc_hostname(host->mmc), "mmc0"))
+		sdhci_dsm_handle(host, mrq);
+#endif
 	spin_unlock_irqrestore(&host->lock, flags);
 
 	if (host->ops->request_done)
@@ -3011,6 +3105,19 @@ static void sdhci_timeout_data_timer(struct timer_list *t)
 	spin_unlock_irqrestore(&host->lock, flags);
 }
 
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+static void sdhci_cmd_dsm(struct sdhci_host *host, u32 intmask)
+{
+	if ((host->mmc->ios.timing >= MMC_TIMING_MMC_HS) && (!(host->flags & SDHCI_EXE_SOFT_TUNING)) &&
+		(!strcmp(mmc_hostname(host->mmc), "mmc0"))) {
+		pr_err("host->cmd->error=%d, opcode=%d, intmask=0x%x.timing:%d host->flags:0x%x\n",
+			host->cmd->error, host->cmd->opcode, intmask, host->mmc->ios.timing, host->flags);
+		sdhci_dumpregs(host);
+		sdhci_dsm_set_host_status(host, (intmask & ~SDHCI_INT_RESPONSE));
+	}
+}
+#endif
+
 /*****************************************************************************\
  *                                                                           *
  * Interrupt handling                                                        *
@@ -3072,7 +3179,9 @@ static void sdhci_cmd_irq(struct sdhci_host *host, u32 intmask, u32 *intmask_p)
 			*intmask_p |= SDHCI_INT_DATA_CRC;
 			return;
 		}
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		sdhci_cmd_dsm(host, intmask);
+#endif
 		__sdhci_finish_mrq(host, host->cmd->mrq);
 		return;
 	}
@@ -3224,9 +3333,21 @@ static void sdhci_data_irq(struct sdhci_host *host, u32 intmask)
 			host->ops->adma_workaround(host, intmask);
 	}
 
-	if (host->data->error)
+	if (host->data->error) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		if ((host->mmc->ios.timing >= MMC_TIMING_MMC_HS) && (!(host->flags & SDHCI_EXE_SOFT_TUNING)) &&
+				(!strcmp(mmc_hostname(host->mmc), "mmc0"))) {
+			pr_err("%s: host->data->error=%d, intmask=0X%x.\n", __func__, host->data->error, intmask);
+			sdhci_dumpregs(host);
+			sdhci_dsm_set_host_status(
+				host, intmask & (SDHCI_INT_DATA_TIMEOUT |
+						 SDHCI_INT_DATA_END_BIT |
+						 SDHCI_INT_DATA_CRC |
+						 SDHCI_INT_ADMA_ERROR));
+		}
+#endif
 		sdhci_finish_data(host);
-	else {
+	} else {
 		if (intmask & (SDHCI_INT_DATA_AVAIL | SDHCI_INT_SPACE_AVAIL))
 			sdhci_transfer_pio(host);
 
@@ -3829,6 +3950,9 @@ struct sdhci_host *sdhci_alloc_host(struct device *dev,
 	host->tuning_loop_count = MAX_TUNING_LOOP;
 
 	host->sdma_boundary = SDHCI_DEFAULT_BOUNDARY_ARG;
+#ifdef CONFIG_DISK_MAGO
+	mago_mmc_host_pre_init(host);
+#endif
 
 	/*
 	 * The DMA table descriptor count is calculated as the maximum
@@ -4546,7 +4670,12 @@ int sdhci_setup_host(struct sdhci_host *host)
 	if (mmc->max_segs == 1)
 		/* This may alter mmc->*_blk_* parameters */
 		sdhci_allocate_bounce_buffer(host);
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if (!strcmp(mmc_hostname(host->mmc), "mmc0")) {
+		INIT_WORK(&host->dsm_work, sdhci_dsm_work);
+		spin_lock_init(&host->sdhci_dsm_lock);
+	}
+#endif
 	return 0;
 
 unreg:

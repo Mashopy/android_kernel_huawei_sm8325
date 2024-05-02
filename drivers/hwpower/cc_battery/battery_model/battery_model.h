@@ -69,8 +69,8 @@ enum bat_types_info {
 };
 
 struct bat_types_table {
-	char types[BAT_TYPES_MAX_NUM];
-	char identifier_pattern[BAT_TYPES_MAX_NUM];
+	char types[BAT_TYPES_LEN];
+	char identifier_pattern[BAT_IDENTIFIER_PATTERN_LEN];
 };
 
 struct bat_model_device {

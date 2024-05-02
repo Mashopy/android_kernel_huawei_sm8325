@@ -29,6 +29,10 @@
 #include <huawei_platform/power/hw_kstate.h>
 #include <huawei_platform/power/hw_klinkaware.h>
 
+#ifdef CONFIG_HW_NETWORK_DCP
+#include <hwnet/network_dcp/network_dcp_handle.h>
+#endif
+
 typedef enum {
 	SET_WAKELOCK_TIMEOUT = 0,
 	CANCEL_WAKELOCK_TIMEOUT = 1,
@@ -37,7 +41,11 @@ typedef enum {
 	STOP_WAKELOCK = 4,
 	STOP_ALL_KERNEL_WAKELOCK = 5,
 	FREEZED_PID = 6,
-	SET_KEY_UID = 7
+	SET_KEY_UID = 7,
+#ifdef CONFIG_HW_NETWORK_DCP
+	SET_AUTH_MAC_INFO = 8,
+	SET_SIGN_MAC_INFO = 9
+#endif
 } pg_command_order;
 
 #define HW_PG_LOCK_NAME_MAX_LEN 64
@@ -50,6 +58,57 @@ typedef struct {
 	u8 lock_timeout;
 	char name[HW_PG_LOCK_NAME_MAX_LEN];
 } pg_command;
+
+/*
+ * handle pg command
+ * @return ret
+ */
+static int handle_pg_cmd(pg_command pg_cmd)
+{
+	int ret = 0;
+	switch (pg_cmd.cmd) {
+	case SET_WAKELOCK_TIMEOUT:
+		ret = wakeup_source_set(pg_cmd.name, pg_cmd.lock_timeout);
+		break;
+	case CANCEL_WAKELOCK_TIMEOUT:
+		ret = wakeup_source_set(pg_cmd.name, 0); /* 0 is default to cancel */
+		break;
+	case SET_ALL_WAKELOCK_TIMEOUT:
+		break;
+	case CANCEL_ALL_WAKELOCK_TIMEOUT:
+		ret = wakeup_source_set_all(0); /* 0 is default to cancel */
+		break;
+	case STOP_WAKELOCK:
+		ret = wake_unlockByName(pg_cmd.name);
+		break;
+	case STOP_ALL_KERNEL_WAKELOCK:
+		ret = wake_unlockAll(MAX_KERNEL_WAKELOCK_TIME);
+		break;
+	case FREEZED_PID: {
+		int taget_pid = simple_strtol(pg_cmd.name, NULL, BASE);
+		if (taget_pid > 0)
+			check_binder_calling_work(taget_pid);
+		break;
+	 }
+	case SET_KEY_UID:
+		ret = set_key_uid(pg_cmd.name);
+		break;
+#ifdef CONFIG_HW_NETWORK_DCP
+	case SET_AUTH_MAC_INFO:
+		pr_info("set auth hmac info: %s:%d\n", pg_cmd.name, pg_cmd.lock_timeout);
+		process_auth_token_update(pg_cmd.name, pg_cmd.lock_timeout);
+		break;
+	case SET_SIGN_MAC_INFO:
+		pr_info("set sign hmac info: %s:%d\n", pg_cmd.name, pg_cmd.lock_timeout);
+		process_sign_token_update(pg_cmd.name, pg_cmd.lock_timeout);
+		break;
+#endif
+	default:
+		ret = -1;
+		break;
+	}
+	return ret;
+}
 
 /*
  * manage wakelock
@@ -77,36 +136,7 @@ static int pg_cb(channel_id src, packet_tag tag, const char *data, size_t len)
 		return -1;
 	}
 
-	switch (pg_cmd.cmd) {
-	case SET_WAKELOCK_TIMEOUT:
-		ret = wakeup_source_set(pg_cmd.name, pg_cmd.lock_timeout);
-		break;
-	case CANCEL_WAKELOCK_TIMEOUT:
-		ret = wakeup_source_set(pg_cmd.name, 0); /* 0 is default to cancel */
-		break;
-	case SET_ALL_WAKELOCK_TIMEOUT:
-		break;
-	case CANCEL_ALL_WAKELOCK_TIMEOUT:
-		ret = wakeup_source_set_all(0); /* 0 is default to cancel */
-		break;
-	case STOP_WAKELOCK:
-		ret = wake_unlockByName(pg_cmd.name);
-		break;
-	case STOP_ALL_KERNEL_WAKELOCK:
-		ret = wake_unlockAll(MAX_KERNEL_WAKELOCK_TIME);
-		break;
-	case FREEZED_PID: {
-		int taget_pid = simple_strtol(pg_cmd.name, NULL, BASE);
-		if (taget_pid > 0)
-			check_binder_calling_work(taget_pid);
-		break;
-	}
-	case SET_KEY_UID:
-		ret = set_key_uid(pg_cmd.name);
-		break;
-	default:
-		return -1;
-	}
+	ret = handle_pg_cmd(pg_cmd);
 
 	pr_debug("pg_cb %s: src=%d tag=%d len=%d \n", __func__, src, tag, (int) len);
 

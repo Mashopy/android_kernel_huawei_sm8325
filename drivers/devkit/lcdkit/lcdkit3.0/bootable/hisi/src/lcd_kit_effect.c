@@ -56,7 +56,7 @@ static int lcd_kit_get_cur_sn(struct hisi_fb_data_type *hisifd)
 	}
 	ret = lcd_kit_dsi_cmds_rx(hisifd, (uint8_t *)read_value,
 		LCD_KIT_SNCODE_SIZE,
-		&disp_info->sn_code.cmds);
+		&DISP_INFO->sn_code.cmds);
 	if (ret != 0) {
 		LCD_KIT_ERR("get sn_code error!\n");
 		return LCD_KIT_FAIL;
@@ -220,7 +220,7 @@ int lcd_kit_get_panel_id_info(struct hisi_fb_data_type *hisifd)
 
 	ret = lcd_kit_dsi_cmds_rx((void *)hisifd, (uint8_t *)read_value,
 		MAX_READ_SIZE,
-		&disp_info->brightness_color_uniform.modulesn_cmds);
+		&DISP_INFO->brightness_color_uniform.modulesn_cmds);
 	if (ret != 0)
 		LCD_KIT_ERR("rx failed\n");
 	/* 24 means 24bits 16 means 16bits 8 means 8bits */
@@ -236,7 +236,7 @@ int lcd_kit_get_panel_id_info(struct hisi_fb_data_type *hisifd)
 	}
 	ret = lcd_kit_dsi_cmds_rx((void *)hisifd, (uint8_t *)read_value,
 		MAX_READ_SIZE,
-		&disp_info->brightness_color_uniform.equipid_cmds);
+		&DISP_INFO->brightness_color_uniform.equipid_cmds);
 	if (ret < 0) {
 		HISI_FB_ERR("check_cmds fail\n");
 		return ret;
@@ -249,7 +249,7 @@ int lcd_kit_get_panel_id_info(struct hisi_fb_data_type *hisifd)
 	}
 	ret = lcd_kit_dsi_cmds_rx((void *)hisifd, (uint8_t *)read_value,
 		MAX_READ_SIZE,
-		&disp_info->brightness_color_uniform.modulemanufact_cmds);
+		&DISP_INFO->brightness_color_uniform.modulemanufact_cmds);
 	if (ret < 0) {
 		HISI_FB_ERR("check_cmds fail\n");
 		return ret;

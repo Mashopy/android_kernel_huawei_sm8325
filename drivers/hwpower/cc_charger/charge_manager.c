@@ -18,6 +18,7 @@
  */
 
 #include <chipset_common/hwpower/charger/charge_manager.h>
+#include <chipset_common/hwpower/reverse_charge/reverse_charge.h>
 #include <chipset_common/hwpower/common_module/power_cmdline.h>
 #include <chipset_common/hwpower/common_module/power_common_macro.h>
 #include <chipset_common/hwpower/common_module/power_icon.h>
@@ -303,8 +304,7 @@ static void charge_stop_charging(struct charge_manager_info *di)
 		direct_charge_set_stage_status_default();
 
 	buck_charge_stop_charging();
-
-	charge_otg_mode_enable(CHARGE_OTG_DISABLE, VBUS_CH_USER_WIRED_OTG);
+	reverse_charge_enable(RCHG_DISABLE);
 
 	cancel_delayed_work_sync(&di->charge_work);
 	charge_set_monitor_work_flag(CHARGE_MONITOR_WORK_NEED_START);
@@ -457,7 +457,7 @@ static void charger_handle_event(struct charge_manager_info *di, enum charger_ev
 		break;
 	case START_SOURCE:
 		power_wakeup_unlock(di->charge_lock, false);
-		charge_otg_mode_enable(CHARGE_OTG_ENABLE, VBUS_CH_USER_WIRED_OTG);
+		reverse_charge_enable(RCHG_ENABLE);
 		break;
 	case STOP_SOURCE:
 		charge_stop_charging(di);

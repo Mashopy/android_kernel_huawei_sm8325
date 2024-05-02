@@ -514,7 +514,11 @@ static int dubai_update_stats_locked(void)
 		}
 	};
 unlock:
+#ifdef CONFIG_ARM64
 	dubai_info("Updating cpu stats with rcu_read_lock takes %lldms", (ktime_get_ns() - cal_time) / NSEC_PER_MSEC);
+#else
+	dubai_info("Updating cpu stats with rcu_read_lock takes %lldms", div_u64((ktime_get_ns() - cal_time), NSEC_PER_MSEC));
+#endif
 	rcu_read_unlock();
 
 	return ret;

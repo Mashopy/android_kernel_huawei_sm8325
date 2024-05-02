@@ -105,7 +105,7 @@ void lcd_kit_ext_panel_probe(void)
 #endif
 	/* common init */
 	if (common_ops->common_init)
-		common_ops->common_init(disp_info->lcd_name);
+		common_ops->common_init(DISP_INFO->lcd_name);
 	/* utils init */
 	lcd_kit_utils_init(pinfo);
 	/* panel init */
@@ -136,23 +136,23 @@ void lcd_kit_ext_panel_init(void)
 			return;
 		lcd_kit_panel_switch(LCD_EXT_PANEL);
 		/* init lcd id */
-		disp_info->lcd_id = lcd_type_ops->get_ext_lcd_id(&pin_num);
-		disp_info->lcd_id = (LCD_EXT_PANEL << LCD_EXT_LCD_BIT) |
-			disp_info->lcd_id;
-		disp_info->product_id = lcd_type_ops->get_product_id();
-		LCD_KIT_INFO("disp_info->lcd_id = %d, disp_info->product_id = %d\n",
-			disp_info->lcd_id, disp_info->product_id);
-		disp_info->compatible = lcd_kit_get_compatible(disp_info->product_id,
-			disp_info->lcd_id, pin_num);
-		disp_info->lcd_name = lcd_kit_get_lcd_name(disp_info->product_id,
-			disp_info->lcd_id, pin_num);
-		lcd_type_ops->set_ext_lcd_panel_type(disp_info->compatible);
+		DISP_INFO->lcd_id = lcd_type_ops->get_ext_lcd_id(&pin_num);
+		DISP_INFO->lcd_id = (LCD_EXT_PANEL << LCD_EXT_LCD_BIT) |
+			DISP_INFO->lcd_id;
+		DISP_INFO->product_id = lcd_type_ops->get_product_id();
+		LCD_KIT_INFO("DISP_INFO->lcd_id = %d, DISP_INFO->product_id = %d\n",
+			DISP_INFO->lcd_id, DISP_INFO->product_id);
+		DISP_INFO->compatible = lcd_kit_get_compatible(DISP_INFO->product_id,
+			DISP_INFO->lcd_id, pin_num);
+		DISP_INFO->lcd_name = lcd_kit_get_lcd_name(DISP_INFO->product_id,
+			DISP_INFO->lcd_id, pin_num);
+		lcd_type_ops->set_ext_lcd_panel_type(DISP_INFO->compatible);
 		/* adapt init */
 		lcd_kit_adapt_init();
-		LCD_KIT_INFO("disp_info->lcd_id = %d, disp_info->product_id = %d\n",
-			disp_info->lcd_id, disp_info->product_id);
-		LCD_KIT_INFO("disp_info->lcd_name = %s, disp_info->compatible = %s\n",
-			disp_info->lcd_name, disp_info->compatible);
+		LCD_KIT_INFO("DISP_INFO->lcd_id = %d, DISP_INFO->product_id = %d\n",
+			DISP_INFO->lcd_id, DISP_INFO->product_id);
+		LCD_KIT_INFO("DISP_INFO->lcd_name = %s, DISP_INFO->compatible = %s\n",
+			DISP_INFO->lcd_name, DISP_INFO->compatible);
 	} else {
 		LCD_KIT_INFO("lcd type is not LCD_KIT\n");
 	}

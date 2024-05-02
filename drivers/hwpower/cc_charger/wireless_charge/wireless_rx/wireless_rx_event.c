@@ -159,8 +159,10 @@ static int wlrx_evt_rxic_notifier_call(struct notifier_block *evt_nb,
 {
 	struct wlrx_evt_dev *di = container_of(evt_nb, struct wlrx_evt_dev, rxic_nb);
 
-	if (!di)
+	if (!di) {
+		hwlog_err("rxic_notifier_call: di null\n");
 		return NOTIFY_OK;
+	}
 
 	switch (event) {
 	case POWER_NE_WLRX_PREV_READY:
@@ -215,9 +217,17 @@ static void wlrx_evt_kfree_dev(struct wlrx_evt_dev *di)
 	if (!di)
 		return;
 
+	kfree(di);
+}
+
+static void wlrx_evt_free_resources(struct wlrx_evt_dev *di)
+{
+	if (!di)
+		return;
+
+	power_event_bnc_unregister(POWER_BNT_WLRX, &di->rxic_nb);
 	power_wakeup_source_unregister(di->rxic_wakelock);
 	di->rxic_wakelock = NULL;
-	kfree(di);
 }
 
 int wlrx_evt_init(unsigned int drv_type, struct device *dev)
@@ -251,6 +261,7 @@ void wlrx_evt_deinit(unsigned int drv_type)
 	if (!wltrx_is_drv_type_valid(drv_type))
 		return;
 
+	wlrx_evt_free_resources(g_rx_evt_di[drv_type]);
 	wlrx_evt_kfree_dev(g_rx_evt_di[drv_type]);
 	g_rx_evt_di[drv_type] = NULL;
 }

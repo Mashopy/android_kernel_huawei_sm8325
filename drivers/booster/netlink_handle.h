@@ -11,7 +11,8 @@
 #include <linux/types.h>
 #include <linux/version.h>
 
-#define MAX_REQ_DATA_LEN 2048
+/* 4080 -> MEM PAGE 4K 4096 BYTE - NLMSG_HDRLEN 16 BYTE. */
+#define MAX_REQ_DATA_LEN 4080
 
 struct seg_tlv_head {
 	u8 type;
@@ -62,6 +63,9 @@ enum msg_rpt_type {
 	HONGBAO_WECHAT_RPT,
 	HONGBAO_WECHAT_UID_SOCK_CHG,
 	TRAFFIC_STATS_INFO_RPT = 14,
+	APP_PROXY_RESULT_RPT = 19,
+	SOCKET_CLOSE_CHR_MSG_ID = 17,
+	TCP_RESET_CHR_MSG_ID = 18,
 	INTER_MSG_BASE = 0x8000,
 	WIFI_RPT_TIMER,
 	NBMSG_RPT_BUTT
@@ -113,6 +117,10 @@ enum req_msg_type {
 	UPDATE_VIRTUAL_SIM_STATE = 37,
 	/* statistics traffic end */
 	UPDATE_QOE_VERSION_INFO = 38,
+	APP_PROXY_CMD = 45,
+	FG_CHANGE_UID = 44,
+	SOCKET_CLOSE_DETECT_UID_ADD = 46,
+	SOCKET_CLOSE_DETECT_UID_DEL = 47,
 	CMD_NUM_MAX
 };
 
@@ -143,6 +151,7 @@ enum install_model {
 	STREAM_DETECT,
 	HONGBAO,
 	BOOSTER_COMM,
+	NETWORK_DCP,
 	MODEL_NUM,
 };
 

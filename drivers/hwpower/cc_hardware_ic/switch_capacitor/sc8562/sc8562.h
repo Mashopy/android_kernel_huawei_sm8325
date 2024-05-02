@@ -97,14 +97,15 @@
 #define SC8562_VUSB_OVP_STAT_SHIFT                4
 #define SC8562_VUSB_OVP_TH_MASK                   (BIT(3) | BIT(2) | BIT(1) | BIT(0))
 #define SC8562_VUSB_OVP_TH_SHIFT                  0
-#define SC8562_VUSB_OVP_MIN                       11000
-#define SC8562_VUSB_OVP_MAX                       25000
-#define SC8562_VUSB_OVP_STEP                      1000
-#define SC8562_VUSB_OVP_DEF                       6500
-#define SC8562_VUSB_OVP_INIT                      6000
-#define SC8562_VUSB_OVP_F21SC_INIT                13000
-#define SC8562_VUSB_OVP_F41SC_INIT                25000
-#define SC8562_VUSB_OVP_DEF_VAL                   0xf
+#define SC8562_VUSB_VWPC_OVP_MIN                  11000
+#define SC8562_VUSB_VWPC_OVP_MAX                  25000
+#define SC8562_VUSB_VWPC_OVP_STEP                 1000
+#define SC8562_VUSB_VWPC_OVP_DEF                  6500
+#define SC8562_VUSB_VWPC_OVP_INIT                 6000
+#define SC8562_VUSB_VWPC_OVP_F21SC_INIT           13000
+#define SC8562_VUSB_VWPC_OVP_F41SC_INIT           25000
+#define SC8562_VUSB_VWPC_OVP_DEF_VAL              0xf
+#define SC8562_VUSB_VWPC_OVP_MAX_VAL              0xe
 
 /* VWPC_OVP reg=0x04 */
 #define SC8562_VWPC_OVP_REG                       0x04
@@ -179,6 +180,7 @@
 #define SC8562_IBUS_UCP_FALL_FLAG_SHIFT           0
 #define SC8562_IBUS_UCP_DIS_MASK_DISABLE          0x90
 #define SC8562_IBUS_UCP_REG_INIT                  0x10
+#define SC8562_IBUS_UCP_FALL_DG_DEFAULT           0x3 /* 50ms */
 
 /* PMID2OUT_OVP reg=0x08 */
 #define SC8562_PMID2OUT_OVP_REG                   0x08
@@ -260,6 +262,11 @@
 #define SC8562_SW_FREQ_SHIFT_NORMAL               0
 #define SC8562_SW_FREQ_SHIFT_MP_P10               1 /* +/-10% */
 
+#define SC8565_CTRL2_FREQ_DITHER_MASK             BIT(1)
+#define SC8565_CTRL2_FREQ_DITHER_SHIFT            1
+#define SC8565_CTRL2_ACDRV_HI_EN_MASK             BIT(0)
+#define SC8565_CTRL2_ACDRV_HI_EN_SHIFT            0
+
 /* CTRL3 reg=0x0D */
 #define SC8562_CTRL3_REG                          0x0D
 #define SC8562_CTRL3_SS_TIMEOUT_MASK              (BIT(5) | BIT(4) | BIT(3))
@@ -279,6 +286,11 @@
 #define SC8562_WD_TMR_TIMING_DIS                  0
 #define SC8562_SS_TIMEOUT_DISABLE                 0
 
+#define SC8565_VBUS_INRANGE_DET_DIS_MASK          BIT(7)
+#define SC8565_VBUS_INRANGE_DET_DIS_SHIFT         7
+#define SC8565_VBUS_INRANGE_DET_DIS_EN            0
+#define SC8565_VBUS_INRANGE_DET_DIS_DIS           1
+
 /* CTRL4 reg=0x0E */
 #define SC8562_CTRL4_REG                          0x0E
 #define SC8562_CTRL4_SYNC_FUNCTION_EN_MASK        BIT(7)
@@ -294,6 +306,9 @@
 #define SC8562_CTRL4_MODE_MASK                    (BIT(2) | BIT(1) | BIT(0))
 #define SC8562_CTRL4_MODE_SHIFT                   0
 #define SC8562_REG_RST_ENABLE                     1
+#define SC8562_CHG_R11_CONVERTER_MODE             6
+#define SC8562_CHG_R12_CONVERTER_MODE             5
+#define SC8562_CHG_R14_CONVERTER_MODE             4
 #define SC8562_CHG_FBYPASS_MODE                   2
 #define SC8562_CHG_F21SC_MODE                     1
 #define SC8562_CHG_F41SC_MODE                     0
@@ -310,6 +325,13 @@
 #define SC8562_CTRL5_VBUS_OVP_DIS_SHIFT           1
 #define SC8562_CTRL5_VOUT_OVP_DIS_MASK            BIT(0)
 #define SC8562_CTRL5_VOUT_OVP_DIS_SHIFT           0
+
+#define SC8565_CTRL5_TSHUT_DIS_MASK               BIT(4)
+#define SC8565_CTRL5_TSHUT_DIS_SHIFT              4
+#define SC8565_CTRL5_VWPC_OVP_DIS_MASK            BIT(3)
+#define SC8565_CTRL5_VWPC_OVP_DIS_SHIFT           3
+#define SC8565_CTRL5_VUSB_OVP_DIS_MASK            BIT(2)
+#define SC8565_CTRL5_VUSB_OVP_DIS_SHIFT           2
 
 /* INT_STAT reg=0x10 */
 #define SC8562_INT_STAT_REG                       0x10
@@ -531,12 +553,40 @@
 #define SC8562_DEVICE_ID_TH_MASK                  0xFF
 #define SC8562_DEVICE_ID_TH_SHIFT                 0
 #define SC8562_DEVICE_ID_SC8562                   0x61
+#define SC8565_DEVICE_ID_SC8562                   0x81
 
 /* FUN_DIS reg=0x70 */
 #define SC8562_FUN_DIS_REG                        0x70
 #define SC8562_TSBAT_FLT_DIS_MASK                 BIT(3)
 #define SC8562_TSBAT_FLT_DIS_SHIFT                3
 #define SC8562_TSBAT_FLT_DIS_DISABLE              1
+
+/* CTRL6 reg=0x40 */
+#define SC8565_CTRL6_REG                          0x40
+#define SC8565_IBUS_RCP_DIS_MASK                  BIT(7)
+#define SC8565_IBUS_RCP_DIS_SHIFT                 7
+#define SC8565_IBUS_LOW_RCP_BYPASS_EN_MASK        BIT(6)
+#define SC8565_IBUS_LOW_RCP_BYPASS_EN_SHIFT       6
+#define SC8565_IBUS_RCP_MASK_MASK                 BIT(5)
+#define SC8565_IBUS_RCP_MASK_SHIFT                5
+#define SC8565_VWPC_REMOVE_MASK_MASK              BIT(4)
+#define SC8565_VWPC_REMOVE_MASK_SHIFT             4
+#define SC8565_VUSB_REMOVE_MASK_MASK              BIT(3)
+#define SC8565_VUSB_REMOVE_MASK_SHIFT             3
+#define SC8565_IBUS_RCP_FLAG_MASK                 BIT(2)
+#define SC8565_IBUS_RCP_FLAG_SHIFT                2
+#define SC8565_VWPC_REMOVE_FLAG_MASK              BIT(1)
+#define SC8565_VWPC_REMOVE_FLAG_SHIFT             1
+#define SC8565_VUSB_REMOVE_FLAG_MASK              BIT(0)
+#define SC8565_VUSB_REMOVE_FLAG_SHIFT             0
+
+/* CTRL_INITIAL reg=0x7C */
+#define SC8565_CTRL_INITIAL_REG                   0x7C
+
+/* CTRL7 reg=0x7F */
+#define SC8565_CTRL7_REG                          0x7E
+#define SC8565_IBATSNS_HS_EN_MASK                 BIT(2)
+#define SC8565_IBATSNS_HS_EN_SHIFT                2
 
 struct sc8562_device_info {
 	struct i2c_client *client;
@@ -556,6 +606,7 @@ struct sc8562_device_info {
 	int gpio_enable;
 	int gpio_reset;
 	int gpio_lpm;
+	u32 lpm_exit_time;
 	int irq_int;
 	int irq_active;
 	int chip_already_init;
@@ -569,6 +620,12 @@ struct sc8562_device_info {
 	int sense_r_config;
 	int dts_scp_support;
 	int dts_fcp_support;
+	u32 sc_ibus_ocp;
+	u32 sc4_ibus_ocp;
+	u32 sc_ibat_ocp;
+	u32 sc4_ibat_ocp;
+	u32 watchdog_time;
+	u32 wired_channel_switch;
 	u32 parallel_mode;
 	u32 slave_mode;
 	u8 charge_mode;
@@ -578,6 +635,7 @@ struct sc8562_device_info {
 	u8 scp_op_num;
 	bool scp_trans_done;
 	bool fcp_support;
+	bool i2c_is_working;
 };
 
 struct sc8562_dump_value {

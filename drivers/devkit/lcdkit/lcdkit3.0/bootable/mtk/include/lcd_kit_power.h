@@ -23,8 +23,8 @@
  * macro
  */
 #define GPIO_NAME	"gpio"
-#define ENABLE	        1
-#define DISABLE	        0
+#define ENABLE		1
+#define DISABLE		0
 
 #define POWER_MODE	0
 #define POWER_NUMBER	1
@@ -50,8 +50,8 @@ struct gpio_power_arra {
 };
 /* vcc desc */
 struct regulate_bias_desc {
-	unsigned int min_uV;
-	unsigned int max_uV;
+	unsigned int min_uv;
+	unsigned int max_uv;
 	unsigned int waittype;
 	unsigned int wait;
 };

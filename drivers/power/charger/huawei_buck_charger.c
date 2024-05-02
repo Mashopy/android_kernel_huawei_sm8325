@@ -51,6 +51,7 @@
 #include <chipset_common/hwpower/charger/charger_common_interface.h>
 #include <chipset_common/hwpower/common_module/power_sysfs.h>
 #include <chipset_common/hwpower/common_module/power_dsm.h>
+#include <chipset_common/hwpower/hardware_monitor/ship_mode.h>
 #ifdef CONFIG_TCPC_CLASS
 #include <huawei_platform/usb/hw_pd_dev.h>
 #endif
@@ -168,6 +169,19 @@ int charge_get_input_current_max(void)
 		return 500; /* 500:default max input current for usb */
 
 	return di->input_current;
+}
+
+int charge_set_iin_limit(int iin_limit)
+{
+	struct charge_device_info *di = g_buck_di;
+
+	if (!di) {
+		hwlog_err("g_buck_di is null\n");
+		return -1;
+	}
+
+	di->sysfs_data.inputcurrent = iin_limit;
+	return 0;
 }
 
 static void charge_vbus_voltage_check(struct charge_device_info *di)
@@ -673,7 +687,6 @@ void buck_charge_stop_charging(void)
 	di->sysfs_data.adc_conv_rate = 0;
 	di->sysfs_data.charge_done_status = CHARGE_DONE_NON;
 	di->weaksource_cnt = 0;
-	hvdcp_set_rt_result(false);
 	di->ffc_vterm_flag = 0;
 	di->ffc_delay_cnt = 0;
 	di->core_data->iterm = di->core_data->initial_iterm;
@@ -1103,6 +1116,32 @@ static bool charge_check_otg_state(void)
 	return (bool)mode;
 }
 
+static void huawei_charger_set_entry_time(unsigned int time, void *dev_data)
+{
+	if (!dev_data)
+		return;
+
+	hwlog_info("set_entry_time: value=%u\n", time);
+}
+
+static void huawei_charger_set_work_mode(unsigned int mode, void *dev_data)
+{
+	if (!dev_data)
+		return;
+
+	if ((mode != SHIP_MODE_IN_SHIP) && (mode != SHIP_MODE_IN_SHUTDOWN_SHIP))
+		return;
+
+	charge_set_batfet_disable(true);
+	charge_disable_watchdog();
+}
+
+static struct ship_mode_ops buck_charger_ship_mode_ops = {
+	.ops_name = "huawei_charger",
+	.set_entry_time = huawei_charger_set_entry_time,
+	.set_work_mode = huawei_charger_set_work_mode,
+};
+
 static void parse_extra_module_dts(struct charge_device_info *di)
 {
 }
@@ -1110,21 +1149,12 @@ static void parse_extra_module_dts(struct charge_device_info *di)
 static void charger_dts_read_u32(struct charge_device_info *di,
 	struct device_node *np)
 {
-	u32 rt_curr_th = 0;
-	u32 rt_test_time = 0;
-
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"charge_done_maintain_fcp", &di->charge_done_maintain_fcp, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"fcp_vindpm", &di->fcp_vindpm, CHARGE_VOLTAGE_4600_MV);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"scp_adp_normal_chg", &di->scp_adp_normal_chg, 0);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"rt_curr_th", &rt_curr_th, 0);
-	hvdcp_set_rt_current_thld(rt_curr_th);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"rt_test_time", &rt_test_time, 0);
-	hvdcp_set_rt_time(rt_test_time);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"startup_iin_limit", &di->startup_iin_limit, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -1242,6 +1272,8 @@ static int charge_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, di);
 	g_buck_di = di;
+	buck_charger_ship_mode_ops.dev_data = di;
+	ship_mode_ops_register(&buck_charger_ship_mode_ops);
 	hwlog_info("huawei buck charger probe ok\n");
 	return 0;
 

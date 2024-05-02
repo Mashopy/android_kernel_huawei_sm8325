@@ -46,11 +46,25 @@ static uint32_t binder_alloc_debug_mask = BINDER_DEBUG_USER_ERROR;
 module_param_named(debug_mask, binder_alloc_debug_mask,
 		   uint, 0644);
 
+#ifdef CONFIG_DFX_BINDER
+
+static uint32_t binder_alloc_dfx_mask;
+module_param_named(dfx_mask, binder_alloc_dfx_mask, uint, 0644);
+
+#define binder_alloc_debug(mask, x...) \
+	do { \
+		if (binder_alloc_debug_mask & mask || \
+			unlikely(binder_alloc_dfx_mask & mask && \
+			current->tgid == get_noticed_tgid())) \
+			pr_info_ratelimited(x); \
+	} while (0)
+#else
 #define binder_alloc_debug(mask, x...) \
 	do { \
 		if (binder_alloc_debug_mask & mask) \
 			pr_info_ratelimited(x); \
 	} while (0)
+#endif
 
 static struct binder_buffer *binder_buffer_next(struct binder_buffer *buffer)
 {
@@ -69,6 +83,13 @@ static size_t binder_alloc_buffer_size(struct binder_alloc *alloc,
 		return alloc->buffer + alloc->buffer_size - buffer->user_data;
 	return binder_buffer_next(buffer)->user_data - buffer->user_data;
 }
+
+#ifdef CONFIG_DFX_BINDER
+size_t get_buffer_size(struct binder_alloc *alloc, struct binder_buffer *buffer)
+{
+	return binder_alloc_buffer_size(alloc, buffer);
+}
+#endif
 
 static void binder_insert_free_buffer(struct binder_alloc *alloc,
 				      struct binder_buffer *new_buffer)
@@ -218,9 +239,9 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 
 	if (mm) {
 #ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM
-		htmmap_get_mmap_sem(mm, down_read);
+		htmmap_get_mmap_sem(mm, down_write);
 #else
-		down_read(&mm->mmap_sem);
+		down_write(&mm->mmap_sem);
 #endif
 		vma = alloc->vma;
 	}
@@ -280,7 +301,7 @@ static int binder_update_page_range(struct binder_alloc *alloc, int allocate,
 		/* vm_insert_page does not seem to increment the refcount */
 	}
 	if (mm) {
-		up_read(&mm->mmap_sem);
+		up_write(&mm->mmap_sem);
 		mmput(mm);
 	}
 	return 0;
@@ -313,7 +334,7 @@ err_page_ptr_cleared:
 	}
 err_no_vma:
 	if (mm) {
-		up_read(&mm->mmap_sem);
+		up_write(&mm->mmap_sem);
 		mmput(mm);
 	}
 	return vma ? -ENOMEM : -ESRCH;
@@ -450,6 +471,9 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
 			     "%d: binder_alloc_buf size %zd failed, no async space left\n",
 			      alloc->pid, size);
+#ifdef CONFIG_DFX_BINDER
+		print_binder_allocated_buffer(alloc, is_async);
+#endif
 		return ERR_PTR(-ENOSPC);
 	}
 
@@ -505,6 +529,9 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 				   total_alloc_size, allocated_buffers,
 				   largest_alloc_size, total_free_size,
 				   free_buffers, largest_free_size);
+#ifdef CONFIG_DFX_BINDER
+		print_binder_allocated_buffer(alloc, is_async);
+#endif
 		return ERR_PTR(-ENOSPC);
 	}
 	if (n == NULL) {
@@ -1102,6 +1129,9 @@ static struct shrinker binder_shrinker = {
 void binder_alloc_init(struct binder_alloc *alloc)
 {
 	alloc->pid = current->group_leader->pid;
+#ifdef CONFIG_DFX_BINDER
+	alloc->buffer_print_noticed = check_buffer_print_task();
+#endif
 	mutex_init(&alloc->mutex);
 	INIT_LIST_HEAD(&alloc->buffers);
 }

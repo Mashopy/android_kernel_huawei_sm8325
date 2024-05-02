@@ -168,7 +168,7 @@ void wlrx_ui_reset_icon_type(unsigned int drv_type)
 
 	if (!di)
 		return;
-	di->curr_icon_type = 0;
+	di->curr_icon_type = WLRX_UI_CHARGE_END;
 }
 
 enum wlrx_ui_icon_type wlrx_ui_get_icon_type(unsigned int drv_type)
@@ -285,6 +285,7 @@ int wlrx_ui_init(unsigned int drv_type, struct device *dev)
 	if (!di)
 		return -ENOMEM;
 
+	di->curr_icon_type = WLRX_UI_CHARGE_END;
 	ret = wlrx_ui_parse_dts(dev->of_node, &di->ui_para);
 	if (ret)
 		goto exit;

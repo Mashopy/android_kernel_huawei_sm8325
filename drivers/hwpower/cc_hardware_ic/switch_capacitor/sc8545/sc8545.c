@@ -812,7 +812,7 @@ static int sc8545_register_head(char *buffer, int size, void *dev_data)
 		return -ENODEV;
 
 	snprintf(buffer, size,
-		"dev        mode   Ibus   Vbus   Vusb   Ibat   Vbat   Temp");
+		"dev       mode   Ibus   Vbus   Vusb   Ibat   Vbat   Temp   ");
 
 	return 0;
 }
@@ -839,7 +839,7 @@ static int sc8545_dump_reg(char *buffer, int size, void *dev_data)
 	(void)sc8545_get_vusb_mv(&vusb, di);
 	(void)sc8545_read_byte(di, SC8545_CTRL3_REG, &reg);
 
-	snprintf(buff, sizeof(buff), "%s ", di->name);
+	snprintf(buff, sizeof(buff), "%-10s", di->name);
 	strncat(buffer, buff, strlen(buff));
 
 	if (sc8545_is_device_close(di))
@@ -850,6 +850,8 @@ static int sc8545_dump_reg(char *buffer, int size, void *dev_data)
 	else if (((reg & SC8545_CHG_MODE_MASK) >> SC8545_CHG_MODE_SHIFT) ==
 		SC8545_CHG_MODE_CHGPUMP)
 		snprintf(buff, sizeof(buff), "%s", "SC     ");
+	else
+		snprintf(buff, sizeof(buff), "%s", "BUCK   ");
 
 	strncat(buffer, buff, strlen(buff));
 	snprintf(buff, sizeof(buff), "%-7d%-7d%-7d%-7d%-7d%-7d",
@@ -1095,6 +1097,7 @@ static int sc8545_irq_init(struct sc8545_device_info *di,
 {
 	int ret;
 
+	di->int_wq = create_singlethread_workqueue("sc8545_int_wq");
 	INIT_WORK(&di->irq_work, sc8545_interrupt_work);
 
 	ret = power_gpio_config_interrupt(np,
@@ -1112,7 +1115,6 @@ static int sc8545_irq_init(struct sc8545_device_info *di,
 	}
 
 	enable_irq_wake(di->irq_int);
-	di->int_wq = create_singlethread_workqueue("sc8545_int_wq");
 	return 0;
 }
 

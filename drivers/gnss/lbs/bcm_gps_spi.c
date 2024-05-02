@@ -35,6 +35,7 @@
 #include <asm/irq.h>
 #include <linux/kernel_stat.h>
 #include <linux/pm_runtime.h>
+#include <linux/pm_wakeup.h>
 #include <chipset_common/hwpower/common_module/power_delay.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
 #include <chipset_common/hwpower/common_module/power_firmware.h>
@@ -945,6 +946,7 @@ static void bcm_rxtx_work_func(struct work_struct *work)
 	}
 #endif
 
+	__pm_stay_awake(priv->bcmspi_wakelock);
 	do {
 		int    ret = 0;
 		size_t avail = 0;
@@ -953,6 +955,7 @@ static void bcm_rxtx_work_func(struct work_struct *work)
 		/* Read first */
 		if (!gpio_is_valid(priv->host_req)) {
 			pr_err("gpio host_req is invalid, return\n");
+			__pm_relax(priv->bcmspi_wakelock);
 			return;
 		}
 		ret = gpio_get_value(priv->host_req);
@@ -1119,6 +1122,7 @@ static void bcm_rxtx_work_func(struct work_struct *work)
 		stat1hz.ts_irq = 0;
 	}
 #endif
+	__pm_relax(priv->bcmspi_wakelock);
 }
 
 
@@ -1276,6 +1280,7 @@ static void bcm_spi_shutdown(struct spi_device *spi)
 	flush_workqueue(priv->serial_wq);
 	destroy_workqueue(priv->serial_wq);
 	priv->serial_wq = NULL;
+	wakeup_source_unregister(priv->bcmspi_wakelock);
 
 }
 
@@ -1633,7 +1638,7 @@ static int bcm_spi_probe(struct spi_device *spi)
 
 	/* Request IRQ */
 	ret = devm_request_irq(&spi->dev, spi->irq, bcm_irq_handler,
-			IRQF_TRIGGER_RISING, "ttyBCM", priv);
+			IRQF_TRIGGER_HIGH, "ttyBCM", priv);
 	if (ret) {
 		pr_err("Failed to register BCM477x SPI TTY IRQ %d.\n",
 				spi->irq);
@@ -1689,6 +1694,12 @@ static int bcm_spi_probe(struct spi_device *spi)
 	if (device_create_file(&priv->spi->dev, &dev_attr_sspmcureq))
 		pr_err("Unable to create sysfs 4775 sspmcureq entry");
 
+	priv->bcmspi_wakelock = wakeup_source_register(&priv->spi->dev, "bcm_gps_spi");
+	if (ret) {
+		pr_err("Failed to enable the wakeup function. err=%d\n", ret);
+		goto free_wq;
+	}
+
 	return 0;
 
 free_wq:
@@ -1725,6 +1736,8 @@ static int bcm_spi_remove(struct spi_device *spi)
 	device_remove_file(&priv->spi->dev, &dev_attr_nstandby);
 
 	device_remove_file(&priv->spi->dev, &dev_attr_sspmcureq);
+
+	wakeup_source_unregister(priv->bcmspi_wakelock);
 
 	return 0;
 }

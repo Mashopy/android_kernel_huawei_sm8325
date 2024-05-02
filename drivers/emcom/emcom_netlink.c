@@ -130,30 +130,24 @@ static void emcom_common_evt_proc(const struct nlmsghdr *nlh, const uint8_t *dat
 	}
 }
 
-
 /* netlink socket's callback function,it will be called by system when user space send a message to kernel.
 this function will save user space progress pid. */
 static void kernel_emcom_receive(struct sk_buff *__skb)
 {
 	struct nlmsghdr *nlh = NULL;
-	struct sk_buff *skb = NULL;
+	struct sk_buff *skb = skb_get(__skb);
 	void *packet = NULL;
 	uint16_t data_len;
 	uint8_t submod;
 
-	skb = skb_get(__skb);
-
 	mutex_lock(&emcom_receive_sem);
-
 	if (skb->len >= NLMSG_HDRLEN) {
-	nlh = nlmsg_hdr(skb);
-	packet = nlmsg_data(nlh);
-	data_len = nlmsg_len(nlh);
+		nlh = nlmsg_hdr(skb);
+		packet = nlmsg_data(nlh);
+		data_len = nlmsg_len(nlh);
 
-	if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr)) &&
-		(skb->len >= nlh->nlmsg_len)) {
+		if ((nlh->nlmsg_len >= sizeof(struct nlmsghdr)) && (skb->len >= nlh->nlmsg_len)) {
 			submod = (nlh->nlmsg_type & EMCOM_SUB_MOD_MASK) >> EMCOM_SUB_MOD_MASK_LEN;
-
 			switch (submod) {
 			case EMCOM_SUB_MOD_COMMON:
 				emcom_common_evt_proc(nlh, packet, data_len);

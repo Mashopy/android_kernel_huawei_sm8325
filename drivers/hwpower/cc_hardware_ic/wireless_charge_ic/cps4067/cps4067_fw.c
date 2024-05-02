@@ -433,7 +433,7 @@ static int cps4067_fw_get_mtp_status(unsigned int *status, void *dev_data)
 	return 0;
 }
 
-void cps4067_fw_mtp_check_work(struct work_struct *work)
+static void cps4067_fw_mtp_check_work(struct work_struct *work)
 {
 	int i;
 	int ret;
@@ -443,6 +443,12 @@ void cps4067_fw_mtp_check_work(struct work_struct *work)
 	if (!di)
 		return;
 
+	if (!power_cmdline_is_factory_mode() && cps4067_rx_is_tx_exist(di)) {
+		hwlog_info("[mtp_check_work] tx exist\n");
+		return;
+	}
+
+	power_wakeup_lock(di->fw_wakelock, false);
 	di->g_val.mtp_chk_complete = false;
 	ret = cps4067_fw_check_mtp(di);
 	if (!ret) {
@@ -462,6 +468,27 @@ void cps4067_fw_mtp_check_work(struct work_struct *work)
 
 exit:
 	di->g_val.mtp_chk_complete = true;
+	power_wakeup_unlock(di->fw_wakelock, false);
+}
+
+void cps4067_fw_mtp_check(struct cps4067_dev_info *di)
+{
+	u32 mtp_check_delay;
+
+	if (power_cmdline_is_powerdown_charging_mode() ||
+		(!power_cmdline_is_factory_mode() && cps4067_rx_is_tx_exist(di))) {
+		di->g_val.mtp_chk_complete = true;
+		return;
+	}
+
+	if (!power_cmdline_is_factory_mode())
+		mtp_check_delay = di->mtp_check_delay.user;
+	else
+		mtp_check_delay = di->mtp_check_delay.fac;
+
+	INIT_DELAYED_WORK(&di->mtp_check_work, cps4067_fw_mtp_check_work);
+	di->fw_wakelock = power_wakeup_source_register(di->dev, "wl_fw_wakelock");
+	schedule_delayed_work(&di->mtp_check_work, msecs_to_jiffies(mtp_check_delay));
 }
 
 static u16 cps4067_mtp_crc_calc(const u8 *buf, u16 mtp_size)

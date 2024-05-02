@@ -507,8 +507,19 @@ static unsigned int enable_platform = 0;
 #define LLCC_VOTE_NOR 		12895387
 #define LLCC_TOP_THRESHOLD  14927527
 
+#define YUPIK_DDR_VOTE_LOWSVS	2187329
+#define YUPIK_DDR_VOTE_SVS1 	3071279
+#define YUPIK_DDR_VOTE_SVS2 	6219104
+#define YUPIK_DDR_VOTE_SVS_L1 	6831472
+#define YUPIK_DDR_VOTE_NOR 		8367636
+#define YUPIK_LLCC_VOTE_LOWSVS 	4799332
+#define YUPIK_LLCC_VOTE_SVS 	7455375
+#define YUPIK_LLCC_VOTE_SVS_L1 	9599713
+#define YUPIK_LLCC_VOTE_NOR 	12895387
+
 #define MLEVEL_BW_UTILIZATION 1
 #define PLATFORM_8325 1
+#define PLATFORM_7325 2
 
 const char * __init cx_get_hardware_name(void)
 {
@@ -547,6 +558,18 @@ static void cx_bw_optimize(struct icc_path *path, u32 *ori_avg_bw, u32 *ori_peak
 			*ori_peak_bw = LLCC_VOTE_SVS;
 	}
 }
+static void sm7325_cx_bw_optimize(struct icc_path *path, u32 *ori_avg_bw, u32 *ori_peak_bw)
+{
+	if (!strcmp(path->name, "llcc_mc-ebi")) { // DDR
+		if (*ori_peak_bw > YUPIK_DDR_VOTE_LOWSVS && *ori_peak_bw <= YUPIK_DDR_VOTE_SVS1)
+			*ori_peak_bw = YUPIK_DDR_VOTE_LOWSVS;
+	}
+
+	if (!strcmp(path->name, "chm_apps-qns_llcc")) { // LLCC
+		if (*ori_peak_bw == YUPIK_LLCC_VOTE_SVS)
+			*ori_peak_bw = YUPIK_LLCC_VOTE_LOWSVS;
+	}
+}
 #endif
 
 int icc_set_bw(struct icc_path *path, u32 avg_bw, u32 peak_bw)
@@ -565,18 +588,16 @@ int icc_set_bw(struct icc_path *path, u32 avg_bw, u32 peak_bw)
 	old_peak = path->reqs[0].peak_bw;
 
 #ifdef CONFIG_CX_POWER_OPTIMIZE
-	if (enable_platform == 1) { //platform info
-		if (!strcmp(path->name, "llcc_mc-ebi")
-			|| !strcmp(path->name, "chm_apps-qns_llcc"))
-				trace_icc_set_bw_ori(path, avg_bw, peak_bw);
-
-		if (uniperf_cx_optimize == 1 && enable_cx_decrease >= 1)
-			cx_bw_optimize(path, &avg_bw, &peak_bw);
-
-		if (!strcmp(path->name, "llcc_mc-ebi")
-			|| !strcmp(path->name, "chm_apps-qns_llcc"))
-				trace_icc_set_bw_mod(path, avg_bw, peak_bw);
-	}
+	if (!strcmp(path->name, "llcc_mc-ebi")
+		|| !strcmp(path->name, "chm_apps-qns_llcc"))
+			trace_icc_set_bw_ori(path, avg_bw, peak_bw);
+	if (enable_platform == 1 && uniperf_cx_optimize == 1 && enable_cx_decrease >= 1)
+		cx_bw_optimize(path, &avg_bw, &peak_bw);
+	if (enable_platform == 2 && uniperf_cx_optimize == 1 && enable_cx_decrease >= 1)
+		sm7325_cx_bw_optimize(path, &avg_bw, &peak_bw);
+	if (!strcmp(path->name, "llcc_mc-ebi")
+		|| !strcmp(path->name, "chm_apps-qns_llcc"))
+			trace_icc_set_bw_mod(path, avg_bw, peak_bw);
 #endif
 
 	for (i = 0; i < path->num_nodes; i++) {
@@ -957,6 +978,8 @@ static int __init icc_init(void)
 
 	if (!strcmp(machine_name, "SM8325"))
 		enable_platform = PLATFORM_8325;
+	if (!strcmp(machine_name, "SM7325"))
+		enable_platform = PLATFORM_7325;
 #endif
 
 	return 0;

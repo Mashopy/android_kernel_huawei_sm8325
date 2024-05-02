@@ -21,7 +21,7 @@
 #include <linux/of.h>
 #include <linux/reset.h>
 #include <linux/clk/qcom.h>
-
+#include <linux/of_gpio.h>
 #include <linux/bootdevice.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pinctrl/qcom-pinctrl.h>
@@ -29,6 +29,9 @@
 #include "sdhci-pltfm.h"
 #include "cqhci.h"
 #include "cqhci-crypto-qti.h"
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#endif
 #if defined(CONFIG_SDC_QTI)
 #include "../core/core.h"
 #endif
@@ -1455,8 +1458,12 @@ static bool sdhci_msm_is_tuning_needed(struct sdhci_host *host)
 	 * if clock frequency is greater than 100MHz in these modes.
 	 */
 	if (host->clock <= CORE_FREQ_100MHZ ||
+#ifndef CONFIG_DISK_MAGO
 	    !(ios->timing == MMC_TIMING_MMC_HS400 ||
 	    ios->timing == MMC_TIMING_MMC_HS200 ||
+#else
+	    !(ios->timing == MMC_TIMING_MMC_HS200 ||
+#endif
 	    ios->timing == MMC_TIMING_UHS_SDR104) ||
 	    ios->enhanced_strobe)
 		return false;
@@ -1617,6 +1624,11 @@ retry:
 		/* Tuning failed */
 		dev_dbg(mmc_dev(mmc), "%s: No tuning point found\n",
 		       mmc_hostname(mmc));
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		if (!strcmp(mmc_hostname(mmc), "mmc0"))
+			DSM_EMMC_LOG(host->mmc->card, DSM_EMMC_TUNING_ERROR,
+				"eMMC tuning error No tuning point found\n");
+#endif
 		rc = -EIO;
 	}
 
@@ -1915,6 +1927,10 @@ static bool sdhci_msm_populate_pdata(struct device *dev,
 	msm_host->mmc->sim_rst_gpio = of_get_named_gpio_flags(np, "sim-rst-gpios", 0, NULL);
 	pr_err("sdsim sim gpio pin num %d,%d,%d\n", msm_host->mmc->sim_dat_gpio,
 		msm_host->mmc->sim_clk_gpio,msm_host->mmc->sim_rst_gpio);
+#endif
+#ifdef CONFIG_DISK_MAGO
+	msm_host->mmc->emmc_rst_gpio = of_get_named_gpio_flags(np, "emmc-rst-gpios", 0, NULL);
+	msm_host->mmc->emmc_vccq_gpio = of_get_named_gpio_flags(np, "vccq-vol-gpios", 0, NULL);;
 #endif
 	if (of_get_property(np, "qcom,core_3_0v_support", NULL))
 		msm_host->fake_core_3_0v_support = true;
@@ -4351,6 +4367,26 @@ static void sdhci_msm_set_caps(struct sdhci_msm_host *msm_host)
 	msm_host->mmc->caps |= MMC_CAP_WAIT_WHILE_BUSY | MMC_CAP_NEED_RSP_BUSY;
 }
 
+#ifdef CONFIG_DISK_MAGO
+int emmc_gpio_set_value(int gpio_num, int value)
+{
+	int ret;
+	ret = gpio_request(gpio_num, "gpio_num");
+	if (ret) {
+		pr_err("%s:gpio_request error and ret is %d gpio_num is %d \n", __func__, ret, gpio_num);
+		return -ENOSYS;
+	}
+	ret = gpio_get_value(gpio_num);
+	gpio_set_value(gpio_num, value);
+
+	ret = gpio_get_value(gpio_num);
+	gpio_direction_output(gpio_num, value);
+	gpio_free(gpio_num);
+
+	return 0;
+}
+#endif
+
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	struct sdhci_host *host;
@@ -4637,7 +4673,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 
 #if defined(CONFIG_SDC_QTI)
 	host->timeout_clk_div = 4;
+#ifndef CONFIG_DISK_MAGO
 	msm_host->mmc->caps2 |= MMC_CAP2_CLK_SCALE;
+#endif
 #endif
 	sdhci_msm_setup_pm(pdev, msm_host);
 

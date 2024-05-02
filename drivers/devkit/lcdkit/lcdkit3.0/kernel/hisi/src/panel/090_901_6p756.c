@@ -24,9 +24,9 @@ static int _090_901_2d_code(char *oem_data, struct hisi_fb_data_type *hisifd)
 	int ret = 0;
 	int i;
 
-	if (disp_info->oeminfo.barcode_2d.support) {
+	if (DISP_INFO->oeminfo.barcode_2d.support) {
 		ret = lcd_kit_dsi_cmds_rx(hisifd, read_value, OEM_INFO_SIZE_MAX,
-			&disp_info->oeminfo.barcode_2d.cmds);
+			&DISP_INFO->oeminfo.barcode_2d.cmds);
 		oem_data[0] = BARCODE_2D_TYPE;
 		oem_data[1] = BARCODE_BLOCK_NUM;
 		for (i = 0; i < _901_BARCODE_2D_LEN; i++)

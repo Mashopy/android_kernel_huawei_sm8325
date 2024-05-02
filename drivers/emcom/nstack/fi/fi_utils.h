@@ -83,7 +83,6 @@ struct sk_buff* fi_get_netlink_skb(int type, int len, char **data);
 void fi_enqueue_netlink_skb(struct sk_buff *pskb);
 int fi_netlink_thread(void* data);
 void fi_empty_netlink_skb_queue(void);
-void fi_update_netlink_type(struct nlmsghdr *nlh, uint16_t service);
 void fi_send_mproute_msg2daemon(const void *data, int len);
 
 #endif // _FI_UTILS_H

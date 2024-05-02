@@ -51,6 +51,7 @@ static int gpio_vsp_enable;
 static int gpio_vsn_enable;
 static bool fastboot_display_enable = true;
 static int is_nt50358_support = 1;
+static int is_aw37504_support = 0;
 static int bias_init_no_need_delay;
 
 #define VSP_ENABLE 1
@@ -127,6 +128,99 @@ exit:
 	return ret;
 }
 
+static int tps65132_reg_set(struct i2c_client *client, unsigned int vpos,
+		unsigned int vneg, unsigned int app_dis)
+{
+	int ret = 0;
+	unsigned int ctl = 0;
+
+	ret = i2c_smbus_read_byte_data(client, TPS65132_REG_CTL);
+	if (ret < 0) {
+		pr_err("%s read ctl failed\n", __func__);
+		return ret;
+	}
+	ctl = (unsigned int)ret;
+
+	ctl = ctl | TPS65132_WED_BIT;
+	if (is_nt50358_support)
+		app_dis &= ~TPS65312_APPS_BIT;
+
+	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_VPOS, (u8)vpos);
+	if (ret < 0) {
+		pr_err("%s write vpos failed\n", __func__);
+		return ret;
+	}
+
+	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_VNEG, (u8)vneg);
+	if (ret < 0) {
+		pr_err("%s write vneg failed\n", __func__);
+		return ret;
+	}
+
+	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_APP_DIS, (u8)app_dis);
+	if (ret < 0) {
+		pr_err("%s write app_dis failed\n", __func__);
+		return ret;
+	}
+
+	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_CTL, (u8)ctl);
+	if (ret < 0) {
+		pr_err("%s write ctl failed\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int aw37504_reg_set(struct i2c_client *client, unsigned int vpos,
+		unsigned int vneg, unsigned int app_dis)
+{
+	int ret = 0;
+	unsigned int vendor_id = 0;
+	unsigned int ctl = 0;
+
+	ret = i2c_smbus_read_byte_data(client, AW37504_REG_CTRL);
+	if (ret < 0) {
+		pr_err("%s read ctl failed\n", __func__);
+		return ret;
+	}
+	ctl = (unsigned int)ret;
+	ctl = ctl | AW37504_NCP_BIT;
+
+	ret = i2c_smbus_read_byte_data(client, AW3750X_REG_TRIM);
+	if (ret < 0) {
+		pr_err("%s trim read failed\n", __func__);
+		return ret;
+	}
+	vendor_id = (unsigned int)ret;
+	if ((vendor_id & AW37504_VERSION_ID) == AW37504_VERSION_ID) {
+		ret = i2c_smbus_write_byte_data(client, AW37504_REG_VPOS, (u8)vpos);
+		if (ret < 0) {
+			pr_err("%s write vpos failed\n", __func__);
+			return ret;
+		}
+		ret = i2c_smbus_write_byte_data(client, AW37504_REG_VNEG, (u8)vneg);
+		if (ret < 0) {
+			pr_err("%s write vneg failed\n", __func__);
+			return ret;
+		}
+		ret = i2c_smbus_write_byte_data(client, AW37504_REG_APP_DIS, (u8)app_dis);
+		if (ret < 0) {
+			pr_err("%s write add_dis failed\n", __func__);
+			return ret;
+		}
+		ret = i2c_smbus_write_byte_data(client, AW37504_REG_CTRL, (u8)ctl);
+		if (ret < 0) {
+			pr_err("%s write ctrl failed\n", __func__);
+			return ret;
+		}
+		pr_info("%s write sus\n", __func__);
+	} else {
+		pr_info("%s do not set\n", __func__);
+	}
+
+	return ret;
+}
 
 static int tps65132_reg_init(struct i2c_client *client, u8 vpos_cmd, u8 vneg_cmd)
 {
@@ -134,7 +228,6 @@ static int tps65132_reg_init(struct i2c_client *client, u8 vpos_cmd, u8 vneg_cmd
 	unsigned int vneg;
 	int ret = 0;
 	unsigned int app_dis;
-	unsigned int ctl;
 
 	ret = i2c_smbus_read_byte_data(client, TPS65132_REG_VPOS);
 	if (ret < 0) {
@@ -157,43 +250,25 @@ static int tps65132_reg_init(struct i2c_client *client, u8 vpos_cmd, u8 vneg_cmd
 	}
 	app_dis = (unsigned int)ret;
 	pr_info("%s read app_dis 0 value=0x%x \n", __func__, app_dis);
-	ret = i2c_smbus_read_byte_data(client, TPS65132_REG_CTL);
-	if (ret < 0) {
-		pr_err("%s read ctl failed\n", __func__);
-		goto exit;
-	}
-	ctl = (unsigned int)ret;
 
 	vpos = (vpos & (~TPS65132_REG_VOL_MASK)) | vpos_cmd;
 	vneg = (vneg & (~TPS65132_REG_VOL_MASK)) | vneg_cmd;
 	app_dis = app_dis | TPS65312_APPS_BIT | TPS65132_DISP_BIT | TPS65132_DISN_BIT;
-	ctl = ctl | TPS65132_WED_BIT;
-	if (is_nt50358_support)
-		app_dis &= ~TPS65312_APPS_BIT;
 
-	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_VPOS, (u8)vpos);
-	if (ret < 0) {
-		pr_err("%s write vpos failed\n", __func__);
-		goto exit;
+	if (is_aw37504_support) {
+		ret = aw37504_reg_set(client, vpos, vneg, app_dis);
+		if (ret < 0) {
+			pr_err("%s aw write failed\n", __func__);
+			goto exit;
+		}
+	} else {
+		ret = tps65132_reg_set(client, vpos, vneg, app_dis);
+		if (ret < 0) {
+			pr_err("%s tps write failed\n", __func__);
+			goto exit;
+		}
 	}
 
-	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_VNEG, (u8)vneg);
-	if (ret < 0) {
-		pr_err("%s write vneg failed\n", __func__);
-		goto exit;
-	}
-
-	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_APP_DIS, (u8)app_dis);
-	if (ret < 0) {
-		pr_err("%s write app_dis failed\n", __func__);
-		goto exit;
-	}
-
-	ret = i2c_smbus_write_byte_data(client, TPS65132_REG_CTL, (u8)ctl);
-	if (ret < 0) {
-		pr_err("%s write ctl failed\n", __func__);
-		goto exit;
-	}
 	if (!bias_init_no_need_delay)
 		msleep(60);
 
@@ -356,6 +431,53 @@ static struct lcd_kit_bias_ops bias_ops = {
 };
 #endif
 
+static int tps65132_parse_dts(struct device_node *np, int *probe_no_init,
+		int *vpos_target, int *vneg_target)
+{
+	int retval = 0;
+
+	if (!np || !probe_no_init || !vpos_target || !vneg_target)
+		return -ENODEV;
+
+	gpio_vsp_enable = of_get_named_gpio_flags(np, "gpio_vsp_enable", 0, NULL);
+	if (!gpio_is_valid(gpio_vsp_enable)) {
+		pr_err("tps65132 get vsp_enable gpio faild\n");
+		retval = -ENODEV;
+		goto failed_1;
+	}
+	pr_info("tps65132 get gpio_vsp_enable = %d gpio OK\n", gpio_vsp_enable);
+
+	gpio_vsn_enable = of_get_named_gpio_flags(np, "gpio_vsn_enable", 0, NULL);
+	if (!gpio_is_valid(gpio_vsn_enable)) {
+		pr_err("get vsn_enable gpio faild\n");
+		retval = -ENODEV;
+		goto failed_1;
+	}
+	pr_info("tps65132 get gpio_vsn_enable gpio %d OK\n", gpio_vsn_enable);
+
+	retval = of_property_read_u32(np, "probe_no_init", probe_no_init);
+	if (retval >= 0)
+		pr_info("tps65132 probe will no init\n");
+
+	retval = of_property_read_u32(np, "bias_init_no_need_delay", &bias_init_no_need_delay);
+	if (retval >= 0)
+		pr_info("tps65132 bias init no need delay\n");
+
+	retval = of_property_read_u32(np, "is_aw37504_support", &is_aw37504_support);
+	if (retval >= 0)
+		pr_info("is_aw37504_support=%d\n", is_aw37504_support);
+
+	if (is_aw37504_support) {
+		*vpos_target = TPS65132_VOL_59;
+		*vneg_target = TPS65132_VOL_59;
+	}
+
+	return 0;
+
+failed_1:
+	return retval;
+}
+
 static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int retval = 0;
@@ -374,20 +496,14 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 		goto failed_1;
 	}
 	np = client->dev.of_node;
-	gpio_vsp_enable = of_get_named_gpio_flags(np, "gpio_vsp_enable", 0, NULL);
-	if (!gpio_is_valid(gpio_vsp_enable)) {
-		pr_err("tps65132 get vsp_enable gpio faild\n");
+
+	retval = tps65132_parse_dts(np, &probe_no_init, &vpos_target, &vneg_target);
+	if (retval < 0) {
+		pr_err("%s parse dts fail\n", __FUNCTION__);
 		retval = -ENODEV;
 		goto failed_1;
 	}
-	pr_info("tps65132 get gpio_vsp_enable = %d gpio OK\n", gpio_vsp_enable);
-	gpio_vsn_enable = of_get_named_gpio_flags(np, "gpio_vsn_enable", 0, NULL);
-	if (!gpio_is_valid(gpio_vsn_enable)) {
-		pr_err("get vsn_enable gpio faild\n");
-		retval = -ENODEV;
-		goto failed_1;
-	}
-	pr_info("tps65132 get gpio_vsn_enable gpio %d OK\n", gpio_vsn_enable);
+
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		pr_err("[%s,%d]: need I2C_FUNC_I2C\n", __FUNCTION__, __LINE__);
 		retval = -ENODEV;
@@ -400,13 +516,6 @@ static int tps65132_probe(struct i2c_client *client, const struct i2c_device_id 
 		retval = -ENOMEM;
 		goto failed_1;
 	}
-	retval = of_property_read_u32(np, "probe_no_init", &probe_no_init);
-	if (retval >= 0)
-		pr_info("tps65132 probe will no init\n");
-
-	retval = of_property_read_u32(np, "bias_init_no_need_delay", &bias_init_no_need_delay);
-	if (retval >= 0)
-		pr_info("tps65132 bias init no need delay\n");
 
 	i2c_set_clientdata(client, di);
 	di->dev = &client->dev;

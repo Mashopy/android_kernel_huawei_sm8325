@@ -19,6 +19,7 @@
 
 #include <huawei_platform/power/direct_charger/direct_charger.h>
 #include <chipset_common/hwpower/hardware_monitor/btb_check.h>
+#include <chipset_common/hwpower/adapter/adapter_detect.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
 #include <chipset_common/hwpower/common_module/power_test.h>
 #include <chipset_common/hwpower/common_module/power_sysfs.h>
@@ -84,33 +85,6 @@ static void dc_mmi_set_test_status(int value)
 		dc_mmi_set_test_flag(false);
 		cancel_delayed_work(&di->timeout_work);
 	}
-}
-
-static void dc_mmi_set_protocol_type(int value)
-{
-	struct dc_mmi_data *di = g_dc_mmi_di;
-
-	if (!di)
-		return;
-
-	di->protocol_type = value;
-	if (value == DC_MMI_PROT_RST_VAL)
-		di->protocol_set_flag = false;
-	else
-		di->protocol_set_flag = true;
-	hwlog_info("set protocol type %d\n", di->protocol_type);
-}
-
-bool dc_mmi_get_protocol_type(int *type)
-{
-	struct dc_mmi_data *di = g_dc_mmi_di;
-
-	if (!type || !di || !di->protocol_set_flag)
-		return false;
-
-	*type = di->protocol_type;
-
-	return true;
 }
 
 void dc_mmi_set_succ_flag(int mode, int value)
@@ -331,7 +305,7 @@ static ssize_t dc_mmi_sysfs_store(struct device *dev,
 	case DC_MMI_SYSFS_PROTOCOL_TYPE:
 		if (kstrtol(buf, POWER_BASE_DEC, &val) < 0)
 			return -EINVAL;
-		dc_mmi_set_protocol_type((int)val);
+		adapter_detect_mmi_set_protocol_type((int)val);
 		break;
 	default:
 		break;

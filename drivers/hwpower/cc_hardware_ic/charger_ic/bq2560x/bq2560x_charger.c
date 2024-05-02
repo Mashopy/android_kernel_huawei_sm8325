@@ -92,6 +92,7 @@ static struct delayed_work bq2560x_redo_bc12_work;
 static bool g_redo_bc12_flag = false;
 
 #define REDO_BC12_WORK_DELAY_TIME    (8 * 1000)
+#define INPUT_DETECTION_DELAT_TIME   (5 * 1000)
 #define TERM_CURR                    840
 #define LIMIT_CURR                   840
 
@@ -236,17 +237,25 @@ static void bq2560x_vbus_good_check(void)
 
 	/* timeout:50ms*10 = 500ms, if vbus is not good, wait 50ms and read again */
 	for (i = 0; i < 10; i++) {
-		bq2560x_read_byte(BQ2560X_REG_SS, &reg_0x08);
+		if (g_bq2560x_dev->vendor_id != SY6974B_VENDOR_ID)
+			bq2560x_read_byte(BQ2560X_REG_SS, &reg_0x08);
+
 		bq2560x_read_byte(BQ2560X_REG_VINS, &reg_0x0a);
 		hwlog_info("reg[%d]=0x%x, reg[%d]=0x%x\n",
 			BQ2560X_REG_SS, reg_0x08, BQ2560X_REG_VINS, reg_0x0a);
 
-		if ((reg_0x08 & BQ2560X_REG_SS_PG_STAT_MASK)
+		if ((g_bq2560x_dev->vendor_id == SY6974B_VENDOR_ID) &&
+			(reg_0x0a & BQ2560X_REG_VINS_VBUS_GD_MASK)) {
+			hwlog_info("%s: sy6974b vbus is good\n", __func__);
+			power_usleep(DT_USLEEP_5MS); /* when vbus is good, wait 5ms */
+			return;
+		} else if ((reg_0x08 & BQ2560X_REG_SS_PG_STAT_MASK)
 			&& (reg_0x0a & BQ2560X_REG_VINS_VBUS_GD_MASK)) {
 			hwlog_info("%s: vbus is good\n", __func__);
 			power_usleep(DT_USLEEP_5MS); /* when vbus is good, wait 5ms */
 			return;
 		}
+
 		power_msleep(DT_MSLEEP_50MS, 0, NULL);
 	}
 	hwlog_err("%s: vbus is not good\n", __func__);
@@ -298,6 +307,7 @@ static void bq2560x_bc12_done_check(struct bq2560x_device_info *di)
 static int sgm41512_chg_type_det(struct bq2560x_device_info *di, bool en)
 {
 	u8 reg = 0;
+	bool flag;
 
 	/* charger plug out */
 	if (!en) {
@@ -313,10 +323,26 @@ static int sgm41512_chg_type_det(struct bq2560x_device_info *di, bool en)
 	bq2560x_bc12_done_check(di);
 	sgm41512_get_bc12_result(di);
 
+	/* Identified non-standard,do bc1.2 again */
 	if (di->enable_redo_bc12 && !g_redo_bc12_flag
 		&& (di->chg_type == CHARGER_TYPE_NON_STANDARD)) {
-		schedule_delayed_work(&bq2560x_redo_bc12_work,
+		flag = schedule_delayed_work(&bq2560x_redo_bc12_work,
 			msecs_to_jiffies(REDO_BC12_WORK_DELAY_TIME));
+		if (!flag) {
+			cancel_delayed_work_sync(&bq2560x_redo_bc12_work);
+			flag = schedule_delayed_work(&bq2560x_redo_bc12_work,
+				msecs_to_jiffies(0));
+			hwlog_info("%s: flag = %d\n", __func__, flag);
+		}
+		g_redo_bc12_flag = true;
+	}
+
+	/* Identified sdp,do bc1.2 again */
+	if (di->sdp_redo_bc12 && !g_redo_bc12_flag
+		&& (di->chg_type == CHARGER_TYPE_USB)) {
+		hwlog_info("chg_type is usb,do bc12 enter\n");
+		schedule_delayed_work(&bq2560x_redo_bc12_work,
+			msecs_to_jiffies(INPUT_DETECTION_DELAT_TIME));
 		g_redo_bc12_flag = true;
 	}
 
@@ -328,12 +354,14 @@ static int sgm41512_chg_type_det(struct bq2560x_device_info *di, bool en)
 static void do_bq2560x_redo_bc12_work(struct work_struct *data)
 {
 	hwlog_info("%s start\n", __func__);
-	mutex_lock(&redo_bc12_lock);
 
-	sgm41512_chg_type_det(g_bq2560x_dev, true);
+	if (!get_judge_do_bc12()) {
+		mutex_lock(&redo_bc12_lock);
+		hwlog_info("judge do bc12\n");
+		sgm41512_chg_type_det(g_bq2560x_dev, true);
+		mutex_unlock(&redo_bc12_lock);
+	}
 	g_redo_bc12_flag = false;
-
-	mutex_unlock(&redo_bc12_lock);
 }
 
 static int bq2560x_device_check(void)
@@ -465,7 +493,8 @@ static int bq2560x_5v_chip_init(struct bq2560x_device_info *di)
 	hiz_iin_limit_flag = HIZ_IIN_FLAG_FALSE;
 
 	/* enable charging */
-	gpio_set_value(di->gpio_cd, 0);
+	if (di->gpio_cd_need)
+		gpio_set_value(di->gpio_cd, 0);
 
 	return ret;
 }
@@ -970,7 +999,7 @@ static int bq2560x_get_register_head(char *reg_head, int size, void *dev_data)
 	memset(reg_head, 0, size);
 
 	for (i = 0; i < BQ2560X_REG_NUM; i++) {
-		snprintf(buff, BUF_LEN, "Reg[0x%x]  ", i);
+		snprintf(buff, BUF_LEN, "Reg[0x%-2.2x] ", i);
 		strncat(reg_head, buff, strlen(buff));
 	}
 
@@ -1615,6 +1644,7 @@ static int bq2560x_probe(struct i2c_client *client,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"hiz_iin_limit", &(di->hiz_iin_limit), 0);
 	di->enable_redo_bc12 = of_property_read_bool(np, "enable_redo_bc12");
+	di->sdp_redo_bc12 = of_property_read_bool(np, "sdp_redo_bc12");
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"custom_cv", &g_bq2560x_cv, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -1635,15 +1665,37 @@ static int bq2560x_probe(struct i2c_client *client,
 		"ieoc", &(di->ieoc), BQ2560X_DEFAULT_IEOC_CURRENT);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"otg_boost_vol", &(di->otg_boost_vol), REG02_BOOST_LIM_1P2A);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"gpio_cd_need", &di->gpio_cd_need, 1);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"disable_batfet_rst_en", &di->disable_batfet_rst_en, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"shipmode_clear_hiz", &di->shipmode_clear_hiz, 0);
 
 	di->chg_det_enable = of_property_read_bool(np, "charge-detect-enable");
 	di->no_need_change_iterm = of_property_read_bool(np, "no_need_change_iterm");
 
+	/* Disable BATFET reset */
+	if (di->disable_batfet_rst_en) {
+		(void)bq2560x_set_watchdog_timer(CHAGRE_WDT_DISABLE);
+		bq2560x_write_mask(BQ2560X_REG_MOC, BQ2560X_REG_MOC_BATFET_RST_EN_MASK,
+			BQ2560X_REG_MOC_BATFET_RST_EN_SHIFT, REG07_BATFET_RST_DISABLE);
+	}
+	if (di->shipmode_clear_hiz) {
+		ret = bq2560x_set_charger_hiz(0);
+		if (ret)
+			hwlog_err("shipmode set bq2560x set hiz fail\n");
+	}
+
 	/* set gpio to control CD pin to disable/enable bq2560x IC */
-	ret = power_gpio_config_output(np,
-		"gpio_cd", "charger_cd", &di->gpio_cd, 0);
-	if (ret)
-		goto bq2560x_fail_0;
+	if (di->gpio_cd_need) {
+		ret = power_gpio_config_output(np,
+			"gpio_cd", "charger_cd", &di->gpio_cd, 0);
+		if (ret)
+			goto bq2560x_fail_0;
+	} else {
+		hwlog_info("no need gpio_cd\n");
+	}
 
 	ret = power_gpio_config_interrupt(np,
 		"gpio_int", "charger_int", &di->gpio_int, &di->irq_int);
@@ -1702,7 +1754,8 @@ bq2560x_fail_3:
 bq2560x_fail_2:
 	gpio_free(di->gpio_int);
 bq2560x_fail_1:
-	gpio_free(di->gpio_cd);
+	if (di->gpio_cd_need)
+		gpio_free(di->gpio_cd);
 bq2560x_fail_0:
 	mutex_destroy(&di->io_lock);
 	kfree(di);
@@ -1733,10 +1786,12 @@ static int bq2560x_remove(struct i2c_client *client)
 	if (!di)
 		return -ENODEV;
 
-	gpio_set_value(di->gpio_cd, 1);
+	if (di->gpio_cd_need) {
+		gpio_set_value(di->gpio_cd, 1);
 
-	if (di->gpio_cd)
-		gpio_free(di->gpio_cd);
+		if (di->gpio_cd)
+			gpio_free(di->gpio_cd);
+	}
 
 	if (di->irq_int)
 		free_irq(di->irq_int, di);

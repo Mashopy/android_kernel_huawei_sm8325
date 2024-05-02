@@ -180,6 +180,9 @@ struct hi6526_device_info {
 	struct mutex ibias_calc_lock;
 	struct nty_data dc_nty_data;
 	struct delayed_work dbg_work;
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	struct delayed_work ldo33_work;
+#endif
 	struct wakeup_source *adc_wakelock;
 	struct chip_debug_info dbg_info[INFO_LEN];
 	unsigned int hi6526_version;
@@ -221,6 +224,9 @@ struct hi6526_device_info {
 	int is_weaksource;
 	int chg_last_enable;
 	int rst_gpio;
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	int avdd_enabled;
+#endif
 };
 
 typedef enum {

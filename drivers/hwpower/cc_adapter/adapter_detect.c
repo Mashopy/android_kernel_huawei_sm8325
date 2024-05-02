@@ -85,25 +85,44 @@ static void adapter_detect_set_ping_times(unsigned int times)
 	hwlog_info("set ping_times=%u\n", times);
 }
 
-static int adapter_detect_set_prot_type(unsigned int val)
+unsigned int adapter_detect_get_init_protocol_type(void)
 {
 	struct adapter_detect_dev *l_dev = adapter_detect_get_dev();
-
-	if (!power_cmdline_is_factory_mode())
-		return 0;
 
 	if (!l_dev) {
 		hwlog_err("l_dev is null\n");
 		return -EPERM;
 	}
 
+	return l_dev->init_prot_type;
+}
+
+unsigned int adapter_detect_get_sysfs_protocol_type(unsigned int val)
+{
+	if ((val <= SYSFS_PROTOCOL_BEGIN) || (val >= SYSFS_PROTOCOL_END))
+		return ADAPTER_PROTOCOL_BEGIN;
+
+	return BIT(g_sysfs_prot_type_table[val]);
+}
+
+static int adapter_detect_set_sysfs_prot_type(unsigned int val)
+{
+	struct adapter_detect_dev *l_dev = adapter_detect_get_dev();
+
+	if (!l_dev) {
+		hwlog_err("l_dev is null\n");
+		return -EPERM;
+	}
+
+	if ((val < SYSFS_PROTOCOL_BEGIN) || (val >= SYSFS_PROTOCOL_END))
+		return -EPERM;
+
 	l_dev->sysfs_prot_type = val;
-	l_dev->init_prot_type_flag = false;
 	hwlog_info("set sysfs prot type=%d\n", l_dev->sysfs_prot_type);
 	return 0;
 }
 
-static int adapter_detect_get_prot_type(unsigned int *val)
+static int adapter_detect_get_sysfs_prot_type(unsigned int *val)
 {
 	struct adapter_detect_dev *l_dev = adapter_detect_get_dev();
 
@@ -112,22 +131,25 @@ static int adapter_detect_get_prot_type(unsigned int *val)
 		return -EPERM;
 	}
 
-	*val = l_dev->init_prot_type;
+	*val = l_dev->sysfs_prot_type;
 	return 0;
 }
 
-static bool adapter_detect_check_sysfs_prot_type(struct adapter_detect_dev *l_dev)
+void adapter_detect_mmi_set_protocol_type(int type)
 {
-	if (!power_cmdline_is_factory_mode())
-		return false;
+	struct adapter_detect_dev *l_dev = adapter_detect_get_dev();
 
-	if ((l_dev->sysfs_prot_type <= SYSFS_PROTOCOL_BEGIN) ||
-		(l_dev->sysfs_prot_type >= SYSFS_PROTOCOL_END))
-		return false;
+	if (!l_dev)
+		return;
 
-	l_dev->init_prot_type = BIT(g_sysfs_prot_type_table[l_dev->sysfs_prot_type]);
-	hwlog_info("set init prot type=%d\n", l_dev->init_prot_type);
-	return true;
+	if ((type < ADAPTER_PROTOCOL_SCP) || (type >= ADAPTER_PROTOCOL_END)) {
+		l_dev->mmi_prot_type_flag = false;
+		return;
+	}
+
+	l_dev->mmi_prot_type_flag =true;
+	l_dev->mmi_prot_type = type;
+	hwlog_info("mmi set prot_type=%d\n", l_dev->mmi_prot_type);
 }
 
 void adapter_detect_init_protocol_type(void)
@@ -136,9 +158,6 @@ void adapter_detect_init_protocol_type(void)
 	int i;
 
 	if (!l_dev)
-		return;
-
-	if (adapter_detect_check_sysfs_prot_type(l_dev))
 		return;
 
 	if (l_dev->init_prot_type_flag)
@@ -155,12 +174,21 @@ void adapter_detect_init_protocol_type(void)
 
 bool adapter_detect_check_protocol_type(unsigned int prot_type)
 {
+	unsigned int type;
 	struct adapter_detect_dev *l_dev = adapter_detect_get_dev();
 
 	if (!l_dev)
 		return false;
 
-	return (l_dev->init_prot_type & BIT(prot_type)) ? true : false;
+	type = l_dev->init_prot_type & BIT(prot_type);
+	hwlog_info("sysfs_prot_type=0x%x\n", l_dev->sysfs_prot_type);
+	if (l_dev->sysfs_prot_type)
+		type &= BIT(g_sysfs_prot_type_table[l_dev->sysfs_prot_type]);
+	hwlog_info("mmi_prot_type_flag=%d, mmi_prot_type=%d\n", l_dev->mmi_prot_type_flag, l_dev->mmi_prot_type);
+	if (l_dev->mmi_prot_type_flag)
+		type &= BIT(l_dev->mmi_prot_type);
+
+	return !!type;
 }
 
 static void adapter_detect_set_runtime_protocol_type(unsigned int prot_type)
@@ -345,8 +373,8 @@ static int adapter_detect_notifier_call(struct notifier_block *nb,
 }
 
 static struct power_if_ops adapter_detect_if_ops = {
-	.set_adapter_protocol = adapter_detect_set_prot_type,
-	.get_adapter_protocol = adapter_detect_get_prot_type,
+	.set_adapter_protocol = adapter_detect_set_sysfs_prot_type,
+	.get_adapter_protocol = adapter_detect_get_sysfs_prot_type,
 	.type_name = "adapter_protocol",
 };
 

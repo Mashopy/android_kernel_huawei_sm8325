@@ -100,6 +100,8 @@ static int dsm_emmc_process_log(int code, char *err_msg)
 	static char emmc_data_crc_failure_max_count = ERR_MAX_COUNT;
 	static char emmc_command_crc_failure_max_count = ERR_MAX_COUNT;
 	static char emmc_io_timeout_max_count = ERR_MAX_COUNT;
+	static char emmc_init_error_max_count = ERR_MAX_COUNT;
+	static char emmc_cqe_recovery_max_count = ERR_MAX_COUNT;
 #endif
 	/*filter: if it has the same msg code with last, record err code&count*/
 	if (g_last_msg_code == code) {
@@ -171,6 +173,12 @@ static int dsm_emmc_process_log(int code, char *err_msg)
 		break;
 	case DSM_EMMC_IO_TIMEOUT:
 		ret = can_report(&emmc_io_timeout_max_count);
+		break;
+	case DSM_EMMC_INIT_ERROR:
+		ret = can_report(&emmc_init_error_max_count);
+		break;
+	case DSM_EMMC_CQE_RECOVERY:
+		ret = can_report(&emmc_cqe_recovery_max_count);
 		break;
 #endif
 	default:
@@ -486,6 +494,14 @@ void mmc_dsm_request_response_error_check(struct mmc_host *host,
 				pr_err("mrq->cmd->opcode == MMC_SEND_EXT_CSD exit\n");
 				return;
 			}
+#ifdef CONFIG_DISK_MAGO
+			if (mrq->cmd->opcode == MMC_SLEEP_AWAKE || \
+				mrq->cmd->opcode == MMC_ERASE_GROUP_START || \
+				mrq->cmd->opcode == MMC_ERASE_GROUP_END) {
+				pr_err("opcode cmd5/35/36 exit\n");
+				return;
+			}
+#endif
 		}
 		if (mrq->done == mmc_wait_done) {
 			int err;

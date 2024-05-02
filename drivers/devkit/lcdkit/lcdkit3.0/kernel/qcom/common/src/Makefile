@@ -20,3 +20,7 @@ EXTRA_CFLAGS += -I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/qcom/common/
 		-I$(srctree)/drivers/devkit/lcdkit/lcdkit3.0/kernel/common/displayengine/include \
 		-I$(srctree)/drivers/base \
 		-I$(srctree)/include/drm
+
+ifeq ($(CONFIG_MATTING_ALGO_TASK),y)
+EXTRA_CFLAGS += -I$(srctree)/../../vendor/huawei/extra/kernel/drivers/sensor/ext_inputhub/matting_algo_task
+endif

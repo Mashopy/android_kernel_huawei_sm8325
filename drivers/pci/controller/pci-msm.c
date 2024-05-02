@@ -37,6 +37,7 @@
 #include <linux/uaccess.h>
 #include <soc/qcom/subsystem_notif.h>
 #include <linux/pinctrl/qcom-pinctrl.h>
+#include <linux/clk/qcom.h>
 
 #include "../pci.h"
 
@@ -106,6 +107,7 @@
 #define PCIE20_CAP_DEVCAP (PCIE20_CAP + 0x04)
 #define PCIE20_CAP_DEVCTRLSTATUS (PCIE20_CAP + 0x08)
 #define PCIE20_CAP_LINKCTRLSTATUS (PCIE20_CAP + 0x10)
+#define PCIE20_CAP_ROOT_CAPABILITIES_REG (PCIE20_CAP + 0x1C)
 #define PCIE_CAP_DLL_ACTIVE BIT(29)
 
 #define PCIE20_CAP_LINKCAP (PCIE20_CAP + 0xc)
@@ -3178,6 +3180,42 @@ static void msm_pcie_vreg_deinit(struct msm_pcie_dev_t *dev)
 	PCIE_DBG(dev, "RC%d: exit\n", dev->rc_idx);
 }
 
+static int msm_pcie_clk_retain_mem(struct msm_pcie_dev_t *dev)
+{
+	int i;
+	int ret = 0;
+	struct msm_pcie_clk_info_t *info;
+
+	for (i = 0; i < MSM_PCIE_MAX_CLK ; i++) {
+		info = &dev->clk[i];
+		if (!info->hdl)
+			continue;
+		if (!strcmp(info->name, "pcie_0_slv_axi_clk")) {
+			ret = qcom_clk_set_flags(info->hdl, CLKFLAG_RETAIN_MEM);
+			if (ret)
+				PCIE_DBG(dev, "RC%d: failed to set retain mem for %s err:%d",
+					dev->rc_idx, info->name, ret);
+			else
+				PCIE_DBG(dev, "RC%d: Retain mem set for %s", dev->rc_idx, info->name);
+		}
+	}
+
+	for (i = 0; i < MSM_PCIE_MAX_PIPE_CLK; i++) {
+		info = &dev->pipeclk[i];
+		if (!info->hdl)
+			continue;
+		if (!strcmp(info->name, "pcie_0_pipe_clk")) {
+			ret = qcom_clk_set_flags(info->hdl, CLKFLAG_RETAIN_MEM);
+			if (ret)
+				PCIE_DBG(dev, "RC%d: failed to set retain mem for %s err:%d",
+					dev->rc_idx, info->name, ret);
+			else
+				PCIE_DBG(dev, "RC%d: Retain mem set for %s", dev->rc_idx, info->name);
+		}
+	}
+	return ret;
+}
+
 static int msm_pcie_clk_init(struct msm_pcie_dev_t *dev)
 {
 	int i, rc = 0;
@@ -3721,6 +3759,8 @@ static void msm_pcie_config_controller(struct msm_pcie_dev_t *dev)
 
 		PCIE_DBG(dev, "RC's PCIE20_CAP_DEVCTRLSTATUS:0x%x\n",
 			readl_relaxed(dev->dm_core + PCIE20_CAP_DEVCTRLSTATUS));
+		msm_pcie_write_mask(dev->dm_core + PCIE20_CAP_ROOT_CAPABILITIES_REG, 0,
+			BIT(2) | BIT(1) | BIT(0));
 	}
 
 	msm_pcie_config_aspm(dev);
@@ -4619,6 +4659,8 @@ static int msm_pcie_enable(struct msm_pcie_dev_t *dev)
 		dev->rc_idx,
 		readl_relaxed(dev->parf + PCIE20_PARF_INT_ALL_MASK));
 
+	msm_pcie_write_mask(dev->parf + 0x2bc, 0x300, 0);
+
 	msm_pcie_write_reg(dev->parf, PCIE20_PARF_SLV_ADDR_SPACE_SIZE,
 				dev->slv_addr_space_size);
 
@@ -4937,6 +4979,9 @@ int msm_pcie_enumerate(u32 rc_idx)
 	ids = readl_relaxed(dev->dm_core);
 	vendor_id = ids & 0xffff;
 	device_id = (ids & 0xffff0000) >> 16;
+
+	PCIE_ERR(dev, "PCIe: RC%d: set retain mem", dev->rc_idx);
+	msm_pcie_clk_retain_mem(dev);
 
 	PCIE_DBG(dev, "PCIe: RC%d: vendor-id:0x%x device_id:0x%x\n",
 		dev->rc_idx, vendor_id, device_id);

@@ -22,7 +22,9 @@
 #include <linux/time.h>
 #include <linux/fs.h>
 #include <linux/stat.h>
+#include <linux/syscalls.h>
 #include <linux/uaccess.h>
+#include <securec.h>
 #include <huawei_platform/log/hw_log.h>
 
 #ifdef HWLOG_TAG
@@ -30,6 +32,8 @@
 #endif
 #define HWLOG_TAG ulog_trace
 HWLOG_REGIST();
+
+static int g_write_cnt;
 
 static void ulog_get_time(struct tm *ptm)
 {
@@ -69,7 +73,7 @@ static void ulog_check_file(struct ulog_file *file)
 	memset(&stat, 0, sizeof(stat));
 	vfs_stat(file->name, &stat);
 
-	hwlog_info("ulog file stat size=%u\n", stat.size);
+	hwlog_debug("ulog file stat size=%u\n", stat.size);
 	if (stat.size > ULOG_FILE_MAX_SIZE) {
 		ulog_get_file_name(file);
 		hwlog_info("new ulog file %s\n", file->name);
@@ -152,21 +156,169 @@ static int ulog_write_file(struct ulog_file *file, const char *data, u32 size)
 	return 0;
 }
 
-void ulog_write(struct ulog_file *file, const char *data, u32 size)
+static time64_t ulog_get_file_time(char *path)
 {
+	struct kstat stat;
+
+	memset_s(&stat, sizeof(stat), 0, sizeof(stat));
+	vfs_stat(path, &stat);
+
+	hwlog_info("ulog file stat time=%ld\n", (long)stat.mtime.tv_sec);
+	return stat.mtime.tv_sec;
+}
+
+static int ulog_delete_file(char *path)
+{
+	int ret;
+
+	if (!path) {
+		hwlog_err("path is invalid\n");
+		return -EFAULT;
+	}
+
+	ret = ksys_access(path, 0);
+	if (ret) {
+		hwlog_err("path access failed\n");
+		return -EFAULT;
+	}
+
+	ret = ksys_unlink(path);
+	if (ret) {
+		hwlog_err("unlink file failed\n");
+		return -EFAULT;
+	}
+	hwlog_info("unlink file ok\n");
+	return 0;
+}
+
+static int ulog_ctr_callback(struct dir_context *cb, const char *name,
+	int len, loff_t offset, u64 ino, unsigned int type)
+{
+	int ret;
+	time64_t time;
+	char buf[ULOG_FILE_NAME_SIZE] = { 0 };
+	char file_name[ULOG_FILE_NAME_SIZE] = { 0 };
+	struct ulog_getdents_callback *ucb =
+		container_of(cb, struct ulog_getdents_callback, ctx);
+
+	if (!ucb) {
+		hwlog_info("ucb is null\n");
+		return -EFAULT;
+	}
+
+	if ((len < 0) || (len > ULOG_FILE_NAME_SIZE - 1)) {
+		hwlog_info("length is outsize, len=%d\n", len);
+		return -EFAULT;
+	}
+
+	if (strncpy_s(file_name, ULOG_FILE_NAME_SIZE, name, len)) {
+		hwlog_err("%s: strncpy_s file fail\n", __func__);
+		return 0;
+	}
+
+	if (!strstr(file_name, ULOG_FILE_NAME))
+		return 0;
+
+	if (strlen(file_name) > ULOG_ADSP_FILE_LENGTH) {
+		hwlog_info("adsp file length is invalid, file name=%s\n", file_name);
+		return 0;
+	}
+
+	ret = snprintf_s(buf, ULOG_FILE_NAME_SIZE, ULOG_FILE_NAME_SIZE - 1, "%s%s", ULOG_FILE_DIR, file_name);
+	if (ret < 0) {
+		hwlog_err("%s: snprintf_s buf fail\n", __func__);
+		return 0;
+	}
+
+	time = ulog_get_file_time(buf);
+	if ((ucb->earliest_file_time == 0) || ((ucb->earliest_file_time > time) && (time != 0))) {
+		ucb->earliest_file_time = time;
+		ret = snprintf_s(ucb->earliest_file_name, ULOG_FILE_NAME_SIZE, ULOG_FILE_NAME_SIZE - 1, "%s%s", ULOG_FILE_DIR, file_name);
+		if (ret < 0)
+			hwlog_err("%s: snprintf_s file fail\n", __func__);
+	}
+	ucb->file_num++;
+	return 0;
+}
+
+static int ulog_check_size_and_remove(void)
+{
+	struct file *pfile = NULL;
+	mm_segment_t old_fs;
+	int ret = 0;
+	struct ulog_getdents_callback buffer = {
+		.ctx.actor = ulog_ctr_callback,
+		.file_num = 0,
+		.earliest_file_time = 0,
+	};
+
+	memset_s(buffer.earliest_file_name, sizeof(buffer.earliest_file_name), 0, sizeof(buffer.earliest_file_name));
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+
+	pfile = filp_open(ULOG_FILE_DIR, O_RDONLY, 0);
+	if (IS_ERR(pfile)) {
+		hwlog_err("open dir failed\n");
+		set_fs(old_fs);
+		return -EFAULT;
+	}
+
+	if (!pfile->f_op->iterate && !pfile->f_op->iterate_shared) {
+		hwlog_err("iterate and iterate_shared is null\n");
+		goto err_out;
+	}
+
+	if (pfile->f_op->iterate_shared) {
+		ret = pfile->f_op->iterate_shared(pfile, &(buffer.ctx));
+		if (ret) {
+			hwlog_err("iterate_shared is failed\n");
+			goto err_out;
+		}
+	} else if (pfile->f_op->iterate) {
+		ret = pfile->f_op->iterate(pfile, &(buffer.ctx));
+		if (ret) {
+			hwlog_err("iterate is failed\n");
+			goto err_out;
+		}
+	}
+
+	hwlog_info("adsp file num: %d\n", buffer.file_num);
+	if (buffer.file_num > ULOG_FILE_MAX_SAVE) {
+		hwlog_info("remove original file : %s\n", buffer.earliest_file_name);
+		ret = ulog_delete_file(buffer.earliest_file_name);
+	}
+
+err_out:
+	filp_close(pfile, NULL);
+	set_fs(old_fs);
+	return ret;
+}
+
+int ulog_write(struct ulog_file *file, const char *data, u32 size)
+{
+	int ret;
 	mm_segment_t fs;
 
 	if (!file || !data || (size == 0))
-		return;
+		return -EFAULT;
 
 	ulog_check_file(file);
+	if (g_write_cnt % ULOG_FILE_CHECK_CNT == 0) {
+		g_write_cnt = 0;
+		ret = ulog_check_size_and_remove();
+		if (ret)
+			return -EFAULT;
+	}
+	g_write_cnt++;
 
 	fs = get_fs();
 	set_fs(KERNEL_DS);
-	ulog_write_file(file, data, size);
+	ret = ulog_write_file(file, data, size);
 	set_fs(fs);
 
-	hwlog_info("write ulog size=%u\n", size);
+	hwlog_debug("write ulog size=%u\n", size);
+	return ret;
 }
 
 void ulog_init(struct ulog_file *file)

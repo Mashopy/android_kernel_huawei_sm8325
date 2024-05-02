@@ -49,6 +49,18 @@
 #define AW37503_VALUE_APP_DIS 0x43
 #define AW37503_ENABLE_FLAG 0x01
 
+#define AW37504_REG_VPOS         0x00
+#define AW37504_REG_VNEG         0x01
+#define AW37504_REG_VPOS_VAL     0x13
+#define AW37504_REG_VNEG_VAL     0x13
+#define AW37504_REG_APP_DIS      0x03
+#define AW37504_REG_APP_DIS_VAL  0x43
+#define AW37504_REG_CTRL         0x04
+#define AW37504_REG_CTRL_VAL     0x09
+#define AW37504_VERSION_ID       0x40
+#define AW3750X_REG_TRIM         0x46
+#define AW37504_NCP_BIT         (1 << 3) // write ILMTNCP bit
+
 #define TPS65132_REG_VOL_MASK 0x1F
 #define TPS65312_APPS_BIT   (1 << 6)
 #define TPS65132_DISP_BIT   (1 << 1)

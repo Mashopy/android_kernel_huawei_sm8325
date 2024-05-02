@@ -73,7 +73,10 @@ struct ion_replace_item {
 	struct ion_heap *heap;
 	int (*orig_alloc)(struct ion_heap *heap,
 	struct ion_buffer *buffer, unsigned long len,
-	unsigned long align, unsigned long flags);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+	unsigned long align,
+#endif
+	unsigned long flags);
 	struct list_head stlist;
 };
 struct ion_heaps_head {
@@ -225,7 +228,11 @@ int fit_set_args(struct fault_impl *fault, int args, char *argv[])
 #ifndef CONFIG_MTK_PLATFORM
 /* ion heaps allocate */
 int ion_heap_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
-	unsigned long len, unsigned long align, unsigned long flags)
+	unsigned long len,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+	unsigned long align,
+#endif
+	unsigned long flags)
 {
 	struct ion_replace_item *heap_item, *next;
 	struct fault_impl *fault;
@@ -245,7 +252,11 @@ int ion_heap_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 	/* orig_alloc */
 	fault = fault_include(FAULT_ION_ALLOC);
 	if (!fault || !is_fault(fault))
-		return heap_item->orig_alloc(heap, buffer, len, align, flags);
+		return heap_item->orig_alloc(heap, buffer, len,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+			align,
+#endif
+			flags);
 	return -ENOMEM;
 }
 

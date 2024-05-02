@@ -474,8 +474,8 @@ static int wldc_open_dc_path_set_inital_vrx(struct wldc_dev_info *di)
 	}
 
 	hwlog_info("[open_dc_path_set_inital_vrx] vbatt ls:%dmV,coul:%dmV\n", ls_vbatt, vbatt);
-	di->rx_vout_set = di->mode_para[di->cur_dc_mode].init_para.rx_ratio *
-		(ls_vbatt * di->volt_ratio + di->mode_para[di->cur_dc_mode].init_para.vdelt);
+	di->rx_vout_set = di->mode_para[di->cur_dc_mode].init_para.cp_ratio *
+		(ls_vbatt * di->dc_ratio + di->mode_para[di->cur_dc_mode].init_para.vdelt);
 	if (wireless_charge_set_rx_vout(di->rx_vout_set)) {
 		hwlog_err("open_dc_path_set_inital_vrx: set vrx failed\n");
 		snprintf(tmp_buf, sizeof(tmp_buf), "set rx_vout\n");

@@ -34,9 +34,14 @@
 
 #include <platform/trace/events/rainbow.h>
 #include <platform/linux/rainbow.h>
+#include <trace/hooks/qcom_wdg.h>
 
 #define MASK_SIZE        32
 #define COMPARE_RET      -1
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+#define MAX_PET_TIME     60
+#endif
+
 
 typedef int (*compare_t) (const void *lhs, const void *rhs);
 
@@ -48,6 +53,10 @@ bool copy_early_boot_log = true;
 #endif
 
 static struct msm_watchdog_data *wdog_data;
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+bool g_pet_timer_enabled = true;
+unsigned long long g_pet_delay_time = 0;
+#endif
 
 static void qcom_wdt_dump_cpu_alive_mask(struct msm_watchdog_data *wdog_dd)
 {
@@ -662,10 +671,30 @@ static void qcom_wdt_ping_other_cpus(struct msm_watchdog_data *wdog_dd)
 	}
 }
 
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+static bool qcom_wdt_is_pet_stoped(struct msm_watchdog_data *wdog_dd)
+{
+	if (g_pet_timer_enabled == false) {
+		if (ktime_get_boottime_seconds() >= g_pet_delay_time) {
+			dev_err(wdog_dd->dev, "pet has stoped, cannot wakup kthreak \n");
+			return true;
+		}
+		dev_err(wdog_dd->dev, "pet has stoped \n");
+	}
+	return false;
+}
+#endif
+
 static void qcom_wdt_pet_task_wakeup(struct timer_list *t)
 {
 	struct msm_watchdog_data *wdog_dd =
 		from_timer(wdog_dd, t, pet_timer);
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+	if (qcom_wdt_is_pet_stoped(wdog_dd) == true) {
+		dev_err(wdog_dd->dev, "pet_task_wakeup for pet is disabled \n");
+		return;
+	}
+#endif
 	wdog_dd->timer_expired = true;
 	wdog_dd->timer_fired = sched_clock();
 	wake_up(&wdog_dd->pet_complete);
@@ -990,6 +1019,22 @@ static void qcom_wdt_dt_to_pdata(struct platform_device *pdev,
 	qcom_wdt_dump_pdata(pdata);
 }
 
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+void qcom_wdt_pet_stop(void *ignore, void *extra)
+{
+	dev_err(wdog_data->dev, "qwdt_pet_stop Enter, get_boottime:%llu\n", ktime_get_boottime_seconds());
+	if (!wdog_data) {
+		dev_err(wdog_data->dev, "wdog_data is null \n");
+		return;
+	}
+
+	g_pet_timer_enabled = false;
+	g_pet_delay_time = ktime_get_boottime_seconds() + MAX_PET_TIME;
+	dev_err(wdog_data->dev, "qwdt_pet_stop Exit, pet_delay_time:%llu \n", g_pet_delay_time);
+}
+EXPORT_SYMBOL(qcom_wdt_pet_stop);
+#endif
+
 /**
  *  qcom_wdt_register() - Creates QCOM Apps watchdog device.
  *
@@ -1031,6 +1076,10 @@ int qcom_wdt_register(struct platform_device *pdev,
 	}
 
 	boot_log_init();
+
+#if IS_ENABLED(CONFIG_SHUT_DETECTOR)
+	register_trace_android_vh_qwdt_pet_stop(qcom_wdt_pet_stop, NULL);
+#endif
 
 	/* Add wdog info to minidump table */
 	strlcpy(md_entry.name, "KWDOGDATA", sizeof(md_entry.name));

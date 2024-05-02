@@ -1071,7 +1071,7 @@ static int bq27z561_dump_log_data(char *buffer, int size, void *dev_data)
 	g_dis_data.fcc = bq27z561_get_battery_fcc(NULL);
 	g_dis_data.qmax = bq27z561_get_battery_qmax();
 
-	snprintf(buffer, size, "%-7d%-7d%-7d%-7d%-7d%-7d%-7d%-7d   ",
+	snprintf(buffer, size, "%-7d%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
 		g_dis_data.temp, g_dis_data.vbat, g_dis_data.ibat,
 		g_dis_data.avg_ibat, g_dis_data.rm, g_dis_data.soc,
 		g_dis_data.fcc, g_dis_data.qmax);
@@ -1087,7 +1087,7 @@ static int bq27z561_get_log_head(char *buffer, int size, void *dev_data)
 		return -FG_ERR_PARA_NULL;
 
 	snprintf(buffer, size,
-		"    Temp   Vbat   Ibat   AIbat   Rm   Soc   Fcc   Qmax");
+		"Temp   Vbat   Ibat   AIbat  Rm     Soc    Fcc    Qmax   ");
 
 	return 0;
 }
@@ -1647,8 +1647,8 @@ static int bq27z561_set_voltage_gain(unsigned int val, void *data)
 
 static struct coul_cali_ops bq27z561_cali_ops = {
 	.dev_name = "aux",
-	.get_current = bq27z561_get_calibration_curr,
-	.get_voltage = bq27z561_get_calibration_vol,
+	.get_cali_current = bq27z561_get_calibration_curr,
+	.get_cali_voltage = bq27z561_get_calibration_vol,
 	.set_current_gain = bq27z561_set_current_gain,
 	.set_voltage_gain = bq27z561_set_voltage_gain,
 	.set_cali_mode = bq27z561_enable_cali_mode,

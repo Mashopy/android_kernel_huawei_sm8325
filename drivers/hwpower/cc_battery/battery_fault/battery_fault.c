@@ -130,7 +130,7 @@ static void bat_fault_cutoff_vol_event_handle(struct bat_fault_device *di)
 	int cur = coul_interface_get_battery_avg_current(bat_core_get_coul_type());
 	char buf[BAT_FAULT_DSM_BUF_SIZE] = { 0 };
 
-	if (power_cmdline_is_factory_mode() || !bat_exist)
+	if (!bat_exist)
 		return;
 
 	while (count-- >= 0) {

@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
+#include <linux/mm.h>
 #include <linux/netdevice.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netlink.h>
@@ -32,8 +33,6 @@
 
 #define REPORTCMD NETLINK_DOWNLOADEVENT_TO_USER
 
-//define NETLINK_HW_NF 32
-
 static spinlock_t g_netlink_lock; /* lock for netlink array */
 
 struct tag_hw_msg2knl {
@@ -46,27 +45,6 @@ struct appdload_nl_packet_msg {
 	int event;
 	char url[1];
 };
-
-static uid_t find_skb_uid(const struct sk_buff *skb)
-{
-	const struct file *filp = NULL;
-	struct sock *sk = NULL;
-	uid_t sock_uid = 0xffffffff;
-
-	if (!skb)
-		return sock_uid;
-	sk = skb->sk;
-	if (!sk)
-		return 0xffffffff;
-	if (sk && sk->sk_state == TCP_TIME_WAIT)
-		return sock_uid;
-	filp = sk->sk_socket ? sk->sk_socket->file : NULL;
-	if (filp)
-		sock_uid = from_kuid(&init_user_ns, filp->f_cred->fsuid);
-	else
-		return 0xffffffff;
-	return sock_uid;
-}
 
 static struct sock *g_hw_nlfd = NULL;
 static unsigned int g_uspa_pid;
@@ -365,12 +343,6 @@ unsigned int hw_match_httppack(struct sk_buff *skb, unsigned int uid,
 	bool bmatch = false;
 	char *tempurl = NULL;
 
-	if (match_appdl_uid(uid)) {
-		if (match_appdl_url(data, dlen)) {
-			bmatch = true;
-			iret = download_app_pro(skb, uid, data, dlen, ip);
-		}
-	}
 	if (hw_match_httppack_notify_event(uid, data, dlen, bmatch, &iret, ip))
 		return iret;
 	if (iret == NF_DROP || uid == 0xffffffff) {
@@ -391,56 +363,168 @@ char g_get_s[] = {'G', 'E', 'T', 0};
 char g_post_s[] = {'P', 'O', 'S', 'T', 0};
 char g_http_s[] = {'H', 'T', 'T', 'P', 0};
 
+static bool is_skb_nonlinear_with_no_payload(const struct sk_buff *skb)
+{
+	return skb_is_nonlinear(skb) && (skb_headlen(skb) == skb_transport_offset(skb) + tcp_hdrlen(skb));
+}
+
+static bool is_skb_need_linearized(const struct sk_buff *skb)
+{
+	return skb_is_nonlinear(skb) && !is_skb_nonlinear_with_no_payload(skb) &&
+		(skb->len - skb_transport_offset(skb) - tcp_hdrlen(skb) <= SKB_LEN_MAX);
+}
+
+static struct sk_buff *hw_skb_linearize(struct sk_buff *ori_skb, bool *is_linearized)
+{
+	struct sk_buff *linearized_skb;
+	if (!is_skb_need_linearized(ori_skb))
+		return ori_skb;
+	linearized_skb = skb_copy(ori_skb, GFP_ATOMIC);
+	if (linearized_skb != NULL) {
+		int linearize_result = skb_linearize(linearized_skb);
+		if (linearize_result == 0) {
+			*is_linearized = true;
+			return linearized_skb;
+		}
+	}
+	kfree_skb(linearized_skb);
+	return NULL;
+}
+
+static char *get_data_addr(const struct sk_buff *linearized_skb, int *dlen, char **vaddr)
+{
+	char *data = NULL;
+	if (is_skb_nonlinear_with_no_payload(linearized_skb)) {
+		const skb_frag_t *frag = &skb_shinfo(linearized_skb)->frags[0];
+		if (skb_shinfo(linearized_skb)->nr_frags <= 0)
+			return NULL;
+		if (frag == NULL)
+			return NULL;
+		*vaddr = kmap_atomic(skb_frag_page(frag));
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
+		data = *vaddr + frag->page_offset;
+#else
+		data = *vaddr + skb_frag_off(frag);
+#endif
+		*dlen = skb_frag_size(frag);
+	} else {
+		data = skb_transport_header(linearized_skb) + tcp_hdrlen(linearized_skb);
+		if (linearized_skb->len >= skb_transport_offset(linearized_skb) + tcp_hdrlen(linearized_skb)) {
+			*dlen = linearized_skb->len - skb_transport_offset(linearized_skb) - tcp_hdrlen(linearized_skb);
+		} else {
+			*dlen = 0;
+		}
+	}
+	return data;
+}
+
+static void free_linearized_skb(struct sk_buff *linearized_skb, char *vaddr, bool is_linearized)
+{
+	if (vaddr != NULL)
+		kunmap_atomic(vaddr);
+	if (is_linearized)
+		kfree_skb(linearized_skb);
+}
+
+static bool is_tcp_need_handle(const struct sk_buff *skb)
+{
+	struct iphdr *iph = NULL;
+	struct tcphdr *tcp = NULL;
+	iph = ip_hdr(skb);
+	if (!iph)
+		return false;
+	if (iph->protocol != IPPROTO_TCP)
+		return false;
+	tcp = tcp_hdr(skb);
+	if (!tcp)
+		return false;
+	return true;
+}
+
+static bool is_sk_need_handle(const struct sock *sk)
+{
+	if (sk == NULL)
+		return false;
+	if (sk->sk_state != TCP_ESTABLISHED)
+		return false;
+	return true;
+}
+
+static bool is_quickapp_ip_need_handle(const struct iphdr *iph, const struct tcphdr *tcp)
+{
+	return is_quickapp_ip_and_port(iph->daddr, htons(tcp->dest));
+}
+
+static bool is_uid_need_handle(unsigned int uid)
+{
+	if ((!match_ad_uid(&g_adlist_info, uid)) && (!match_ad_uid(&g_deltalist_info, uid)))
+		return false;
+	return true;
+}
+
 static unsigned int net_hw_hook_localout(void *ops, struct sk_buff *skb,
 	const struct nf_hook_state *state)
 {
 	struct iphdr *iph = NULL;
 	struct tcphdr *tcp = NULL;
+	struct sock *sk = NULL;
 	char *pstart = NULL;
 	unsigned int iret = NF_ACCEPT;
+	unsigned int uid = 0xffffffff;
 	int dlen;
 	char *data = NULL;
 
 	if (skb_headlen(skb) < sizeof(struct iphdr) ||
 		ip_hdrlen(skb) < sizeof(struct iphdr))
 		return NF_ACCEPT;
-
-	tcp = tcp_hdr(skb);
+	if (!is_tcp_need_handle(skb))
+		return NF_ACCEPT;
 	iph = ip_hdr(skb);
-	if (!iph || !tcp) {
-		pr_info("\nhwad:%s drop NULL==iph\n", __func__);
+	tcp = tcp_hdr(skb);
+	sk = skb_to_full_sk(skb);
+	if (!is_sk_need_handle(sk))
 		return NF_ACCEPT;
-	}
-	if (iph->protocol != IPPROTO_TCP)
+	if (!is_quickapp_ip_need_handle(iph, tcp))
 		return NF_ACCEPT;
-
+	uid = sk->sk_uid.val;
+	if (!is_uid_need_handle(uid))
+		return NF_ACCEPT;
 	pstart = skb->data;
 	if (pstart) {
-		struct tcphdr *th = NULL;
-
-		th = (struct tcphdr *)((__u32 *)iph + iph->ihl);
-		data = (char *)((__u32 *)th + th->doff);
-		dlen = skb->len - (data - (char *)iph) - skb->data_len;
-		if (dlen < SKB_LEN_MIN || dlen > SKB_LEN_MAX || data < pstart ||
-			(pstart + skb_headlen(skb)) < (data + dlen))
+		char *vaddr = NULL;
+		bool is_linearized = false;
+		struct sk_buff *linearized_skb = hw_skb_linearize(skb, &is_linearized);
+		if (unlikely(linearized_skb == NULL))
 			return NF_ACCEPT;
+
+		iph = ip_hdr(linearized_skb);
+		tcp = tcp_hdr(linearized_skb);
+		pstart = linearized_skb->data;
+		data = get_data_addr(linearized_skb, &dlen, &vaddr);
+		if (data == NULL || dlen < SKB_LEN_MIN || dlen > SKB_LEN_MAX) {
+			free_linearized_skb(linearized_skb, vaddr, is_linearized);
+			return NF_ACCEPT;
+		}
+		if (!skb_is_nonlinear(linearized_skb) && (data < pstart ||
+			(pstart + skb_headlen(linearized_skb)) < (data + dlen))) {
+			free_linearized_skb(linearized_skb, vaddr, is_linearized);
+			return NF_ACCEPT;
+		}
 		dlen = (dlen > SKB_LEN_AVG ? SKB_LEN_AVG : dlen);
 		if (strfindpos(data, g_get_s, SKB_LEN_MIN) ||
 			strfindpos(data, g_post_s, SKB_LEN_MIN)) {
-			unsigned int uid;
 			char ip[IPV4_LEN];
-
 			sprintf(ip, "%d.%d.%d.%d:%d",
 				(iph->daddr & 0x000000FF)>>0,
 				(iph->daddr & 0x0000FF00)>>SKB_HEAD_MASK_8,
 				(iph->daddr & 0x00FF0000)>>SKB_HEAD_MASK_16,
 				(iph->daddr & 0xFF000000)>>SKB_HEAD_MASK_24,
 				htons(tcp->dest));
-			uid = find_skb_uid(skb);
 			iret = hw_match_httppack(skb, uid, data, dlen, ip);
 			if (iret == NF_DROP)
 				send_reject_error(uid, skb);
 		}
+		free_linearized_skb(linearized_skb, vaddr, is_linearized);
 	}
 	if (iret == 0xffffffff)
 		iret = NF_DROP;

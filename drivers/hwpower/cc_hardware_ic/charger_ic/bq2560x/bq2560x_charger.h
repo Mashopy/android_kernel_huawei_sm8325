@@ -35,6 +35,7 @@ struct bq2560x_device_info {
 	enum power_charger_type chg_type;
 	bool chg_det_enable;
 	bool enable_redo_bc12;
+	bool sdp_redo_bc12;
 	int gpio_cd;
 	int gpio_int;
 	int irq_int;
@@ -59,6 +60,9 @@ struct bq2560x_device_info {
 	int iprechg_cur;
 	int ieoc;
 	int otg_boost_vol;
+	int gpio_cd_need;
+	int disable_batfet_rst_en;
+	u32 shipmode_clear_hiz;
 };
 
 /*************************marco define area***************************/

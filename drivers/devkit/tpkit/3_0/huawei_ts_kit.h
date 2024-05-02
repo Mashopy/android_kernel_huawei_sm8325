@@ -339,6 +339,7 @@ enum ts_cmd {
 	TS_ALGO_FINGER_PEN,
 	/* report finger pen directly without algo */
 	TS_REPORT_FINGER_PEN_DIRECTLY,
+	TS_HYBRID_SWITCH_CONTROL,
 	TS_INVAILD_CMD = 255,
 };
 

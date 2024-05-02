@@ -170,7 +170,7 @@ static int wltx_check_abnormal_ibatt(void)
 
 	/* 20ms*3=60ms timeout for ibatt debouncing */
 	for (i = 0; i < 3; i++) {
-		idischrg = power_platform_get_battery_current() / POWER_UA_PER_MA;
+		idischrg = power_platform_get_battery_current();
 		if (tx_open_flag && (idischrg > idischrg_max)) {
 			hwlog_err("abnormal idischrg=%d\n", idischrg);
 			if (di->need_reduce_power && high_power_charge) {
@@ -395,7 +395,7 @@ static void wireless_tx_dsm_dump(struct wltx_dev_info *di, char *dsm_buff)
 	snprintf(buff, WLTX_ERR_NO_STR_SIZE, "tx_iin(mA): ");
 	strncat(dsm_buff, buff, strlen(buff));
 	for (i = 0; i < WL_TX_IIN_SAMPLE_LEN; i++) {
-		snprintf(buff, WLTX_ERR_NO_STR_SIZE, "%d ", tx_iin_samples[i]);
+		snprintf(buff, WLTX_ERR_NO_STR_SIZE, "%u ", tx_iin_samples[i]);
 		strncat(dsm_buff, buff, strlen(buff));
 	}
 }
@@ -916,7 +916,7 @@ void wltx_cancle_work_handler(void)
 	di->stop_reverse_charge = true;
 	cancel_work_sync(&di->wireless_tx_check_work);
 	cancel_delayed_work_sync(&di->wireless_tx_monitor_work);
-	cancel_delayed_work(&di->wltx_abnormal_power_check_work);
+	cancel_delayed_work_sync(&di->wltx_abnormal_power_check_work);
 	di->cancle_work_flag = false;
 	wireless_tx_enable_tx_mode(false);
 	wltx_disable_pwr_supply();
@@ -1147,6 +1147,7 @@ static void wltx_check_expect_power(struct wltx_dev_info *di)
 	return;
 
 sw_pwr:
+	cancel_delayed_work_sync(&di->wltx_abnormal_power_check_work);
 	wlps_control(WLTRX_IC_MAIN, WLPS_TX_SW, false);
 	wltx_disable_pwr_supply();
 	usleep_range(9500, 10500); /* wait 10ms for tx power down */

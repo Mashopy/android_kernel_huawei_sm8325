@@ -61,7 +61,7 @@ enum {
 };
 
 #define SWAP_ENDIAN_32(x)  ((((x) & 0xFF) << 24) | (((x) & 0xFF00) << 8) \
-				| (((x) >> 8) & 0xFF00) | (((x) >> 24) & 0xFF))
+                            | (((x) >> 8) & 0xFF00) | (((x) >> 24) & 0xFF))
 
 #if defined(CONFIG_HUAWEI_UFS_VENDOR_MODE) || defined(CONFIG_SCSI_MAS_UFS_MQ_DEFAULT)
 #ifdef CONFIG_QCOM_SCSI_UFS_DUMP

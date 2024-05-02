@@ -26,6 +26,7 @@
 #include <linux/vmalloc.h>
 #include <linux/version.h>
 #include "blackbox_common.h"
+#include <platform/linux/blackbox_subsystem.h>
 
 /* ---- local macroes ---- */
 /* bbox/BBOX - blackbox */
@@ -34,7 +35,7 @@
 #define HISTORY_LOG_MAX_LEN          1024
 #define TOP_CATEGORY_SYSTEM_RESET	 "System Reset"
 #define TOP_CATEGORY_FREEZE		     "System Freeze"
-#define TOP_CATEGORY_SUBSYSTEM_CARSH "Subsystem Crash"
+#define TOP_CATEGORY_SUBSYSTEM_CRASH "Subsystem Crash"
 
 #ifndef CONFIG_BLACKBOX_LOG_ROOT_PATH
 #error no blackbox log root path
@@ -133,7 +134,7 @@ static const char *get_top_category(const char *module, const char *event)
 
 	if (unlikely(!module || !event)) {
 		bbox_print_err("module: %p, event: %p\n", module, event);
-		return TOP_CATEGORY_SUBSYSTEM_CARSH;
+		return TOP_CATEGORY_SUBSYSTEM_CRASH;
 	}
 
 	for (i = 0; i < count; i++) {
@@ -145,7 +146,7 @@ static const char *get_top_category(const char *module, const char *event)
 	if (!strcmp(module, MODULE_SYSTEM))
 		return TOP_CATEGORY_SYSTEM_RESET;
 
-	return TOP_CATEGORY_SUBSYSTEM_CARSH;
+	return TOP_CATEGORY_SUBSYSTEM_CRASH;
 }
 
 static const char *get_category(const char *module, const char *event)
@@ -212,6 +213,7 @@ static void save_history_log(const char *log_root_dir,
 {
 	char history_log_path[PATH_MAX_LEN];
 	char *buf;
+	char log_dir[PATH_MAX_LEN] = {0};
 
 	if (unlikely(!log_root_dir || !info || !timestamp)) {
 		bbox_print_err("log_root_dir: %p, info : %p, timestamp: %p\n",
@@ -224,10 +226,16 @@ static void save_history_log(const char *log_root_dir,
 		return;
 
 	memset(buf, 0, HISTORY_LOG_MAX_LEN + 1);
+
+	strncpy(log_dir, log_root_dir, sizeof(log_dir) - 1);
+	if (!strcmp(get_top_category(info->module, info->event), TOP_CATEGORY_SUBSYSTEM_CRASH)) {
+		strcat(log_dir, SUBSYS_CRASH_RAMDUMP_PATH);
+	}
+
 	scnprintf(buf, HISTORY_LOG_MAX_LEN, HISTORY_LOG_FORMAT,
 			get_top_category(info->module, info->event), info->module,
 			info->category, info->event, timestamp,
-			need_sys_reset ? "true" : "false", info->error_desc, log_root_dir);
+			need_sys_reset ? "true" : "false", info->error_desc, log_dir);
 	memset(history_log_path, 0, sizeof(history_log_path));
 	(void)scnprintf(history_log_path, sizeof(history_log_path) - 1,
 			"%s/%s", log_root_dir, HISTORY_LOG_NAME);

@@ -156,19 +156,18 @@ static int get_total_traffic(u64* total_rx_bytes, u64* total_tx_bytes)
 {
 	struct file* fp;
 	mm_segment_t fs;
-	loff_t pos;
+	loff_t pos = 0;
 	char buffer[MAX_BUF];
 	char iface[IFNAME_SIZE];
 	u64 rx_bytes;
 	u64 rx_packets;
 	u64 tx_bytes;
 	char search_buf[MAX_BUF];
-	int bytes_read;
-	int line_len;
+	int bytes_read = 0;
+	int line_len = 0;
 	int index;
 
 	if ((total_rx_bytes == NULL) || (total_tx_bytes == NULL)) {
-		loge("null pointer in get_total_traffic");
 		return INVALID_VALUE;
 	}
 
@@ -181,9 +180,6 @@ static int get_total_traffic(u64* total_rx_bytes, u64* total_tx_bytes)
 	fs = get_fs(); // file operation in kernel requires this
 	set_fs(KERNEL_DS);
 
-	pos = 0;
-	bytes_read = 0;
-	line_len = 0;
 	/* read the data of the entire file, to get traffic of all uids */
 
 	while (true) {

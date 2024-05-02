@@ -466,8 +466,9 @@ static int charge_core_parse_dts(struct device_node *np,
 	/* battery cell num */
 	power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "battery_cell_num",
 		&(di->data.battery_cell_num), 1);
+	power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "vterm_high_th",
+		&(di->data.vterm_high_th), di->data.battery_cell_num * BATTERY_VOLTAGE_4500_MV);
 	di->data.vterm_low_th = di->data.battery_cell_num * BATTERY_VOLTAGE_3200_MV;
-	di->data.vterm_high_th = di->data.battery_cell_num * BATTERY_VOLTAGE_4500_MV;
 	hwlog_debug("battery cell num = %u\n", di->data.battery_cell_num);
 
 	/* fcp charge current */

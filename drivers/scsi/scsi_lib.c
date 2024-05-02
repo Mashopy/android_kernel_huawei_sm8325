@@ -1783,6 +1783,9 @@ static void scsi_mq_done(struct scsi_cmnd *cmd)
 		return;
 	trace_scsi_dispatch_cmd_done(cmd);
 
+#ifdef CONFIG_DISK_MAGO
+	atomic_dec(&cmd->request->q->inflt_disk);
+#endif
 	/*
 	 * If the block layer didn't complete the request due to a timeout
 	 * injection, scsi must clear its internal completed state so that the
@@ -1887,9 +1890,14 @@ static blk_status_t scsi_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	scsi_init_cmd_errh(cmd);
 	cmd->scsi_done = scsi_mq_done;
-
+#ifdef CONFIG_DISK_MAGO
+	atomic_inc(&q->inflt_disk);
+#endif
 	reason = scsi_dispatch_cmd(cmd);
 	if (reason) {
+#ifdef CONFIG_DISK_MAGO
+		atomic_dec(&q->inflt_disk);
+#endif
 		scsi_set_blocked(cmd, reason);
 		ret = BLK_STS_RESOURCE;
 		goto out_dec_host_busy;

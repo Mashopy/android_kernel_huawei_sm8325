@@ -26,26 +26,29 @@
 #include "lcd_kit_panel.h"
 #include "lcd_kit_sysfs.h"
 #include "lcd_kit_adapt.h"
-
+#ifdef CONFIG_MATTING_ALGO_TASK
+#include "image_compositing_algo.h"
+#endif
+#include <log/hiview_hievent.h>
 /* macro */
 /* default panel */
 #define LCD_KIT_DEFAULT_PANEL  "auo_otm1901a_5p2_1080p_video_default"
 
 /* dcs read/write */
+#define DTYPE_DCS_LWRITE	0x39 /* long write */
+#define DTYPE_DSC_LWRITE	0x0A /* dsc dsi1.2 vesa3x long write */
 #define DTYPE_DCS_WRITE		0x05 /* short write, 0 parameter */
 #define DTYPE_DCS_WRITE1	0x15 /* short write, 1 parameter */
 #define DTYPE_DCS_READ		0x06 /* read */
-#define DTYPE_DCS_LWRITE	0x39 /* long write */
-#define DTYPE_DSC_LWRITE	0x0A /* dsc dsi1.2 vesa3x long write */
 
 /* generic read/write */
-#define DTYPE_GEN_WRITE		0x03 /* short write, 0 parameter */
-#define DTYPE_GEN_WRITE1	0x13 /* short write, 1 parameter */
-#define DTYPE_GEN_WRITE2	0x23 /* short write, 2 parameter */
 #define DTYPE_GEN_LWRITE	0x29 /* long write */
 #define DTYPE_GEN_READ		0x04 /* long read, 0 parameter */
 #define DTYPE_GEN_READ1		0x14 /* long read, 1 parameter */
 #define DTYPE_GEN_READ2		0x24 /* long read, 2 parameter */
+#define DTYPE_GEN_WRITE		0x03 /* short write, 0 parameter */
+#define DTYPE_GEN_WRITE1	0x13 /* short write, 1 parameter */
+#define DTYPE_GEN_WRITE2	0x23 /* short write, 2 parameter */
 
 /* lcd fps scence */
 #define LCD_KIT_FPS_SCENCE_IDLE        BIT(0)
@@ -56,16 +59,19 @@
 #define LCD_KIT_FPS_SCENCE_FORCE_30FPS          BIT(5)
 #define LCD_KIT_FPS_SCENCE_FUNC_DEFAULT_ENABLE  BIT(6)
 #define LCD_KIT_FPS_SCENCE_FUNC_DEFAULT_DISABLE BIT(7)
+
 /* lcd fps value */
-#define LCD_KIT_FPS_30 30
 #define LCD_KIT_FPS_55 55
 #define LCD_KIT_FPS_60 60
+#define LCD_KIT_FPS_30 30
 #define MAX_BUF 60
-#define LCD_REG_LENGTH_MAX 200
+#define LCD_REG_LENGTH_MAX 300
 #define LCD_DDIC_INFO_LEN 64
 /* 2d barcode */
 #define BARCODE_LENGTH 46
 
+/* sn cmp */
+#define SNCMP_LEN 4
 /* project id */
 #define PROJECTID_LEN 10
 #define SN_CODE_LENGTH_MAX 54
@@ -80,33 +86,26 @@
 #define LCD_KIT_PCD_DETECT_OPEN   1
 #define LCD_KIT_PCD_DETECT_CLOSE  0
 /* ddic low voltage detect */
-#define DETECT_NUM     4
-#define DETECT_LOOPS   6
-#define ERR_THRESHOLD  4
-#define DET_START      1
-#define VAL_NUM        2
 #define VAL_0          0
 #define VAL_1          1
 #define DET1_INDEX     0
 #define DET2_INDEX     1
+#define DET_START      1
 #define DET3_INDEX     2
 #define DET4_INDEX     3
+#define DETECT_NUM     4
+#define ERR_THRESHOLD  4
+#define DETECT_LOOPS   6
 #define DMD_DET_ERR_LEN      300
-#define ENABLE	        1
-#define DISABLE	        0
+#define ENABLE	       1
+#define DISABLE	       0
 #define INVALID_INDEX  0xFF
+#define VAL_NUM        2
 
 enum alpm_state {
 	ALPM_OUT,
 	ALPM_START,
 	ALPM_IN,
-};
-
-struct display_engine_ddic_rgbw_param {
-	int ddic_panel_id;
-	int ddic_rgbw_mode;
-	int ddic_rgbw_backlight;
-	int pixel_gain_limit;
 };
 
 struct display_engine_panel_info_param {
@@ -118,9 +117,16 @@ struct display_engine_panel_info_param {
 	int minbacklight;
 };
 
+struct display_engine_ddic_rgbw_param {
+	int ddic_rgbw_backlight;
+	int pixel_gain_limit;
+	int ddic_panel_id;
+	int ddic_rgbw_mode;
+};
+
 struct display_engine {
-	u8 ddic_cabc_support;
 	u8 ddic_rgbw_support;
+	u8 ddic_cabc_support;
 };
 
 /* lcd fps scence */
@@ -217,7 +223,19 @@ struct qcom_panel_info {
 	struct lcd_kit_panel_version panel_version;
 	u32 esd_reg_te_check;
 	u32 need_reboot;
+#ifdef CONFIG_MATTING_ALGO_TASK
+	u32 matting_algo_debug;
+	u32 matting_algo_crop_debug;
+	u32 matting_algo_lux_value;
+	struct sensor_hub_als_data_st matting_algo_als_param;
+#endif
 };
+
+enum {
+	LCD_OFFLINE = 0,
+	LCD_ONLINE = 1,
+};
+
 /* enum */
 enum {
 	RGBW_SET1_MODE = 1,
@@ -226,21 +244,16 @@ enum {
 	RGBW_SET4_MODE = 4,
 };
 
-enum {
-	LCD_OFFLINE = 0,
-	LCD_ONLINE = 1,
+struct lcd_kit_color_coordinate {
+	u32 support;
+	/* color consistency support */
+	struct lcd_kit_dsi_panel_cmds cmds;
 };
 
 struct lcd_kit_gamma {
 	u32 support;
 	u32 addr;
 	u32 length;
-	struct lcd_kit_dsi_panel_cmds cmds;
-};
-
-struct lcd_kit_color_coordinate {
-	u32 support;
-	/* color consistency support */
 	struct lcd_kit_dsi_panel_cmds cmds;
 };
 
@@ -273,47 +286,48 @@ struct lcd_kit_brightness_color_oeminfo {
 
 struct lcd_kit_project_id {
 	u32 support;
-	char id[LCD_DDIC_INFO_LEN];
 	char *default_project_id;
+	char id[LCD_DDIC_INFO_LEN];
 	struct lcd_kit_dsi_panel_cmds cmds;
 };
 
 struct lcd_kit_fps {
 	u32 support;
 	u32 fps_switch_support;
+	char *fps_30_cmd;
+	char *fps_60_cmd;
+	char *fps_90_cmd;
+	char *fps_120_cmd;
 	unsigned int default_fps;
 	unsigned int current_fps;
 	unsigned int hop_support;
+	struct lcd_kit_array_data normal_frame_porch;
+	struct lcd_kit_array_data panel_support_fps_list;
 	struct lcd_kit_dsi_panel_cmds dfr_enable_cmds;
 	struct lcd_kit_dsi_panel_cmds dfr_disable_cmds;
 	struct lcd_kit_dsi_panel_cmds fps_to_30_cmds;
 	struct lcd_kit_dsi_panel_cmds fps_to_60_cmds;
 	struct lcd_kit_array_data low_frame_porch;
-	struct lcd_kit_array_data normal_frame_porch;
-	struct lcd_kit_array_data panel_support_fps_list;
+	struct lcd_kit_array_data hop_info[LCD_FPS_SCENCE_MAX];
 	struct lcd_kit_dsi_panel_cmds fps_to_cmds[LCD_FPS_SCENCE_MAX];
 	struct lcd_kit_array_data fps_dsi_timming[LCD_FPS_SCENCE_MAX];
-	struct lcd_kit_array_data hop_info[LCD_FPS_SCENCE_MAX];
-	char *fps_60_cmd;
-	char *fps_90_cmd;
-	char *fps_120_cmd;
 };
 
 struct lcd_kit_rgbw {
 	u32 support;
 	u32 rgbw_bl_max;
+	struct lcd_kit_dsi_panel_cmds pwm_gain_cmds;
+	struct lcd_kit_dsi_panel_cmds pixel_gain_speed_cmds;
+	struct lcd_kit_dsi_panel_cmds pixel_gain_limit_cmds;
+	struct lcd_kit_dsi_panel_cmds color_distor_allowance_cmds;
+	struct lcd_kit_dsi_panel_cmds frame_gain_speed_cmds;
+	struct lcd_kit_dsi_panel_cmds frame_gain_limit_cmds;
+	struct lcd_kit_dsi_panel_cmds saturation_ctrl_cmds;
+	struct lcd_kit_dsi_panel_cmds backlight_cmds;
 	struct lcd_kit_dsi_panel_cmds mode1_cmds;
 	struct lcd_kit_dsi_panel_cmds mode2_cmds;
 	struct lcd_kit_dsi_panel_cmds mode3_cmds;
 	struct lcd_kit_dsi_panel_cmds mode4_cmds;
-	struct lcd_kit_dsi_panel_cmds backlight_cmds;
-	struct lcd_kit_dsi_panel_cmds saturation_ctrl_cmds;
-	struct lcd_kit_dsi_panel_cmds frame_gain_limit_cmds;
-	struct lcd_kit_dsi_panel_cmds frame_gain_speed_cmds;
-	struct lcd_kit_dsi_panel_cmds color_distor_allowance_cmds;
-	struct lcd_kit_dsi_panel_cmds pixel_gain_limit_cmds;
-	struct lcd_kit_dsi_panel_cmds pixel_gain_speed_cmds;
-	struct lcd_kit_dsi_panel_cmds pwm_gain_cmds;
 };
 
 struct lcd_kit_alpm {
@@ -330,17 +344,17 @@ struct lcd_kit_alpm {
 	struct lcd_kit_dsi_panel_cmds no_light_cmds;
 };
 
-struct lcd_kit_snd_disp {
-	u32 support;
-	struct lcd_kit_dsi_panel_cmds on_cmds;
-	struct lcd_kit_dsi_panel_cmds off_cmds;
-};
-
 struct lcd_kit_quickly_sleep_out {
 	u32 support;
-	u32 interval;
 	u32 panel_on_tag;
+	u32 interval;
 	struct timeval panel_on_record_tv;
+};
+
+struct lcd_kit_snd_disp {
+	u32 support;
+	struct lcd_kit_dsi_panel_cmds off_cmds;
+	struct lcd_kit_dsi_panel_cmds on_cmds;
 };
 
 enum bl_control_mode {
@@ -355,6 +369,12 @@ enum bl_control_mode {
 	MTK_MIPI_BL_IC_PWM_MODE,
 };
 
+struct display_engine_ddic_hbm_param {
+	int type;      // 0:fp   1:MMI   2:light
+	int level;
+	bool dimming;  // 0:no dimming  1:dimming
+};
+
 enum bias_control_mode {
 	MT_AP_MODE = 0,
 	PMIC_ONLY_MODE = 1,
@@ -362,23 +382,17 @@ enum bias_control_mode {
 	GPIO_THEN_I2C_MODE,
 };
 
-struct display_engine_ddic_hbm_param {
-	int type;      // 0:fp   1:MMI   2:light
-	int level;
-	bool dimming;  // 0:no dimming  1:dimming
+struct hbm_type_cfg {
+	int source;
+	void *dsi;
+	void *cb;
+	void *handle;
 };
 
 enum HBM_CFG_TYPE {
 	HBM_FOR_FP = 0,
 	HBM_FOR_MMI = 1,
 	HBM_FOR_LIGHT = 2
-};
-
-struct hbm_type_cfg {
-	int source;
-	void *dsi;
-	void *cb;
-	void *handle;
 };
 
 /* pcd errflag detect */
@@ -390,18 +404,18 @@ enum {
 };
 struct lcd_kit_pcd_errflag {
 	u32 pcd_support;
-	u32 errflag_support;
-	u32 pcd_value_compare_mode;
-	u32 pcd_errflag_check_support;
-	u32 gpio_pcd;
-	u32 gpio_errflag;
-	u32 exp_pcd_mask;
 	u32 pcd_det_num;
-	struct lcd_kit_dsi_panel_cmds start_pcd_check_cmds;
-	struct lcd_kit_dsi_panel_cmds switch_page_cmds;
-	struct lcd_kit_dsi_panel_cmds read_pcd_cmds;
-	struct lcd_kit_array_data pcd_value;
+	u32 pcd_errflag_check_support;
+	u32 pcd_value_compare_mode;
+	u32 errflag_support;
+	u32 exp_pcd_mask;
+	u32 gpio_errflag;
+	u32 gpio_pcd;
 	struct lcd_kit_dsi_panel_cmds read_errflag_cmds;
+	struct lcd_kit_array_data pcd_value;
+	struct lcd_kit_dsi_panel_cmds read_pcd_cmds;
+	struct lcd_kit_dsi_panel_cmds switch_page_cmds;
+	struct lcd_kit_dsi_panel_cmds start_pcd_check_cmds;
 };
 
 /* sync mode define */
@@ -432,4 +446,6 @@ void lcd_esd_enable(uint32_t panel_id, int enable);
 void lcd_kit_recovery_display(uint32_t panel_id, uint32_t sync_mode);
 int lcd_kit_alpm_setting(uint32_t panel_id, uint32_t mode);
 int lcd_kit_get_gpio_value(uint32_t gpio_num, const char *gpio_name);
+int tddi_aod_light_set(uint32_t bl_lsb, uint32_t bl_msb);
+int set_aod_dimming(void);
 #endif

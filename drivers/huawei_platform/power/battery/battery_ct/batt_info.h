@@ -100,8 +100,14 @@ struct batt_info {
 	struct batt_chk_rslt result;
 	struct notifier_block batt_cycles_listener;
 	struct work_struct cycles_work;
+	struct work_struct battery_io_work;
 	int batt_cycles;
 	uint64_t current_group_sn;
+	int support_io_check;
+	int io_status;
+#ifdef BATTERY_LIMIT_DEBUG
+	int shield_code;
+#endif
 };
 
 #endif /* _BATT_INFO_H_ */

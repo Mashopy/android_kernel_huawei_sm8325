@@ -131,9 +131,9 @@
 		<EsdReadLength>0 1 0 0 0 0 0 1</EsdReadLength>
 		<EsdValues>"0x9C","0x00"</EsdValues>
 		<!--bl min brightness setting-->
-		<PanelBlmin>3</PanelBlmin>
+		<PanelBlmin>1</PanelBlmin>
 		<!--bl max brightness setting-->
-		<PanelBlmax>4095</PanelBlmax>
+		<PanelBlmax>10000</PanelBlmax>
 		<!--bl def brightness setting-->
 		<PanelBldef>2047</PanelBldef>
 		<!--Running test config start-->
@@ -208,5 +208,11 @@
 		<VtcLineSupport>0</VtcLineSupport>
 		<HorLineSupport>0</HorLineSupport>
 		<HorLineDuration>600</HorLineDuration>
+		<!--DC Delay Threshold-->
+		<DCDelaySupport>1</DCDelaySupport>
+		<DCLeftTimeThUs>6800</DCLeftTimeThUs>
+		<DCRightTimeThUs>7600</DCRightTimeThUs>
+		<DCMaskDelayTimeBeforeFp>16667</DCMaskDelayTimeBeforeFp>
+		<DCMaskDelayTimeAfterFp>16667</DCMaskDelayTimeAfterFp>
 	</PanelEntry>
 </hwlcd>

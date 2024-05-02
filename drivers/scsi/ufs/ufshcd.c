@@ -74,6 +74,9 @@
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 #include <linux/iomt_host/dsm_iomt_ufs_host.h>
 #endif
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/mago_ufs_host.h>
+#endif
 #ifdef CONFIG_HUAWEI_UFS_DSM
 #include "dsm_ufs.h"
 #endif
@@ -2866,6 +2869,9 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	iomt_host_latency_cmd_start((&hba->lrb[tag])->cmd);
 #endif
+#ifdef CONFIG_DISK_MAGO
+	lrbp->cmd->req_start_time = jiffies;
+#endif
 	ufshcd_send_command(hba, tag);
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 	goto out;
@@ -5484,6 +5490,9 @@ check:
 			ufstt_unprep_handler(hba, lrbp);
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 			iomt_host_latency_cmd_end(hba->host,cmd);
+#endif
+#ifdef CONFIG_DISK_MAGO
+			mago_ufs_io_latency_cmd_end(hba->host, cmd);
 #endif
 #ifdef CONFIG_SCSI_UFS_UNISTORE
 			ufshcd_unistore_done(hba, cmd, lrbp);
@@ -9797,6 +9806,9 @@ void ufshcd_remove(struct ufs_hba *hba)
 	dsm_iomt_ufs_host_exit(hba->host);
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+	mago_ufs_host_exit(hba->host);
+#endif
 	ufs_dynamic_switching_wb_remove(hba);
 
 	scsi_remove_host(hba->host);
@@ -9873,6 +9885,9 @@ int ufshcd_alloc_host(struct device *dev, struct ufs_hba **hba_handle)
 	hba->sg_entry_size = sizeof(struct ufshcd_sg_entry);
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	dsm_iomt_hba_host_pre_init(hba);
+#endif
+#ifdef CONFIG_DISK_MAGO
+	mago_hba_host_pre_init(hba);
 #endif
 
 	INIT_LIST_HEAD(&hba->clk_list_head);
@@ -10039,6 +10054,9 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 	}
 #ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
 	dsm_iomt_ufs_host_init(hba->host);
+#endif
+#ifdef CONFIG_DISK_MAGO
+	mago_ufs_host_init(hba->host);
 #endif
 	/* Reset the attached device */
 	ufshcd_vops_device_reset(hba);

@@ -232,13 +232,13 @@ static void row_attach_queue(struct dm_row *row)
 	struct request_queue *q = bdev_get_queue(row->origin->bdev);
 
 	if (dm_target_is_row_bio_target(row->ti->type)) {
-		spin_lock_irq(q->queue_lock);
+		spin_lock_irq(&q->queue_lock);
 		if (row->mrfn_hook == 0) {
 			row->mrfn = q->make_request_fn;
 			q->make_request_fn = row_make_request;
 			row->mrfn_hook = HOOK_MAGIC;
 		}
-		spin_unlock_irq(q->queue_lock);
+		spin_unlock_irq(&q->queue_lock);
 	}
 }
 
@@ -251,12 +251,12 @@ static void row_detach_queue(struct dm_row *row)
 	struct request_queue *q = bdev_get_queue(row->origin->bdev);
 
 	if (dm_target_is_row_bio_target(row->ti->type)) {
-		spin_lock_irq(q->queue_lock);
+		spin_lock_irq(&q->queue_lock);
 		if (row->mrfn_hook == HOOK_MAGIC) {
 			q->make_request_fn = row->mrfn;
 			row->mrfn_hook = 0;
 		}
-		spin_unlock_irq(q->queue_lock);
+		spin_unlock_irq(&q->queue_lock);
 	}
 }
 
@@ -485,7 +485,6 @@ static int row_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	ti->flush_supported = true;
 	ti->num_discard_bios = 1;
 	ti->discards_supported = false;
-	ti->split_discard_bios = false;
 	ti->per_io_data_size = 0;
 
 	/* Add row to the list of snapshots for this origin */
@@ -667,10 +666,6 @@ static int row_message(struct dm_target *ti, unsigned int argc, char **argv)
 #endif
 {
 	struct dm_row *s = ti->private;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
-	(void *)(result);
-	(void)(maxlen);
-#endif
 	DMINFO("%s: Message row mapped-device", __func__);
 
 	if (argc != 1) {
@@ -751,6 +746,7 @@ static int bio_add_pages(struct bio *bio, unsigned int pg_num)
 	struct bio_vec *bvec = NULL;
 	int i;
 	int err = 0;
+	struct bvec_iter_all iter_all;
 
 	for (i = 0; i < pg_num; ++i) {
 		page = alloc_page(GFP_KERNEL);
@@ -767,7 +763,7 @@ static int bio_add_pages(struct bio *bio, unsigned int pg_num)
 	}
 
 	if (err) {
-		bio_for_each_segment_all(bvec, bio, i)
+		bio_for_each_segment_all(bvec, bio, iter_all)
 			__free_page(bvec->bv_page);
 	}
 
@@ -780,9 +776,9 @@ static int bio_add_pages(struct bio *bio, unsigned int pg_num)
 static void bio_delete_pages(struct bio *bio)
 {
 	struct bio_vec *bvec = NULL;
-	int i;
+	struct bvec_iter_all iter_all;
 
-	bio_for_each_segment_all(bvec, bio, i)
+	bio_for_each_segment_all(bvec, bio, iter_all)
 		__free_page(bvec->bv_page);
 }
 

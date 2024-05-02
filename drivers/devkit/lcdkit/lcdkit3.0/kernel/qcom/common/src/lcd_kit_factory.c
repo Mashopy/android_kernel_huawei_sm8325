@@ -1033,6 +1033,8 @@ static void parse_dt_checksum(uint32_t panel_id, struct device_node *np)
 			&checksum_value_size, CHECKSUM_VALUE_SIZE);
 		lcd_kit_parse_arrays_data(np, "lcd-kit,checksum-value",
 			&FACT_INFO->checksum.value, checksum_value_size);
+		lcd_kit_parse_arrays_data(np, "lcd-kit,checksum-value-ext",
+			&FACT_INFO->checksum.value_ext, checksum_value_size);
 		lcd_kit_parse_arrays_data(np, "lcd-kit,checksum-dsi1-value",
 			&FACT_INFO->checksum.dsi1_value, CHECKSUM_VALUE_SIZE);
 		/* checksum stress test */

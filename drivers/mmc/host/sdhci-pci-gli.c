@@ -319,7 +319,11 @@ static void sdhci_gli_voltage_switch(struct sdhci_host *host)
 	 * Wait 5ms after set 1.8V signal enable in Host Control 2 register
 	 * to ensure 1.8V signal enable bit is set by GL9750/GL9755.
 	 */
+#ifdef CONFIG_DISK_MAGO
+	usleep_range(100000, 110000);
+#else
 	usleep_range(5000, 5500);
+#endif
 }
 
 static void sdhci_gl9750_reset(struct sdhci_host *host, u8 mask)

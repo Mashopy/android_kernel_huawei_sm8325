@@ -78,11 +78,11 @@
 #define ST88_PINCTRL_LEN                   2
 
 /* coil test */
-#define ST88_COIL_TEST_PING_INTERVAL       0
+#define ST88_COIL_TEST_PING_INTERVAL       1
 #define ST88_COIL_TEST_PING_FREQ           115
 
 /* bat heating */
-#define ST88_BAT_HEATING_PING_INTERVAL     0
+#define ST88_BAT_HEATING_PING_INTERVAL     1
 #define ST88_BAT_HEATING_PING_FREQ         100
 
 struct stwlc88_chip_info {

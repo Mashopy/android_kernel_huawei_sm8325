@@ -50,6 +50,8 @@
 #if IS_ENABLED(CONFIG_QTI_PMIC_GLINK)
 #include <huawei_platform/hwpower/common_module/power_glink.h>
 #endif /* IS_ENABLED(CONFIG_QTI_PMIC_GLINK) */
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_pmode.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_plim.h>
 #include <huawei_platform/hwpower/common_module/power_platform.h>
 #include <huawei_platform/hwpower/charger/charger_loginfo.h>
 #include <chipset_common/hwpower/hardware_monitor/ship_mode.h>
@@ -236,6 +238,40 @@ static int huawei_charger_set_hz_mode(struct charge_device_info *di, int val)
 	return 0;
 }
 
+void huawei_charger_set_rsmc_limit(int val)
+{
+	int iin = (val > 0) ? val : DEFAULT_IIN_THL;
+
+	hwlog_info("set rsmc limit %d\n", iin);
+	(void)power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_RSMC_VOTER, true, iin);
+}
+EXPORT_SYMBOL(huawei_charger_set_rsmc_limit);
+
+void huawei_charger_set_dc_disable_flags(bool disable, int type)
+{
+	int val = disable ? DC_SET_DISABLE_FLAGS : DC_CLEAR_DISABLE_FLAGS;
+
+	direct_charge_set_disable_flags(val, type);
+	if (disable)
+		wlrx_plim_set_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_RSMC);
+	else
+		wlrx_plim_clear_src(WLTRX_DRV_MAIN, WLRX_PLIM_SRC_RSMC);
+}
+EXPORT_SYMBOL(huawei_charger_set_dc_disable_flags);
+
+bool huawei_charger_in_dc_path(void)
+{
+	return (direct_charge_get_stage_status() > DC_STAGE_SWITCH_DETECT) ||
+		wlrx_pmode_in_dc_mode(WLTRX_DRV_MAIN);
+}
+EXPORT_SYMBOL(huawei_charger_in_dc_path);
+
+int huawei_charger_get_ibus(void)
+{
+	return charge_get_ibus() / POWER_UA_PER_MA;
+}
+EXPORT_SYMBOL(huawei_charger_get_ibus);
+
 int huawei_charger_get_vterm_dec(unsigned int *value)
 {
 	struct charge_device_info *di = g_charger_device_para;
@@ -263,6 +299,10 @@ static void huawei_charger_send_charging_event(int val)
 		else
 			power_event_bnc_notify(POWER_BNT_CHARGING, POWER_NE_CHARGING_SUSPEND, NULL);
 	} else {
+		if (power_platform_get_vbus_status() == VBUS_ON) {
+			pr_info("%s vbus is online, ignore stop event\n", __func__);
+			return;
+		}
 		power_event_bnc_notify(POWER_BNT_CHARGING, POWER_NE_CHARGING_STOP, NULL);
 	}
 }
@@ -723,9 +763,15 @@ static ssize_t charge_sysfs_show(struct device *dev,
 		ret = snprintf(buf, MAX_SIZE, "%u\n", 1);
 		break;
 	case CHARGE_SYSFS_IBUS:
-		if (power_supply_check_psy_available("battery", &di->batt_psy))
+		if (power_supply_check_psy_available("battery", &di->batt_psy)) {
+#if IS_ENABLED(CONFIG_QTI_PMIC_GLINK)
+			ibus = power_supply_return_int_property_value_with_psy(di->usb_psy,
+				POWER_SUPPLY_PROP_CURRENT_NOW);
+#else
 			ibus = power_supply_return_int_property_value_with_psy(di->usb_psy,
 				POWER_SUPPLY_PROP_INPUT_CURRENT_NOW);
+#endif
+		}
 		return snprintf(buf, MAX_SIZE, "%d\n", ibus);
 	case CHARGE_SYSFS_HIZ:
 		ret = snprintf(buf, MAX_SIZE, "%u\n", di->sysfs_data.hiz_mode);
@@ -1071,11 +1117,39 @@ static int dcp_set_iin_thermal(unsigned int index, unsigned int value)
 	return dcp_set_iin_limit_array(index, value);
 }
 
+static int set_thirdparty_buck_iin_limit(struct charge_device_info *di, int val)
+{
+	int iin_limit;
+
+	if (!di) {
+		hwlog_err("di is null\n");
+		return -EINVAL;
+	}
+
+	hwlog_info("%s enter , val = %d\n", __func__, val);
+
+	if (val == 0) {
+		hwlog_info("cancel input limit\n");
+		iin_limit = 0;
+	} else if ((val <= MIN_CURRENT) && (val > 0)) {
+		iin_limit = MIN_CURRENT;
+	} else {
+		iin_limit = val;
+	}
+
+	charge_set_iin_limit(iin_limit);
+	di->sysfs_data.inputcurrent = iin_limit;
+	return 0;
+}
+
 static int dcp_set_iin_limit(unsigned int val)
 {
 	int iin = (val > 0) ? val : DEFAULT_IIN_THL;
+	struct charge_device_info *di = g_charger_device_para;
 
 	hwlog_info("dcp set iin limit %d\n", iin);
+	if (charge_support_thirdparty_buck())
+		return set_thirdparty_buck_iin_limit(di, val);
 	return power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_POWER_IF_VOTER, true, iin);
 }
 
@@ -1150,7 +1224,7 @@ static int dcp_set_vterm_dec(unsigned int val)
 
 	di->vterm_dec = vdec / POWER_UV_PER_MV;
 	return power_supply_set_int_property_value_with_psy(di->chg_psy,
-		POWER_SUPPLY_PROP_VOLTAGE_BASP, vol_max - vdec);
+		POWER_SUPPLY_PROP_VOLTAGE_BASP, (vol_max - vdec) / POWER_UV_PER_MV);
 }
 
 static int dcp_set_ichg_limit(unsigned int val)

@@ -146,6 +146,10 @@ void smart_softtimer_add(struct softtimer_list *timer)
 
 	if ((timer == NULL) || (timer_control.init_flag != TIMER_TRUE))
 		return;
+	if (IS_ERR(timer_control.clk)) {
+		pr_err("[%s] softtimer: devm_clk_get ERROR\n", __func__);
+		return;
+	}
 	spin_lock_bh(&timer_control.soft_timer_lock);
 	elapsed_time = hard_timer_elapsed_time();
 	pr_info("softtimer:%s ENTER [%d][0x%x]\n", __func__, timer->timeout, elapsed_time);
@@ -249,6 +253,10 @@ int smart_softtimer_delete(struct softtimer_list *timer)
 {
 	if (timer == NULL)
 		return  -EIO;
+	if (IS_ERR(timer_control.clk)) {
+		pr_err("[%s] softtimer: devm_clk_get ERROR\n", __func__);
+		return -EIO;
+	}
 	for (;;) {
 		int ret = smart_softtimer_try_to_del_sync(timer);
 

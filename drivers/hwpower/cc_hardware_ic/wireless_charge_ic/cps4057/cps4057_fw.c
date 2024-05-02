@@ -582,6 +582,11 @@ void cps4057_fw_mtp_check_work(struct work_struct *work)
 	if (!di)
 		return;
 
+	if (!power_cmdline_is_factory_mode() && cps4057_rx_is_tx_exist(di)) {
+		hwlog_info("[mtp_check_work] tx exist\n");
+		return;
+	}
+
 	di->g_val.mtp_chk_complete = false;
 	ret = cps4057_fw_check_mtp(di);
 	if (!ret) {

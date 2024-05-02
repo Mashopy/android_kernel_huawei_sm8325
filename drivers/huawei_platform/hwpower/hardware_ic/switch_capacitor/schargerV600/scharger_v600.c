@@ -31,6 +31,16 @@
 #endif
 
 #define ILIMIT_RBOOST_CNT 10
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#define EABLE_STATUS_ON 1
+#define DEALY_FOR_LDO_ON 1000 * 100
+#define DEALY_FOR_LDO_OFF 2000
+#define AVDD_FOR_LDO_ON 2000 /* Shutdown Duration */
+
+#define LDO33_EN_REG SOC_SCHARGER_SCHG_LOGIC_CFG_REG_0_ADDR(0)
+#define LDO33_EN_SHITF SOC_SCHARGER_SCHG_LOGIC_CFG_REG_0_da_ldo33_en_START
+#define LDO33_EN_MASK (1 << LDO33_EN_SHITF)
+#endif
 
 struct hi6526_device_info *g_hi6526_dev;
 struct hi6526_device_info *g_hi6526_aux_dev;
@@ -2553,6 +2563,46 @@ static int hi6526_charger_device_register(struct i2c_client *client,
 }
 #endif /* CONFIG_HI6526_PRIMARY_CHARGER_SUPPORT */
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static void hi6526_ldo33_force_enable(struct hi6526_device_info *di, int enable)
+{
+	int ret;
+	u8 data = 0;
+
+	if (!di || !di->avdd_enabled)
+		return;
+	ret = hi6526_write_mask(di, LDO33_EN_REG, LDO33_EN_MASK, LDO33_EN_SHITF,
+		(u8)enable);
+	if (ret)
+		scharger_err("%s %d error\n", __func__, enable);
+
+	(void)hi6526_read(di, LDO33_EN_REG, &data);
+	scharger_inf("%s work data = %u\n", __func__, data);
+}
+
+static void hi6526_ldo33_work(struct work_struct *work)
+{
+	struct hi6526_device_info *di = container_of(work, struct hi6526_device_info,
+		ldo33_work.work);
+	static int enable = EABLE_STATUS_ON;
+	int delay_time;
+
+	if (!di)
+		return;
+
+	hi6526_ldo33_force_enable(di, enable);
+	scharger_inf("%s enable value= %d\n", __func__, enable);
+	if (enable) {
+		enable = 0;
+		delay_time = DEALY_FOR_LDO_OFF;
+	} else {
+		enable = 1;
+		delay_time = DEALY_FOR_LDO_ON;
+	}
+	schedule_delayed_work(&di->ldo33_work, msecs_to_jiffies(delay_time)); /* 1000*60: Once a minute */
+}
+#endif
+
 static int hi6526_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
@@ -2585,6 +2635,9 @@ static int hi6526_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&di->reverbst_work, hi6526_reverbst_delay_work);
 	INIT_DELAYED_WORK(&di->dc_ucp_work, hi6526_dc_ucp_delay_work);
 	INIT_DELAYED_WORK(&di->dbg_work, hi6526_dbg_work);
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	INIT_DELAYED_WORK(&di->ldo33_work, hi6526_ldo33_work);
+#endif
 
 	(void)power_pinctrl_config(di->dev, "pinctrl-names", 1); /* 1:pinctrl-names length */
 	ret = hi6526_irq_init(di, np);
@@ -2669,6 +2722,10 @@ static int hi6526_probe(struct i2c_client *client,
 	hi6526_mask_pd_irq(di);
 
 	scharger_inf("%s_%d success!\n", __func__, di->param_dts.ic_role);
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	if (di->avdd_enabled)
+		schedule_delayed_work(&di->ldo33_work, msecs_to_jiffies(AVDD_FOR_LDO_ON));
+#endif
 	return 0;
 
 hi6526_create_sysfs_fail:
@@ -2719,11 +2776,17 @@ static void hi6526_shutdown(struct i2c_client *client)
 #ifdef CONFIG_PM
 static int hi6526_i2c_suspend(struct device *dev)
 {
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	hi6526_ldo33_force_enable(g_hi6526_dev, 0);
+#endif
 	return 0;
 }
 
 static int hi6526_i2c_resume(struct device *dev)
 {
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	hi6526_ldo33_force_enable(g_hi6526_dev, 1);
+#endif
 	return 0;
 }
 

@@ -27,6 +27,10 @@
 #include "hwkmregs.h"
 #include "hwkm_serialize.h"
 
+#ifdef CONFIG_DISK_MAGO
+struct mutex clock_lock;
+#endif
+
 #define BYTES_TO_WORDS(bytes) (((bytes) + 3) / 4)
 
 #define WRITE_TO_KDF_PACKET(cmd_ptr, src, len)	\
@@ -1002,9 +1006,19 @@ out:
 int qti_hwkm_clocks(bool on)
 {
 	int ret = 0;
-
+#ifdef CONFIG_DISK_MAGO
+	if (on) {
+		mutex_lock(&clock_lock);
+	} else {
+		mutex_unlock(&clock_lock);
+	}
+#endif
 	ret = qti_hwkm_enable_disable_clocks(km_device, on);
 	if (ret) {
+#ifdef CONFIG_DISK_MAGO
+		if (on)
+			mutex_unlock(&clock_lock);
+#endif
 		pr_err("%s:%pK Could not enable/disable clocks\n",
 				__func__, km_device);
 	}
@@ -1211,6 +1225,17 @@ static int qti_hwkm_set_tpkey(void)
 	return 0;
 }
 
+#ifdef CONFIG_DISK_MAGO
+bool qti_need_hwkm_reinit(void __iomem *hwkm_slave_mmio_base)
+{
+	/* return true if ice_base or hwkm_salve is null */
+        if (!km_device->ice_base || !hwkm_slave_mmio_base)
+		return true;
+
+	return km_device->ice_base != hwkm_slave_mmio_base;
+}
+#endif
+
 int qti_hwkm_init(void __iomem *hwkm_slave_mmio_base)
 {
 	int ret = 0;
@@ -1274,6 +1299,9 @@ static int qti_hwkm_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_hwkm_dev;
 
+#ifdef CONFIG_DISK_MAGO
+	mutex_init(&clock_lock);
+#endif
 	ret = qti_hwkm_init_clocks(hwkm_dev);
 	if (ret) {
 		pr_err("%s: Error initializing clocks %d\n", __func__, ret);

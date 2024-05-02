@@ -315,7 +315,7 @@ static int multi_btb_get_register_head(char *buffer, int size, void *dev_data)
 	if (!buffer)
 		return -EPERM;
 
-	snprintf(buffer, size, "btb_temp0 btb_temp1");
+	snprintf(buffer, size, "btb_temp0 btb_temp1  ");
 	return 0;
 }
 
@@ -330,7 +330,7 @@ static int multi_btb_value_dump(char *buffer, int size, void *dev_data)
 	multi_btb_temp_sync(BTB_TEMP_0, &btb_temp0);
 	multi_btb_temp_sync(BTB_TEMP_1, &btb_temp1);
 
-	snprintf(buffer, size, "%-9d %-9d", btb_temp0, btb_temp1);
+	snprintf(buffer, size, "%-10d%-11d", btb_temp0, btb_temp1);
 	return 0;
 }
 

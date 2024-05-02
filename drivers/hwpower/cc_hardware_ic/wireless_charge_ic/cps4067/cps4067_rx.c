@@ -502,12 +502,59 @@ static int cps4067_rx_kick_watchdog(void *dev_data)
 
 static int cps4067_rx_get_fod(char *fod_str, int len, void *dev_data)
 {
-	return 0;
+	int i;
+	int ret;
+	char tmp[CPS4067_RX_FOD_TMP_STR_LEN] = { 0 };
+	u8 fod_arr[CPS4067_RX_FOD_LEN] = { 0 };
+
+	if (!fod_str || (len < WLRX_IC_FOD_COEF_LEN))
+		return -EINVAL;
+
+	ret = cps4067_read_block(dev_data, CPS4067_RX_FOD_ADDR,
+		fod_arr, CPS4067_RX_FOD_LEN);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < CPS4067_RX_FOD_LEN; i++) {
+		snprintf(tmp, CPS4067_RX_FOD_TMP_STR_LEN, "%x ", fod_arr[i]);
+		strncat(fod_str, tmp, strlen(tmp));
+	}
+
+	return strlen(fod_str);
 }
 
 static int cps4067_rx_set_fod(const char *fod_str, void *dev_data)
 {
-	return 0;
+	int ret;
+	char *cur = (char *)fod_str;
+	char *token = NULL;
+	int i;
+	u8 val = 0;
+	const char *sep = " ,";
+	u8 fod_arr[CPS4067_RX_FOD_LEN] = { 0 };
+
+	if (!fod_str) {
+		hwlog_err("set_fod: input fod_str null\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < CPS4067_RX_FOD_LEN; i++) {
+		token = strsep(&cur, sep);
+		if (!token) {
+			hwlog_err("set_fod: input fod_str number err\n");
+			return -EINVAL;
+		}
+		ret = kstrtou8(token, POWER_BASE_DEC, &val);
+		if (ret) {
+			hwlog_err("set_fod: input fod_str type err\n");
+			return -EINVAL;
+		}
+		fod_arr[i] = val;
+		hwlog_info("[set_fod] fod[%d]=0x%x\n", i, fod_arr[i]);
+	}
+
+	return cps4067_write_block(dev_data, CPS4067_RX_FOD_ADDR,
+		fod_arr, CPS4067_RX_FOD_LEN);
 }
 
 static int cps4067_rx_5vbuck_chip_init(struct cps4067_dev_info *di)
@@ -525,6 +572,29 @@ static int cps4067_rx_5vbuck_chip_init(struct cps4067_dev_info *di)
 		CPS4067_RX_FC_DELTA_VAL);
 
 	return ret;
+}
+
+static int cps4067_rx_init_fod_coef(struct cps4067_dev_info *di, unsigned int tx_type)
+{
+	int vfc;
+	int vfc_reg = 0;
+	u8 *rx_fod = NULL;
+
+	(void)cps4067_rx_get_vfc_reg(&vfc_reg, di);
+	hwlog_info("[init_fod_coef] vfc_reg: %dmV\n", vfc_reg);
+
+	if (vfc_reg < 9000) /* (0, 9)V, set 5v fod */
+		vfc = 5000;
+	else if (vfc_reg < 15000) /* [9, 15)V, set 9V fod */
+		vfc = 9000;
+	else
+		return -EINVAL;
+
+	rx_fod = wlrx_get_fod_ploss_th(di->ic_type, vfc, tx_type, CPS4067_RX_FOD_LEN);
+	if (!rx_fod)
+		return -EINVAL;
+
+	return cps4067_write_block(di, CPS4067_RX_FOD_ADDR, rx_fod, CPS4067_RX_FOD_LEN);
 }
 
 static int cps4067_rx_chip_init(unsigned int init_type, unsigned int tx_type, void *dev_data)
@@ -546,16 +616,19 @@ static int cps4067_rx_chip_init(unsigned int init_type, unsigned int tx_type, vo
 		/* fall through */
 	case WLRX_IC_5VBUCK_CHIP_INIT:
 		ret += cps4067_rx_5vbuck_chip_init(di);
+		ret += cps4067_rx_init_fod_coef(di, tx_type);
 		break;
 	case WLRX_IC_9VBUCK_CHIP_INIT:
 		hwlog_info("[chip_init] 9v chip init\n");
 		cps4067_write_block(di, CPS4067_RX_LDO_CFG_ADDR,
 			di->rx_ldo_cfg.m_volt, CPS4067_RX_LDO_CFG_LEN);
+		ret += cps4067_rx_init_fod_coef(di, tx_type);
 		break;
 	case WLRX_IC_SC_CHIP_INIT:
 		hwlog_info("[chip_init] sc chip init\n");
 		cps4067_write_block(di, CPS4067_RX_LDO_CFG_ADDR,
 			di->rx_ldo_cfg.sc, CPS4067_RX_LDO_CFG_LEN);
+		ret += cps4067_rx_init_fod_coef(di, tx_type);
 		break;
 	default:
 		hwlog_err("chip_init: input para invalid\n");
@@ -577,6 +650,18 @@ static void cps4067_rx_stop_charging(void *dev_data)
 
 	if (!di->g_val.irq_abnormal)
 		return;
+
+	if (wlrx_get_wired_channel_state() != WIRED_CHANNEL_ON) {
+		hwlog_info("[stop_charging] irq_abnormal, keep rx_sw on\n");
+		di->g_val.irq_abnormal = true;
+		wlps_control(di->ic_type, WLPS_RX_SW, true);
+	} else {
+		di->irq_cnt = 0;
+		di->g_val.irq_abnormal = false;
+		cps4067_enable_irq_wake(di);
+		cps4067_enable_irq(di);
+		hwlog_info("[stop_charging] wired channel on, enable irq\n");
+	}
 }
 
 static int cps4067_rx_data_rcvd_handler(struct cps4067_dev_info *di)
@@ -614,6 +699,43 @@ static int cps4067_rx_data_rcvd_handler(struct cps4067_dev_info *di)
 
 void cps4067_rx_abnormal_irq_handler(struct cps4067_dev_info *di)
 {
+	static struct timespec64 ts64_timeout;
+	struct timespec64 ts64_interval;
+	struct timespec64 ts64_now;
+
+	ts64_now = power_get_current_kernel_time64();
+	ts64_interval.tv_sec = 0;
+	ts64_interval.tv_nsec = WIRELESS_INT_TIMEOUT_TH * NSEC_PER_MSEC;
+
+	if (!di)
+		return;
+
+	hwlog_info("[handle_abnormal_irq] irq_cnt = %d\n", ++di->irq_cnt);
+	/* power on irq occurs first time, so start monitor now */
+	if (di->irq_cnt == 1) {
+		ts64_timeout = timespec64_add_safe(ts64_now, ts64_interval);
+		if (ts64_timeout.tv_sec == TIME_T_MAX) {
+			di->irq_cnt = 0;
+			hwlog_err("handle_abnormal_irq: time overflow\n");
+			return;
+		}
+	}
+
+	if (timespec64_compare(&ts64_now, &ts64_timeout) < 0)
+		return;
+
+	if (di->irq_cnt < WIRELESS_INT_CNT_TH) {
+		di->irq_cnt = 0;
+		return;
+	}
+
+	di->g_val.irq_abnormal = true;
+	wlps_control(di->ic_type, WLPS_RX_SW, true);
+	cps4067_disable_irq_wake(di);
+	cps4067_disable_irq_nosync(di);
+	gpio_set_value(di->gpio_sleep_en, RX_SLEEP_EN_DISABLE);
+	hwlog_err("handle_abnormal_irq: more than %d irq in %ds, disable irq\n",
+		WIRELESS_INT_CNT_TH, WIRELESS_INT_TIMEOUT_TH / POWER_MS_PER_S);
 }
 
 static void cps4067_rx_ready_handler(struct cps4067_dev_info *di)
@@ -758,6 +880,7 @@ static void cps4067_rx_pmic_vbus_handler(bool vbus_state, void *dev_data)
 		cps4067_rx_ready_handler(di);
 		di->irq_cnt = 0;
 		di->g_val.irq_abnormal = false;
+		cps4067_enable_irq_wake(di);
 		cps4067_enable_irq(di);
 	}
 }

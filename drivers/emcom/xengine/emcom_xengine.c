@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2017-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2017-2023. All rights reserved.
  * Description: utils of xengine module
  * Author: zhongwenguo zhongwenguo@huawei.com
  * Create: 2017-04-20
@@ -70,6 +70,16 @@ struct emcom_xengine_netem_skb_cb {
 	ktime_t tstamp_save;
 };
 
+struct emcom_xengine_event {
+	int32_t event;
+	void (*emcom_xengine_handle_event)(const uint8_t *data, uint16_t len);
+};
+
+struct emcom_xengine_event_ext {
+	int32_t event;
+	void (*emcom_xengine_handle_event)(const char *data, uint16_t len);
+};
+
 struct mutex g_mpip_mutex;
 
 /* The uid of bind to Mpip Application */
@@ -86,6 +96,8 @@ struct emcom_xengine_ccalg_config g_ccalg_uids[EMCOM_MAX_CCALG_APP];
 struct emcom_xengine_network_info g_network_infos[EMCOM_XENGINE_NET_MAX_NUM];
 static spinlock_t g_network_infos_cache_lock;
 
+static int32_t g_last_default_net_type = EMCOM_XENGINE_NET_INVALID;
+
 void emcom_xengine_mpip_init(void);
 void emcom_xengine_ccalg_init(void);
 bool emcom_xengine_is_private_addr(__be32 addr);
@@ -93,6 +105,56 @@ void emcom_xengine_supply_mpdns_cache(const struct sk_buff *skb, const char* hos
 void emcom_xengine_update_mpdns_cache(const char *data, uint16_t len);
 void emcom_xengine_update_network_info(const char *data, uint16_t len);
 void emcom_xengine_set_mpdns_config(const char *data, uint16_t len);
+void emcom_xengine_start_acc_uid(const uint8_t *pdata, uint16_t len);
+void emcom_xengine_stop_acc_uid(const uint8_t *pdata, uint16_t len);
+void emcom_send_keypsinfo(const uint8_t *data, uint16_t len);
+void emcom_xengine_set_speedctrl_info(const uint8_t *data, uint16_t len);
+void emcom_xengine_start_udpretran(const uint8_t *data, uint16_t len);
+void emcom_xengine_stop_udpretran(const uint8_t *data, uint16_t len);
+void emcom_xengine_config_mpip(const uint8_t *data, uint16_t len);
+void emcom_xengine_clear_mpip_config(const uint8_t *data, uint16_t len);
+void emcom_xengine_start_mpip(const char *data, uint16_t len);
+void emcom_xengine_stop_mpip(const uint8_t *data, uint16_t len);
+void emcom_xengine_start_fastsyn(const uint8_t *data, uint16_t len);
+void emcom_xengine_stop_fastsyn(const uint8_t *data, uint16_t len);
+void emcom_xengine_active_ccalg(const uint8_t *data, uint16_t len);
+void emcom_xengine_deactive_ccalg(const uint8_t *data, uint16_t len);
+
+static const struct emcom_xengine_event g_emcom_xengine_handle_event_list[] = {
+	{NETLINK_EMCOM_DK_START_ACC, emcom_xengine_start_acc_uid},
+	{NETLINK_EMCOM_DK_STOP_ACC, emcom_xengine_stop_acc_uid},
+	{NETLINK_EMCOM_DK_KEY_PSINFO, emcom_send_keypsinfo},
+	{NETLINK_EMCOM_DK_SPEED_CTRL, emcom_xengine_set_speedctrl_info},
+	{NETLINK_EMCOM_DK_START_UDP_RETRAN, emcom_xengine_start_udpretran},
+	{NETLINK_EMCOM_DK_STOP_UDP_RETRAN, emcom_xengine_stop_udpretran},
+	{NETLINK_EMCOM_DK_CONFIG_MPIP, emcom_xengine_config_mpip},
+	{NETLINK_EMCOM_DK_CLEAR_MPIP, emcom_xengine_clear_mpip_config},
+	{NETLINK_EMCOM_DK_STOP_MPIP, emcom_xengine_stop_mpip},
+	{NETLINK_EMCOM_DK_START_FAST_SYN, emcom_xengine_start_fastsyn},
+	{NETLINK_EMCOM_DK_STOP_FAST_SYN, emcom_xengine_stop_fastsyn},
+	{NETLINK_EMCOM_DK_ACTIVE_CCALG, emcom_xengine_active_ccalg},
+	{NETLINK_EMCOM_DK_DEACTIVE_CCALG, emcom_xengine_deactive_ccalg},
+	{NETLINK_EMCOM_DK_MPF_RST_LOC_INTF, emcom_xengine_mpflow_ai_reset_loc_intf},
+	{NETLINK_EMCOM_DK_MPF_RST_ALL_FLOW, emcom_xengine_mpflow_ai_close_all_flow},
+	{NETLINK_EMCOM_DK_MPF_CHANGE_BURST_RATIO, emcom_xengine_mpflow_ai_change_burst_ratio}
+};
+
+static const struct emcom_xengine_event_ext g_emcom_xengine_handle_event_list_ext[] = {
+	{NETLINK_EMCOM_DK_START_MPIP, emcom_xengine_start_mpip},
+	{NETLINK_EMCOM_DK_START_MPFLOW, emcom_xengine_mpflow_start},
+	{NETLINK_EMCOM_DK_STOP_MPFLOW, emcom_xengine_mpflow_stop},
+	{NETLINK_EMCOM_DK_MPF_BIND_IP_POLICY, emcom_xengine_mpflow_ai_ip_bind_cfg},
+	{NETLINK_EMCOM_DK_MPF_INIT_BIND_CONFIG, emcom_xengine_mpflow_ai_init_bind_config},
+	{NETLINK_EMCOM_DK_MPF_BIND_PORT_POLICY, emcom_xengine_mpflow_ai_port_bind_cfg},
+	{NETLINK_EMCOM_DK_STOP_MPFLOW_V2, emcom_xengine_mpflow_ai_stop},
+	{NETLINK_EMCOM_DK_NOTIFY_NETWORK_INFO, emcom_xengine_update_network_info},
+	{NETLINK_EMCOM_DK_CONFIG_MPDNS, emcom_xengine_set_mpdns_config},
+	{NETLINK_EMCOM_DK_NOTIFY_MPDNS_RESULT, emcom_xengine_update_mpdns_cache},
+	{NETLINK_EMCOM_DK_MPF_VLAN_START, mpflow_vlan_config_start},
+	{NETLINK_EMCOM_DK_MPF_VLAN_STOP, mpflow_vlan_config_stop},
+	{NETLINK_EMCOM_DK_MPF_VLAN_UPDATE_APP_INFO, mpflow_vlan_update_app_info},
+	{NETLINK_EMCOM_DK_MPF_VLAN_NW_STATUS_INFO, mpflow_vlan_network_status_update}
+};
 
 static inline bool invalid_uid(uid_t uid)
 {
@@ -205,6 +267,13 @@ void emcom_xengine_init(void)
 	g_fastsyn_uid = UID_INVALID_APP;
 	(void)memset_s(g_network_infos, sizeof(g_network_infos), 0, sizeof(g_network_infos));
 	emcom_mpdns_init();
+}
+
+void emcom_xengine_network_info_clear(void)
+{
+	spin_lock_bh(&g_network_infos_cache_lock);
+	(void)memset_s(g_network_infos, sizeof(g_network_infos), 0, sizeof(g_network_infos));
+	spin_unlock_bh(&g_network_infos_cache_lock);
 }
 
 void emcom_xengine_mpip_init(void)
@@ -347,28 +416,29 @@ uint8_t emcom_xengine_found_avaiable_accindex(uid_t uid)
 /*
  * start the special application use high priority queue
  */
-int emcom_xengine_start_acc_uid(const uint8_t *pdata, uint16_t len)
+void emcom_xengine_start_acc_uid(const uint8_t *pdata, uint16_t len)
 {
 	uid_t uid;
 	uint8_t index;
+	emcom_logd("emcom netlink receive acc start");
 
 	/* input param check */
 	if (pdata == NULL) {
 		emcom_loge("Emcom_Xengine_StartAccUid:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len != sizeof(uid_t)) {
 		emcom_logi("Emcom_Xengine_StartAccUid: len:%u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	uid = *(uid_t *)pdata;
 
 	/* check uid */
 	if (invalid_uid(uid))
-		return -EINVAL;
+		return;
 
 	emcom_logd("Emcom_Xengine_StartAccUid: uid:%u ready to added", uid);
 
@@ -378,39 +448,39 @@ int emcom_xengine_start_acc_uid(const uint8_t *pdata, uint16_t len)
 		emcom_logd("Emcom_Xengine_StartAccUid: uid:%u added", uid);
 		g_current_uids[index].age = 0;
 		g_current_uids[index].uid = uid;
-		return 0;
+		return;
 	}
 
 	emcom_loge("StartAccUid: not available index:%u, uid:%u", index, uid);
-	return 0;
 }
 
 
 /*
  * stop the special application use high priority queue
  */
-int emcom_xengine_stop_acc_uid(const uint8_t *pdata, uint16_t len)
+void emcom_xengine_stop_acc_uid(const uint8_t *pdata, uint16_t len)
 {
 	uid_t uid;
 	uint8_t index;
+	emcom_logd("emcom netlink receive acc stop");
 
 	/* input param check */
 	if (pdata == NULL) {
 		emcom_loge("Emcom_Xengine_StopAccUid:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len != sizeof(uid_t)) {
 		emcom_logi("Emcom_Xengine_StopAccUid: len: %u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	uid = *(uid_t *)pdata;
 
 	/* check uid */
 	if (invalid_uid(uid))
-		return -EINVAL;
+		return;
 
 	/* remove specify uid */
 	for (index = 0; index < EMCOM_MAX_ACC_APP; index++) {
@@ -421,29 +491,28 @@ int emcom_xengine_stop_acc_uid(const uint8_t *pdata, uint16_t len)
 			break;
 		}
 	}
-
-	return 0;
 }
 
 /*
  * confige the background application tcp window size
  */
-int emcom_xengine_set_speedctrl_info(const uint8_t *data, uint16_t len)
+void emcom_xengine_set_speedctrl_info(const uint8_t *data, uint16_t len)
 {
 	struct emcom_xengine_speed_ctrl_data *pspeedctrl_info = NULL;
 	uid_t uid;
 	uint32_t size;
+	emcom_logd("emcom netlink receive speed control uid");
 
 	/* input param check */
 	if (data == NULL) {
 		emcom_loge("Emcom_Xengine_SetSpeedCtrlInfo:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len != sizeof(struct emcom_xengine_speed_ctrl_data)) {
 		emcom_logi("Emcom_Xengine_SetSpeedCtrlInfo: len:%u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	pspeedctrl_info = (struct emcom_xengine_speed_ctrl_data *)data;
@@ -454,24 +523,23 @@ int emcom_xengine_set_speedctrl_info(const uint8_t *data, uint16_t len)
 	if (!uid && !size) {
 		emcom_logd("Emcom_Xengine_SetSpeedCtrlInfo: clear speed ctrl state");
 		emcom_xengine_set_speedctrl(g_speedctrl_info, UID_INVALID_APP, 0);
-		return 0;
+		return;
 	}
 
 	/* check uid */
 	if (invalid_uid(uid)) {
 		emcom_logi("Emcom_Xengine_SetSpeedCtrlInfo: uid:%u is illegal", uid);
-		return -EINVAL;
+		return;
 	}
 
 	/* check size */
 	if (invalid_speedctrl_size(size)) {
 		emcom_logi("Emcom_Xengine_SetSpeedCtrlInfo: size:%u is illegal", size);
-		return -EINVAL;
+		return;
 	}
 
 	emcom_logd("Emcom_Xengine_SetSpeedCtrlInfo: uid:%u size:%u", uid, size);
 	emcom_xengine_set_speedctrl(g_speedctrl_info, uid, size);
-	return 0;
 }
 
 /*
@@ -518,13 +586,14 @@ void emcom_xengine_speedctrl_winsize(struct sock *pstsock, uint32_t *pstsize)
 /*
  * clear the mpip configure information, only confige but not start
  */
-int emcom_xengine_config_mpip(const uint8_t *data, uint16_t len)
+void emcom_xengine_config_mpip(const uint8_t *data, uint16_t len)
 {
 	uint8_t index;
 	const uint8_t *temp = data;
 	uint8_t length;
 
 	/* The empty updated list means clear the Mpip App Uid list */
+	emcom_logd("emcom netlink receive btm config start");
 	emcom_logd("The Mpip list will be update to empty");
 
 	/* Clear the Mpip App Uid list */
@@ -536,11 +605,11 @@ int emcom_xengine_config_mpip(const uint8_t *data, uint16_t len)
 	mutex_unlock(&g_mpip_mutex);
 	/* pdata == NULL or len == 0 is ok, just return */
 	if ((temp == NULL) || (len == 0))
-		return 0;
+		return;
 	length = len / sizeof(struct emcom_xengine_mpip_config);
 	if (length > EMCOM_MAX_MPIP_APP) {
 		emcom_loge("The length of received MPIP APP uid list is error");
-		return -EINVAL;
+		return;
 	}
 	mutex_lock(&g_mpip_mutex);
 	for (index = 0; index < length; index++) {
@@ -551,18 +620,17 @@ int emcom_xengine_config_mpip(const uint8_t *data, uint16_t len)
 		temp += sizeof(struct emcom_xengine_mpip_config);
 	}
 	mutex_unlock(&g_mpip_mutex);
-
-	return 0;
 }
 
 /*
  * clear the mpip configure information
  */
-int emcom_xengine_clear_mpip_config(const uint8_t *data, uint16_t len)
+void emcom_xengine_clear_mpip_config(const uint8_t *data, uint16_t len)
 {
 	uint8_t index;
 
 	/* The empty updated list means clear the Mpip App Uid list */
+	emcom_logd("emcom netlink receive clear mpip config");
 	emcom_logd("The Mpip list will be update to empty");
 
 	/* Clear the Mpip App Uid list */
@@ -572,22 +640,22 @@ int emcom_xengine_clear_mpip_config(const uint8_t *data, uint16_t len)
 		g_mpip_uids[index].type = EMCOM_XENGINE_MPIP_TYPE_BIND_NEW;
 	}
 	mutex_unlock(&g_mpip_mutex);
-
-	return 0;
 }
 
 /*
  * start  the application use mpip function
  * current support five application use this function in the same time
  */
-int emcom_xengine_start_mpip(const char *data, uint16_t len)
+void emcom_xengine_start_mpip(const char *data, uint16_t len)
 {
 	errno_t err;
 
 	/* input param check */
+	emcom_logd("emcom netlink receive btm start");
+
 	if ((data == NULL) || (len == 0) || (len > IFNAMSIZ)) {
 		emcom_loge("MPIP interface name or length %u is error", len);
-		return -EINVAL;
+		return;
 	}
 	mutex_lock(&g_mpip_mutex);
 	err = strncpy_s(g_ifacename, sizeof(char) * IFNAMSIZ, data, len);
@@ -596,21 +664,19 @@ int emcom_xengine_start_mpip(const char *data, uint16_t len)
 	g_mpip_start = true;
 	mutex_unlock(&g_mpip_mutex);
 	emcom_logd("Mpip is :%d to start", g_mpip_start);
-	return 0;
 }
 
 /*
  * stop all the application use mpip function
  * current not support stop single application use this function
  */
-int emcom_xengine_stop_mpip(const uint8_t *data, uint16_t len)
+void emcom_xengine_stop_mpip(const uint8_t *data, uint16_t len)
 {
+	emcom_logd("emcom netlink receive btm stop");
 	mutex_lock(&g_mpip_mutex);
 	g_mpip_start = false;
 	mutex_unlock(&g_mpip_mutex);
 	emcom_logd("MPIP function is :%d, ready to stop", g_mpip_start);
-
-	return 0;
 }
 
 
@@ -635,6 +701,14 @@ int emcom_xengine_is_mpip_binduid(uid_t uid)
 	return ret;
 }
 
+static void emcom_xengine_get_sock_uid(struct sock *pstsock, uid_t *sock_uid)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
+	*sock_uid = sock_i_uid(pstsock).val;
+#else
+	*sock_uid = sock_i_uid(pstsock);
+#endif
+}
 /*
  * bind special socket to suitable device
  */
@@ -651,17 +725,13 @@ void emcom_xengine_mpip_bind2device(struct sock *pstsock)
 
 	if (!g_mpip_start)
 		return;
+
 	/**
 	 * if uid equals current bind uid, bind 2 device
 	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 10)
-	sock_uid = sock_i_uid(pstsock).val;
-#else
-	sock_uid = sock_i_uid(pstsock);
-#endif
-	if (invalid_uid(sock_uid)) {
+	emcom_xengine_get_sock_uid(pstsock, &sock_uid);
+	if (invalid_uid(sock_uid))
 		return;
-	}
 
 	net = sock_net(pstsock);
 	found = emcom_xengine_is_mpip_binduid(sock_uid);
@@ -714,33 +784,33 @@ int emcom_xengine_rrckeep(void)
 /*
  * inform modem current application is high priority
  */
-int emcom_send_keypsinfo(const uint8_t *data, uint16_t len)
+void emcom_send_keypsinfo(const uint8_t *data, uint16_t len)
 {
 	uint32_t state;
+	emcom_logd("emcom netlink receive psinfo");
 
 	/* input param check */
 	if (data == NULL) {
 		emcom_loge("Emcom_Send_KeyPsInfo:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len < sizeof(uint32_t)) {
 		emcom_loge("Emcom_Send_KeyPsInfo: len: %u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	state = *(uint32_t *)data;
 
 	if (!emcom_is_modem_support()) {
 		emcom_logi("Emcom_Send_KeyPsInfo: modem not support");
-		return -EINVAL;
+		return;
 	}
 
 #ifdef CONFIG_HUAWEI_BASTET_COMM
-bastet_comm_key_ps_info_write(state);
+	bastet_comm_key_ps_info_write(state);
 #endif
-	return 0;
 }
 
 /*
@@ -821,40 +891,40 @@ void emcom_xengine_udpenqueue(const struct sk_buff *skb)
 /*
  * indicate the  application in current condition need retran packets in wifi
  */
-int emcom_xengine_start_udpretran(const uint8_t *data, uint16_t len)
+void emcom_xengine_start_udpretran(const uint8_t *data, uint16_t len)
 {
 	uid_t uid;
+	emcom_logd("emcom netlink receive wifi udp start");
 
 	/* input param check */
 	if (data == NULL) {
 		emcom_loge("Emcom_Xengine_StartUdpReTran:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len != sizeof(uid_t)) {
 		emcom_logi("Emcom_Xengine_StartUdpReTran: len: %u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	uid = *(uid_t *)data;
 	/* check uid */
 	if (invalid_uid(uid)) {
 		emcom_loge("Emcom_Xengine_StartUdpReTran: uid is invalid %u", uid);
-		return -EINVAL;
+		return;
 	}
 	emcom_logi("Emcom_Xengine_StartUdpReTran: uid: %u ", uid);
 	g_udp_retran_uid = uid;
-	return 0;
 }
 
 /*
  * stop wifi retran function
  */
-int emcom_xengine_stop_udpretran(const uint8_t *data, uint16_t len)
+void emcom_xengine_stop_udpretran(const uint8_t *data, uint16_t len)
 {
+	emcom_logd("emcom netlink receive wifi udp stop");
 	emcom_xengine_udpretran_clear();
-	return 0;
 }
 
 /*
@@ -893,41 +963,41 @@ void emcom_xengine_fastsyn(struct sock *pstsock)
  * indicate spec application use fast sync function
  * current only support one application in the same time
  */
-int emcom_xengine_start_fastsyn(const uint8_t *data, uint16_t len)
+void emcom_xengine_start_fastsyn(const uint8_t *data, uint16_t len)
 {
 	uid_t uid;
+	emcom_logd("emcom netlink receive fast syn start");
 
 	/* input param check */
 	if (data == NULL) {
 		emcom_loge(" emcom_xengine_start_fastsyn:data is null");
-		return -EINVAL;
+		return;
 	}
 
 	/* check len is invalid */
 	if (len != sizeof(uid_t)) {
 		emcom_logi(" emcom_xengine_start_fastsyn: len: %u is illegal", len);
-		return -EINVAL;
+		return;
 	}
 
 	uid = *(uid_t *)data;
 	/* check uid */
 	if (invalid_uid(uid)) {
 		emcom_loge(" emcom_xengine_start_fastsyn: uid is invalid %u", uid);
-		return -EINVAL;
+		return;
 	}
 	emcom_logi(" emcom_xengine_start_fastsyn: uid: %u ", uid);
 	g_fastsyn_uid = uid;
-	return 0;
 }
 
 /*
  * stop every application use fast sync function
  * current not support stop single application
  */
-int emcom_xengine_stop_fastsyn(const uint8_t *data, uint16_t len)
+void emcom_xengine_stop_fastsyn(const uint8_t *data, uint16_t len)
 {
+	emcom_logd("emcom netlink receive fast syn stop");
 	g_fastsyn_uid = UID_INVALID_APP;
-	return 0;
 }
 
 /*
@@ -968,6 +1038,7 @@ void emcom_xengine_active_ccalg(const uint8_t *data, uint16_t len)
 	uint32_t alg;
 	int8_t index;
 	struct emcom_xengine_ccalg_config_data *ccalg_config = NULL;
+	emcom_logd(" emcom netlink active congestion control algorithm");
 
 	/* input param check */
 	if ((data == NULL) || (len != sizeof(struct emcom_xengine_ccalg_config_data))) {
@@ -1016,6 +1087,7 @@ void emcom_xengine_deactive_ccalg(const uint8_t *data, uint16_t len)
 {
 	uid_t uid;
 	int8_t index;
+	emcom_logd(" emcom netlink deactive congestion control algorithm");
 
 	if ((data == NULL) || (len != sizeof(uid_t))) {
 		emcom_loge("CCAlg interface name or length %u is error", len);
@@ -1187,143 +1259,42 @@ bool emcom_xengine_check_ip_is_private(struct sockaddr *addr)
  */
 void emcom_xengine_evt_proc(int32_t event, const uint8_t *data, uint16_t len)
 {
+	int i;
+	int ext_index;
+	int list_len = (int)(sizeof(g_emcom_xengine_handle_event_list) / sizeof(g_emcom_xengine_handle_event_list[0]));
+	int list_ext_len = (int)(sizeof(g_emcom_xengine_handle_event_list_ext) /
+						sizeof(g_emcom_xengine_handle_event_list_ext[0]));
 	switch (event) {
-	case NETLINK_EMCOM_DK_START_ACC:
-		emcom_logd("emcom netlink receive acc start");
-		emcom_xengine_start_acc_uid(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_ACC:
-		emcom_logd("emcom netlink receive acc stop");
-		emcom_xengine_stop_acc_uid(data, len);
-		break;
 	case NETLINK_EMCOM_DK_CLEAR:
 		emcom_logd("emcom netlink receive clear info");
 		emcom_xengine_clear();
-		break;
+		return;
 	case NETLINK_EMCOM_DK_RRC_KEEP:
 		emcom_logd("emcom netlink receive rrc keep");
 		emcom_xengine_rrckeep();
-		break;
-	case NETLINK_EMCOM_DK_KEY_PSINFO:
-		emcom_logd("emcom netlink receive psinfo");
-		emcom_send_keypsinfo(data, len);
-		break;
-	case NETLINK_EMCOM_DK_SPEED_CTRL:
-		emcom_logd("emcom netlink receive speed control uid");
-		emcom_xengine_set_speedctrl_info(data, len);
-		break;
-	case NETLINK_EMCOM_DK_START_UDP_RETRAN:
-		emcom_logd("emcom netlink receive wifi udp start");
-		emcom_xengine_start_udpretran(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_UDP_RETRAN:
-		emcom_logd("emcom netlink receive wifi udp stop");
-		emcom_xengine_stop_udpretran(data, len);
-		break;
-	case NETLINK_EMCOM_DK_CONFIG_MPIP:
-		emcom_logd("emcom netlink receive btm config start");
-		emcom_xengine_config_mpip(data, len);
-		break;
-	case NETLINK_EMCOM_DK_CLEAR_MPIP:
-		emcom_logd("emcom netlink receive clear mpip config");
-		emcom_xengine_clear_mpip_config(data, len);
-		break;
-	case NETLINK_EMCOM_DK_START_MPIP:
-		emcom_logd("emcom netlink receive btm start");
-		emcom_xengine_start_mpip(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_MPIP:
-		emcom_logd("emcom netlink receive btm stop");
-		emcom_xengine_stop_mpip(data, len);
-		break;
-	case NETLINK_EMCOM_DK_START_FAST_SYN:
-		emcom_logd("emcom netlink receive fast syn start");
-		emcom_xengine_start_fastsyn(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_FAST_SYN:
-		emcom_logd("emcom netlink receive fast syn stop");
-		emcom_xengine_stop_fastsyn(data, len);
-		break;
+		return;
 #ifdef CONFIG_HUAWEI_OPMP
 	case NETLINK_EMCOM_DK_OPMP_INIT_HEARTBEAT:
 		emcom_logd("emcom netlink received opmp init heartbeat");
 		opmp_event_process(event, data, len);
-		break;
+		return;
 #endif
-	case NETLINK_EMCOM_DK_ACTIVE_CCALG:
-		emcom_logd(" emcom netlink active congestion control algorithm");
-		emcom_xengine_active_ccalg(data, len);
-		break;
-	case NETLINK_EMCOM_DK_DEACTIVE_CCALG:
-		emcom_logd(" emcom netlink deactive congestion control algorithm");
-		emcom_xengine_deactive_ccalg(data, len);
-		break;
-	case NETLINK_EMCOM_DK_START_MPFLOW:
-		emcom_logd(" emcom netlink start mpflow control algorithm");
-		emcom_xengine_mpflow_start(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_MPFLOW:
-		emcom_logd(" emcom netlink stop mpflow control algorithm");
-		emcom_xengine_mpflow_stop(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_RST_LOC_INTF:
-		emcom_logd(" emcom netlink mod local interface");
-		emcom_xengine_mpflow_ai_reset_loc_intf(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_BIND_IP_POLICY:
-		emcom_logd(" emcom netlink mpflow ip policy config");
-		emcom_xengine_mpflow_ai_ip_config(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_INIT_BIND_CONFIG:
-		emcom_logd(" emcom netlink mpflow init bind config");
-		emcom_xengine_mpflow_ai_init_bind_config(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_BIND_PORT_POLICY:
-		emcom_logd(" emcom netlink mpflow port policy config");
-		emcom_xengine_mpflow_ai_iface_cfg(data, len);
-		break;
-	case NETLINK_EMCOM_DK_STOP_MPFLOW_V2:
-		emcom_logd(" emcom netlink stop mpflow control algorithm v2");
-		emcom_xengine_mpflow_ai_stop(data, len);
-		break;
-	case NETLINK_EMCOM_DK_NOTIFY_NETWORK_INFO:
-		emcom_logd("emcom netlink receive network info");
-		emcom_xengine_update_network_info(data, len);
-		break;
-	case NETLINK_EMCOM_DK_CONFIG_MPDNS:
-		emcom_logd("emcom netlink receive mpdns config");
-		emcom_xengine_set_mpdns_config(data, len);
-		break;
-	case NETLINK_EMCOM_DK_NOTIFY_MPDNS_RESULT:
-		emcom_xengine_update_mpdns_cache(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_RST_ALL_FLOW:
-		emcom_logd(" emcom netlink transfer mpflow to one");
-		emcom_xengine_mpflow_ai_close_all_flow(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_CHANGE_BURST_RATIO:
-		emcom_logd(" emcom netlink change burst ratio");
-		emcom_xengine_mpflow_ai_change_burst_ratio(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_VLAN_START:
-		mpflow_vlan_config_start(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_VLAN_STOP:
-		mpflow_vlan_config_stop(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_VLAN_UPDATE_APP_INFO:
-		mpflow_vlan_update_app_info(data, len);
-		break;
-	case NETLINK_EMCOM_DK_MPF_VLAN_NW_STATUS_INFO:
-		mpflow_vlan_network_status_update(data, len);
-		break;
 	case NETLINK_EMCOM_DK_MPF_VLAN_CLEAR:
 		mpflow_vlan_clear();
-		break;
-	default:
-		emcom_logi("emcom Xengine unsupport packet, the type is %d.\n", event);
-		break;
+		return;
 	}
+	for (i = 0; i < list_len + list_ext_len; ++i) {
+		if (i < list_len && event == g_emcom_xengine_handle_event_list[i].event) {
+			g_emcom_xengine_handle_event_list[i].emcom_xengine_handle_event(data, len);
+			return;
+		}
+		ext_index = i - list_len;
+		if (ext_index >= 0 && event == g_emcom_xengine_handle_event_list_ext[ext_index].event) {
+			g_emcom_xengine_handle_event_list_ext[ext_index].emcom_xengine_handle_event(data, len);
+			return;
+		}
+	}
+	emcom_logi("emcom Xengine unsupport packet, the type is %d.\n", event);
 }
 
 
@@ -1613,7 +1584,7 @@ void emcom_xengine_supply_mpdns_cache(const struct sk_buff *skb, const char* hos
 {
 	struct sock *sk = skb->sk;
 	uid_t uid = sock_i_uid(sk).val;
-	int init_net_type = emcom_xengine_get_net_type(sk->sk_mark & 0x00FF);
+	int init_net_type = emcom_xengine_get_net_type(sk->sk_mark & EMCOM_XENGINE_NET_ID_MASK);
 	int bound_net_type = emcom_xengine_get_sock_bound_net_type(sk);
 	bool dst_reliable = (bound_net_type == EMCOM_XENGINE_NET_INVALID ||
 		bound_net_type == init_net_type);
@@ -1647,6 +1618,9 @@ void emcom_xengine_update_network_info(const char *data, uint16_t len)
 {
 	struct emcom_xengine_network_info *net_info = NULL;
 	errno_t err;
+	bool is_default_type_changed = false;
+
+	emcom_logd("emcom netlink receive network info");
 
 	if (data == NULL || (len != sizeof(struct emcom_xengine_network_info))) {
 		emcom_loge("data or length %u is invalid", len);
@@ -1667,7 +1641,14 @@ void emcom_xengine_update_network_info(const char *data, uint16_t len)
 		emcom_mpdns_flush_cache(net_info->net_type);  // flush cache for unavailable net
 	spin_lock_bh(&g_network_infos_cache_lock);
 	err = memcpy_s(&(g_network_infos[net_info->net_type]), sizeof(struct emcom_xengine_network_info), net_info, len);
+	if (net_info->is_default && net_info->net_type != g_last_default_net_type) {
+		emcom_logi("default type changed, last default type: %d", g_last_default_net_type);
+		g_last_default_net_type = net_info->net_type;
+		is_default_type_changed = true;
+	}
 	spin_unlock_bh(&g_network_infos_cache_lock);
+	if (is_default_type_changed)
+		emcom_xengine_mpflow_ai_reset_app_port_bind_mode();
 	if (err != EOK)
 		emcom_loge("copy network info fail");
 }
@@ -1675,6 +1656,8 @@ void emcom_xengine_update_network_info(const char *data, uint16_t len)
 void emcom_xengine_set_mpdns_config(const char *data, uint16_t len)
 {
 	struct emcom_mpdns_config *mpdns_config = NULL;
+
+	emcom_logd("emcom netlink receive mpdns config");
 
 	if (data == NULL || (len != sizeof(struct emcom_mpdns_config))) {
 		emcom_loge("data or length %u is invalid", len);
@@ -1689,6 +1672,8 @@ void emcom_xengine_set_mpdns_config(const char *data, uint16_t len)
 void emcom_xengine_update_mpdns_cache(const char *data, uint16_t len)
 {
 	struct emcom_mpdns_result *mpdns_result = NULL;
+
+	emcom_logd("emcom netlink receive mpdns cache");
 
 	if (data == NULL || (len != sizeof(struct emcom_mpdns_result))) {
 		emcom_loge("data or length %u is invalid", len);
@@ -1764,6 +1749,21 @@ char *emcom_xengine_get_network_iface_name(int net_type)
 	}
 	spin_unlock_bh(&g_network_infos_cache_lock);
 	return g_network_infos[net_type].iface_name;
+}
+
+void emcom_xengine_notify_sk_mark_modify(struct sock *sk, uint32_t new_mark)
+{
+	int32_t new_mark_low;
+	uint32_t index;
+	if (sk == NULL)
+		return;
+	new_mark_low = (int32_t)(new_mark & MPROUTE_FWMARK_NEW_MASK);
+	for (index = 0; index < EMCOM_XENGINE_NET_MAX_NUM; index++) {
+		if (g_network_infos[index].net_id == new_mark_low)
+			return;
+	}
+	if (sk->is_modify_sk_mark != 1)
+		sk->is_modify_sk_mark = 1;
 }
 
 MODULE_LICENSE("GPL v2");

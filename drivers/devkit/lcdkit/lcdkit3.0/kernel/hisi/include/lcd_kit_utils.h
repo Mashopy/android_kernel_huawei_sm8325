@@ -76,18 +76,18 @@
 #define LCD_KIT_ERRFLAG_SIZE  8
 #define DMD_ERR_INFO_LEN      50
 /* ddic low voltage detect */
-#define DETECT_NUM     4
-#define DETECT_LOOPS   6
-#define ERR_THRESHOLD  4
-#define DET_START      1
-#define VAL_NUM        2
-#define VAL_0          0
-#define VAL_1          1
+#define DMD_DET_ERR_LEN      300
 #define DET1_INDEX     0
 #define DET2_INDEX     1
 #define DET3_INDEX     2
 #define DET4_INDEX     3
-#define DMD_DET_ERR_LEN      300
+#define VAL_0          0
+#define VAL_1          1
+#define VAL_NUM        2
+#define DET_START      1
+#define ERR_THRESHOLD  4
+#define DETECT_LOOPS   6
+#define DETECT_NUM     4
 /* checksum start index */
 #define INDEX_START  2
 /* checksum invalid index */
@@ -377,18 +377,18 @@ struct lcd_kit_fps {
 struct lcd_kit_rgbw {
 	u32 support;
 	u32 rgbw_bl_max;
-	struct lcd_kit_dsi_panel_cmds mode1_cmds;
-	struct lcd_kit_dsi_panel_cmds mode2_cmds;
-	struct lcd_kit_dsi_panel_cmds mode3_cmds;
-	struct lcd_kit_dsi_panel_cmds mode4_cmds;
-	struct lcd_kit_dsi_panel_cmds backlight_cmds;
 	struct lcd_kit_dsi_panel_cmds saturation_ctrl_cmds;
 	struct lcd_kit_dsi_panel_cmds frame_gain_limit_cmds;
 	struct lcd_kit_dsi_panel_cmds frame_gain_speed_cmds;
 	struct lcd_kit_dsi_panel_cmds color_distor_allowance_cmds;
 	struct lcd_kit_dsi_panel_cmds pixel_gain_limit_cmds;
 	struct lcd_kit_dsi_panel_cmds pixel_gain_speed_cmds;
+	struct lcd_kit_dsi_panel_cmds mode1_cmds;
+	struct lcd_kit_dsi_panel_cmds mode2_cmds;
+	struct lcd_kit_dsi_panel_cmds mode3_cmds;
+	struct lcd_kit_dsi_panel_cmds mode4_cmds;
 	struct lcd_kit_dsi_panel_cmds pwm_gain_cmds;
+	struct lcd_kit_dsi_panel_cmds backlight_cmds;
 };
 
 struct lcd_kit_alpm {
@@ -402,15 +402,15 @@ struct lcd_kit_alpm {
 
 struct lcd_kit_snd_disp {
 	u32 support;
-	struct lcd_kit_dsi_panel_cmds on_cmds;
 	struct lcd_kit_dsi_panel_cmds off_cmds;
+	struct lcd_kit_dsi_panel_cmds on_cmds;
 };
 
 struct lcd_kit_quickly_sleep_out {
 	u32 support;
-	u32 interval;
 	u32 panel_on_tag;
 	struct timeval panel_on_record_tv;
+	u32 interval;
 };
 
 struct lcd_kit_otp_gamma {
@@ -424,13 +424,13 @@ struct lcd_kit_otp_gamma {
 struct lcd_kit_pcd_errflag {
 	u32 pcd_support;
 	u32 errflag_support;
-	u32 pcd_value_compare_mode;
-	u32 pcd_errflag_check_support;
 	u32 gpio_pcd;
 	u32 gpio_errflag;
 	u32 exp_pcd_mask;
 	u32 pcd_det_num;
 	u32 power_on_support;
+	u32 pcd_value_compare_mode;
+	u32 pcd_errflag_check_support;
 	struct lcd_kit_dsi_panel_cmds start_pcd_check_cmds;
 	struct lcd_kit_dsi_panel_cmds switch_page_cmds;
 	struct lcd_kit_dsi_panel_cmds read_pcd_cmds;

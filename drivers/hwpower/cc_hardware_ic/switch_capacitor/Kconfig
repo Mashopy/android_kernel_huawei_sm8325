@@ -117,3 +117,13 @@ config CPS2021
 	  cps2021 is a fixed ratio high voltage high power switched capacitor
 	  and low voltage loadswtich ic.
 	  It also supports scp protocol and ufcs protocol.
+
+config HL7136
+	bool "hl7136_for_direct_charge"
+	depends on SWITCHCAP
+	default n
+	help
+	  Say Y here to enable hl7136 driver.
+	  hl7136 is a fixed ratio high voltage high power switched capacitor
+	  and low voltage loadswtich ic.
+	  It also supports scp protocol and ufcs protocol.

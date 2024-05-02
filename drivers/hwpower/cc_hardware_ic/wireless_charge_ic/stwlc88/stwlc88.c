@@ -599,6 +599,8 @@ gpio_en_fail:
 static int stwlc88_irq_init(struct stwlc88_dev_info *di,
 	struct device_node *np)
 {
+	INIT_WORK(&di->irq_work, stwlc88_irq_work);
+
 	if (power_gpio_config_interrupt(np, "gpio_int", "stwlc88_int",
 		&di->gpio_int, &di->irq_int))
 		goto irq_init_fail_0;
@@ -611,7 +613,6 @@ static int stwlc88_irq_init(struct stwlc88_dev_info *di,
 
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, stwlc88_irq_work);
 
 	return 0;
 

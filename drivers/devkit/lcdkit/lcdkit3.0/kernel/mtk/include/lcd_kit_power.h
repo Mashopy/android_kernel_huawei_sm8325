@@ -43,9 +43,11 @@
 #define LDO_ENABLE 1
 #define LDO_DISABLE 0
 
-enum {
-	WAIT_TYPE_US = 0,
-	WAIT_TYPE_MS,
+enum gpio_operator {
+	GPIO_REQ,
+	GPIO_FREE,
+	GPIO_HIGH,
+	GPIO_LOW,
 };
 
 /* dtype for gpio */
@@ -58,11 +60,9 @@ enum {
 	DTYPE_GPIO_PULL,
 };
 
-enum gpio_operator {
-	GPIO_REQ,
-	GPIO_FREE,
-	GPIO_HIGH,
-	GPIO_LOW,
+enum {
+	WAIT_TYPE_US = 0,
+	WAIT_TYPE_MS,
 };
 
 /* gpio desc */
@@ -93,15 +93,15 @@ struct regulate_bias_desc {
 };
 
 /* struct */
+struct event_callback {
+	uint32_t event;
+	int (*func)(void *data);
+};
+
 struct gpio_power_arra {
 	enum gpio_operator oper;
 	uint32_t num;
 	struct gpio_desc *cm;
-};
-
-struct event_callback {
-	uint32_t event;
-	int (*func)(void *data);
 };
 
 struct lcd_kit_mtk_regulate_ops {

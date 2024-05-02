@@ -519,6 +519,9 @@ struct sdhci_host {
 #define SDHCI_SIGNALING_330	(1<<14)	/* Host is capable of 3.3V signaling */
 #define SDHCI_SIGNALING_180	(1<<15)	/* Host is capable of 1.8V signaling */
 #define SDHCI_SIGNALING_120	(1<<16)	/* Host is capable of 1.2V signaling */
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#define SDHCI_EXE_SOFT_TUNING	(1<<18) /* Host execute soft tuning */
+#endif
 
 	unsigned int version;	/* SDHCI spec. version */
 
@@ -573,6 +576,9 @@ struct sdhci_host {
 
 	struct timer_list timer;	/* Timer for timeouts */
 	struct timer_list data_timer;	/* Timer for data timeouts */
+#ifdef CONFIG_DISK_MAGO
+	struct mago_io_latency_stat mago_latency_entity;
+#endif
 
 	u32 caps;		/* CAPABILITY_0 */
 	u32 caps1;		/* CAPABILITY_1 */
@@ -614,7 +620,12 @@ struct sdhci_host {
 	u32			adma_table_cnt;
 
 	u64			data_timeout;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	u64 para;
+	u32 cmd_data_status;
+	struct work_struct dsm_work;
+	spinlock_t sdhci_dsm_lock;
+#endif
 	unsigned long private[0] ____cacheline_aligned;
 };
 
@@ -814,5 +825,8 @@ void sdhci_send_tuning(struct sdhci_host *host, u32 opcode);
 void sdhci_abort_tuning(struct sdhci_host *host, u32 opcode);
 void sdhci_set_data_timeout_irq(struct sdhci_host *host, bool enable);
 void __sdhci_set_timeout(struct sdhci_host *host, struct mmc_command *cmd);
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+void sdhci_dsm_set_host_status(struct sdhci_host *host, u32 error_bits);
+void sdhci_dsm_handle(struct sdhci_host *host, struct mmc_request *mrq);
+#endif
 #endif /* __SDHCI_HW_H */

@@ -292,23 +292,23 @@ static int dc_parse_stage_jump_para(struct device_node *np,
 	return 0;
 }
 
-static void dc_parse_rt_test_para(struct device_node *np,
-	struct direct_charge_device *di)
+static void dc_parse_cable_para(struct device_node *np,
+	struct dc_cable_info *info)
 {
-	int row, col, len;
-	int idata[DC_MODE_TOTAL * DC_RT_TEST_INFO_TOTAL] = { 0 };
-
-	len = power_dts_read_string_array(power_dts_tag(HWLOG_TAG), np,
-		"rt_test_para", idata, DC_MODE_TOTAL, DC_RT_TEST_INFO_TOTAL);
-	if (len < 0)
-		return;
-
-	for (row = 0; row < len / DC_RT_TEST_INFO_TOTAL; row++) {
-		col = row * DC_RT_TEST_INFO_TOTAL + DC_RT_CURR_TH;
-		di->rt_test_para[row].rt_curr_th = idata[col];
-		col = row * DC_RT_TEST_INFO_TOTAL + DC_RT_TEST_TIME;
-		di->rt_test_para[row].rt_test_time = idata[col];
-	}
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"standard_cable_full_path_res_max",
+		(u32 *)&info->std_cable_full_path_res_max, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"full_path_res_max",
+		(u32 *)&info->nonstd_cable_full_path_res_max, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"ctc_cable_full_path_res_max",
+		(u32 *)&info->ctc_cable_full_path_res_max,
+		320); /* default is 320mohm */
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"is_show_ico_first", &info->is_show_ico_first, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"is_send_cable_type", &info->is_send_cable_type, 1);
 }
 
 static void dc_parse_basic_para(struct device_node *np,
@@ -346,16 +346,6 @@ static void dc_parse_basic_para(struct device_node *np,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"scp_work_on_charger", &di->scp_work_on_charger, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"standard_cable_full_path_res_max",
-		(u32 *)&di->std_cable_full_path_res_max, 0);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"full_path_res_max",
-		(u32 *)&di->nonstd_cable_full_path_res_max, 0);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"ctc_cable_full_path_res_max",
-		(u32 *)&di->ctc_cable_full_path_res_max,
-		320); /* default is 320mohm */
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"max_current_for_none_standard_cable",
 		(u32 *)&di->max_current_for_nonstd_cable, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -369,10 +359,6 @@ static void dc_parse_basic_para(struct device_node *np,
 		"super_ico_current", (u32 *)&di->super_ico_current,
 		4000); /* default is 4000ma */
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"is_show_ico_first", &di->is_show_ico_first, 0);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
-		"is_send_cable_type", &di->is_send_cable_type, 1);
-	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"use_5A", &di->use_5a, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"use_8A", &di->use_8a, 0);
@@ -380,12 +366,10 @@ static void dc_parse_basic_para(struct device_node *np,
 		"max_tadapt", (u32 *)&di->max_tadapt, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"max_tls", (u32 *)&di->max_tls, 0);
-
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"ibat_abnormal_th", (u32 *)&di->ibat_abnormal_th, 0);
 	if (power_cmdline_is_factory_mode())
 		di->ibat_abnormal_th = 0;
-
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"first_cc_stage_timer_in_min",
 		&di->first_cc_stage_timer_in_min, 0);
@@ -402,11 +386,9 @@ static void dc_parse_basic_para(struct device_node *np,
 		"all_stage_compensate_r_en", (u32 *)&di->all_stage_compensate_r_en, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"cc_protect", &di->cc_protect, 0);
-
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"max_dc_bat_vol", (u32 *)&di->max_dc_bat_vol, 0);
 	di->max_dc_bat_vol -= power_platform_get_cv_limit();
-
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"min_dc_bat_vol", (u32 *)&di->min_dc_bat_vol, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
@@ -587,6 +569,7 @@ int dc_parse_dts(struct device_node *np, void *p)
 
 	dc_parse_basic_para(np, di);
 	dc_parse_temp_para(np, di);
+	dc_parse_cable_para(np, &di->cable_info);
 	dc_parse_resist_para(np, di->std_resist_para, "std_resist_para");
 	dc_parse_resist_para(np, di->second_resist_para, "second_resist_para");
 	dc_parse_resist_para(np, di->ctc_second_resist_para, "ctc_second_resist_para");
@@ -607,7 +590,6 @@ int dc_parse_dts(struct device_node *np, void *p)
 	dc_parse_time_para(np, di);
 	dc_parse_vstep_para(np, di);
 	dc_adapter_max_power_time_para(np, di);
-	dc_parse_rt_test_para(np, di);
 	dc_comp_parse_dts(np, &di->comp_para);
 	dc_parse_avoid_dts(np, di);
 	di->vterm_dec = BASP_VTERM_DEC_DEFAULT;

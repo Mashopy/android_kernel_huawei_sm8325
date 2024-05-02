@@ -157,11 +157,11 @@
 /* no modulation dummy load size setting */
 #define CPS4067_RX_DUMMY_LOAD_NO_MOD_ADDR     0x00D8
 #define CPS4067_RX_DUMMY_LOAD_NO_MOD_LEN      1
-#define CPS4067_RX_DUMMY_LOAD_NO_MOD_VAL      4
+#define CPS4067_RX_DUMMY_LOAD_NO_MOD_VAL      7
 /* modulation dummy load size setting */
 #define CPS4067_RX_DUMMY_LOAD_MOD_ADDR        0x00D9
 #define CPS4067_RX_DUMMY_LOAD_MOD_LEN         1
-#define CPS4067_RX_DUMMY_LOAD_MOD_VAL         16
+#define CPS4067_RX_DUMMY_LOAD_MOD_VAL         0
 /* rx_max_pwr for RP val calculation */
 #define CPS4067_RX_RP_PMAX_ADDR               0x00F4
 #define CPS4067_RX_RP_PMAX_LEN                1
@@ -171,7 +171,7 @@
 #define CPS4067_RX_EPT_MSG_LEN                1
 /* rx_fod_coef register */
 #define CPS4067_RX_FOD_ADDR                   0x00F6
-#define CPS4067_RX_FOD_LEN                    23
+#define CPS4067_RX_FOD_LEN                    20
 #define CPS4067_RX_FOD_STR_LEN                96
 #define CPS4067_RX_FOD_TMP_STR_LEN            4
 /* rx_vrect register */
@@ -301,6 +301,7 @@
 #define CPS4067_TX_OCP_TH_ADDR                0x0202
 #define CPS4067_TX_OCP_TH_LEN                 2
 #define CPS4067_TX_OCP_TH                     2000
+#define CPS4067_TX_BAT_HEATING_OCP_TH         1000
 /* tx_ovp_thres register, in mV */
 #define CPS4067_TX_OVP_TH_ADDR                0x0206
 #define CPS4067_TX_OVP_TH_LEN                 2
@@ -324,6 +325,15 @@
 #define CPS4067_TX_PING_FREQ                  115
 #define CPS4067_TX_PING_FREQ_MIN              100
 #define CPS4067_TX_PING_FREQ_MAX              180
+
+/* duty set */
+#define CPS4067_TX_PING_DUTY_ADDR             0x0213
+#define CPS4067_TX_PING_DUTY_LEN              1
+#define CPS4067_TX_HF_DUTY_ADDR               0x021A /* half to full */
+#define CPS4067_TX_HF_DUTY_LEN                1
+#define CPS4067_TX_FH_DUTY_ADDR               0x021B
+#define CPS4067_TX_FH_DUTY_LEN                1
+
 /* tx_ping_interval, in ms */
 #define CPS4067_TX_PING_INTERVAL_ADDR         0x0216
 #define CPS4067_TX_PING_INTERVAL_LEN          2
@@ -347,6 +357,7 @@
 #define CPS4067_TX_PLOSS_TH3_ADDR             0x0224 /* 10v full bridge high vol */
 #define CPS4067_TX_PLOSS_TH3_VAL              4000
 #define CPS4067_TX_PLOSS_TH3_LEN              2
+
 /* tx_q_fod_only_coil_th */
 #define CPS4067_TX_Q_ONLY_COIL_ADDR           0x0232
 #define CPS4067_TX_Q_ONLY_COIL_TH             140
@@ -402,6 +413,23 @@
 #define CPS4067_TX_QI_PING_PHASE              0x11
 #define CPS4067_TX_QI_IDCFG_PHASE             0x22
 #define CPS4067_TX_QI_PT_PHASE                0x33
+
+/* PWM duty current value */
+#define CPS4067_TX_CURR_DUTY_ADDR             0x02D0
+#define CPS4067_TX_CURR_DUTY_LEN              2
+#define CPS4067_TX_PWM_DUTY_UNIT              50
+
+/* Tx receives Rx power */
+#define CPS4067_RX_POWER_ADDR                 0x02D2
+#define CPS4067_RX_POWER_LEN                  2
+
+/* Tx power */
+#define CPS4067_TX_POWER_ADDR                 0x02D4
+#define CPS4067_TX_POWER_LEN                  2
+
+/* current ploss */
+#define CPS4067_TX_PLOSS_ADDR                 0x02D6
+#define CPS4067_TX_PLOSS_LEN                  2
 
 /*
  * firmware register

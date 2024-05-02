@@ -20,6 +20,7 @@ obj-$(CONFIG_ILITEK_TS_KIT_3_0) +=ilitek/
 obj-$(CONFIG_CHIPONE_TS_KIT_3_0) += chipone/
 obj-$(CONFIG_ZINITIX_TS_KIT_3_0) +=zinitix/
 obj-$(CONFIG_CHIPONE_HYBRID_TS_KIT_3_0) += chipone_hybrid/
+obj-$(CONFIG_RAYDIUM_TS_KIT_3_0) += raydium/
 #ifeq ($(CONFIG_HUAWEI_TS_TEST_3_0),y)
 #EXTRA_CFLAGS += -DHUAWEI_TOUCHSCREEN_TEST
 #endif

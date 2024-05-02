@@ -44,11 +44,15 @@
 #define FI_FLOW_PERIODIC_REPORT_STOP_UP (1 << 0)
 #define FI_FLOW_PERIODIC_REPORT_STOP_DOWN (1 << 1)
 
+#define FI_FLOW_PERIODIC_REPORT_STOP (FI_FLOW_PERIODIC_REPORT_STOP_UP | FI_FLOW_PERIODIC_REPORT_STOP_DOWN)
+
 #define FI_FLOW_PKT_REPORT_STOP_UP (1 << 2)
 #define FI_FLOW_PKT_REPORT_STOP_DOWN (1 << 3)
 
 #define FI_FLOW_ALL_REPORT_STOP (FI_FLOW_PERIODIC_REPORT_STOP_UP | FI_FLOW_PERIODIC_REPORT_STOP_DOWN | \
 	FI_FLOW_PKT_REPORT_STOP_UP | FI_FLOW_PKT_REPORT_STOP_DOWN)
+
+#define FI_FLOW_PKT_REPORT_STOP (FI_FLOW_PKT_REPORT_STOP_UP | FI_FLOW_PKT_REPORT_STOP_DOWN)
 
 #define FI_FLOW_PERIODIC_REPORT_NEED_UP (1 << 4)
 #define FI_FLOW_PERIODIC_REPORT_NEED_DOWN (1 << 5)
@@ -299,20 +303,21 @@ struct fi_flow {
 };
 
 struct fi_pkt_msg {
+	struct fi_flow_msg	flow_msg;
 	struct {
 		struct timeval	tstamp;
 		enum fi_dir 	dir;
 		__be16			total_len;
-		__be16			payloadlen;
+		__be16			payload_len;
+		__be16			report_len;
 		uint32_t		tcp_seq;
 		uint32_t		tcp_ack;
 		unsigned char	tcp_flags;
 		__be16			tcp_window;
 		int 			up_down_diff_time;
 		char			tcp_options[FI_TCP_OPTIONS_LEN];
-		char			payload_seg[FI_PAYLOAD_SEG_LEN];
+		char			payload_seg[0];
 	};
-	struct fi_flow_msg	flow_msg;
 };
 
 struct fi_periodic_rpt_msg {
@@ -331,9 +336,16 @@ struct fi_pkt_parse {
 	struct fi_pkt_msg msg;
 	fi_flow_cb flow_cb;
 	enum fi_dir dir;
+	bool is_multi_frag;
+	uint16_t raw_frag_num;
+	uint16_t filter_frag_num;
+	uint32_t parse_len;
+	__be16 frag_payload_len;
+	__be16 filter_frag_payload_len;
 	char *payload;
-	uint parse_len;
-	char *frag_vaddr;
+	char *frag_payload;
+	char *filter_frag_payload;
+	bool is_malloc_buf;
 };
 
 struct fi_pkt_parse_f {
@@ -412,10 +424,16 @@ extern void fi_ipv6_flow_init(void);
 void fi_flow_statistics(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo,
 	enum fi_dir dir);
 
-bool fi_pkt_report_is_enable(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir);
+extern bool fi_payload_len_filter_check(__be16 payloadlen,
+	uint32_t filter_size_start, uint32_t filter_size_stop);
 
-void fi_flow_periodic_report(void);
-void fi_flow_qos_report(void);
+extern bool fi_payload_str_filter_check(struct fi_pkt_parse *pktinfo, fi_rpt_cfg *rpt_cfg);
+
+bool fi_pkt_report_check(struct fi_flow_node *flow, struct fi_pkt_parse *pktinfo, enum fi_dir dir);
+
+void fi_flow_stat_update_report(void);
+
+void fi_flow_qos_update_report(void);
 
 static inline bool fi_flow_qos_rpt_enable(struct fi_flow_node *flow)
 {

@@ -16,6 +16,8 @@
 
 #include <linux/delay.h>
 #include <linux/cpu.h>
+#include <linux/timekeeping.h>
+#include <linux/time64.h>
 #ifdef CONFIG_USB_PROXY_HCD
 #include <linux/hisi/usb/hifi_usb.h>
 #endif /* CONFIG_USB_PROXY_HCD */
@@ -24,6 +26,7 @@
 #include <huawei_platform/usb/pd/richtek/tcpci_typec.h>
 #include <huawei_platform/usb/pd/richtek/tcpci_timer.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
 #ifdef CONFIG_TYPEC_CAP_CUSTOM_SRC2
 #include <huawei_platform/usb/pd/richtek/pd_dpm_core.h>
 #endif
@@ -56,6 +59,8 @@ extern int support_smart_holder;
 #define FACTORY_WAIT_EXIT_DIRECT_CHARGE         800
 
 static struct tcpc_device *g_tcpc = NULL;
+bool g_dummy_pullout_flag = false;
+static bool g_first_enter = true;
 
 #ifdef CONFIG_POGO_PIN
 static bool typec_is_cc_open_state(struct tcpc_device *tcpc_dev);
@@ -992,6 +997,15 @@ static void typec_cc_snk_detect_vsafe5v_entry(struct tcpc_device *tcpc_dev)
 #ifdef CONFIG_TYPEC_CAP_TRY_SOURCE
 	if (typec_role_is_try_src(tcpc_dev)) {
 		if (tcpc_dev->typec_state == typec_attachwait_snk) {
+			if (get_only_charger_stg()) {
+				if (tcpc_dev->vbus_level < TCPC_VBUS_VALID) {
+					TYPEC_INFO("vbus_level is no valid\n");
+					typec_try_src_entry(tcpc_dev);
+				} else {
+					typec_sink_attached_entry(tcpc_dev);
+				}
+				return;
+			}
 			typec_try_src_entry(tcpc_dev);
 			return;
 		}
@@ -1528,10 +1542,15 @@ static inline int typec_attached_snk_cc_detach(struct tcpc_device *tcpc_dev)
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	/* For Source detach during HardReset */
-	if ((!vbus_valid) &&
-		tcpc_dev->pd_wait_hard_reset_complete) {
+	if (tcpc_dev->vbus_only_ignore == 0) {
+		if ((!vbus_valid) &&
+			tcpc_dev->pd_wait_hard_reset_complete) {
+			detach_by_cc = true;
+			TYPEC_INFO("Detach_CC (HardReset)\r\n");
+		}
+	} else {
 		detach_by_cc = true;
-		TYPEC_DBG("Detach_CC (HardReset)\r\n");
+		TYPEC_INFO("hardware_workarounds\n");
 	}
 #endif
 
@@ -1689,6 +1708,47 @@ static inline int typec_get_rp_present_flag(struct tcpc_device *tcpc_dev)
 	return rp_flag;
 }
 
+static void pd_dpm_usb_plugout()
+{
+	struct timespec64 ts64_interval;
+	struct timespec64 ts64_now;
+	static struct timespec64 ts64_last;
+	struct timespec64 ts64_sum;
+
+	ts64_interval.tv_sec = 0;
+	/* 2000: use 2s determine remove event */
+	ts64_interval.tv_nsec = 2000 * NSEC_PER_MSEC;
+
+	ts64_now = current_kernel_time64();
+
+	if (g_first_enter) {
+		g_first_enter = false;
+	} else {
+		ts64_sum = timespec64_add_safe(ts64_last, ts64_interval);
+		if (ts64_sum.tv_sec == TIME_T_MAX) {
+			TYPEC_INFO("%s time overflow happend\n", __func__);
+			set_dummy_pullout_flag(false);
+		} else if (timespec64_compare(&ts64_sum, &ts64_now) <= 0) {
+			TYPEC_INFO("%s: is happend plug out\n", __func__);
+			set_dummy_pullout_flag(false);
+			set_role_swap_flag(false);
+		}
+	}
+
+	ts64_last = ts64_now;
+}
+
+bool get_dummy_pullout_flag()
+{
+	return g_dummy_pullout_flag;
+}
+
+void set_dummy_pullout_flag(bool flag)
+{
+	g_dummy_pullout_flag = flag;
+	return;
+}
+
 int tcpc_typec_handle_cc_change(struct tcpc_device *tcpc_dev)
 {
 	int ret;
@@ -1784,10 +1844,21 @@ int tcpc_typec_handle_cc_change(struct tcpc_device *tcpc_dev)
 	hisi_usb_check_hifi_usb_status(HIFI_USB_TCPC);
 #endif /* CONFIG_USB_PROXY_HCD */
 
-	if (typec_is_cc_attach(tcpc_dev))
+	if (get_only_charger_stg()) {
+		if ((typec_get_cc1() == 0 && typec_get_cc2() == 0) ||
+			!g_first_enter) {
+			TYPEC_INFO("%s: happend plug out event\n", __func__);
+			pd_dpm_usb_plugout();
+		}
+	}
+
+	if (typec_is_cc_attach(tcpc_dev)) {
 		typec_attach_wait_entry(tcpc_dev);
-	else
+		if (get_only_charger_stg())
+			g_first_enter = true;
+	} else {
 		typec_detach_wait_entry(tcpc_dev);
+	}
 
 	return 0;
 }

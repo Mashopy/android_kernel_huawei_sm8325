@@ -29,7 +29,9 @@
 #include <chipset_common/hwpower/common_module/power_test.h>
 #include <chipset_common/hwpower/common_module/power_sysfs.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_trx_intf.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_status.h>
+#include <chipset_common/hwpower/wireless_charge/wireless_rx_common.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_test_mmi.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_dc_cp.h>
 #include <huawei_platform/power/wireless/wireless_charger.h>
@@ -119,7 +121,7 @@ static int wlrx_mmi_notifier_call(struct notifier_block *nb,
 
 static void wlrx_mmi_timeout_work(struct work_struct *work)
 {
-	wlc_set_high_pwr_test_flag(false);
+	wlrx_set_high_pwr_test_flag(WLTRX_DRV_MAIN, false);
 }
 
 #ifdef CONFIG_SYSFS
@@ -169,7 +171,7 @@ static void wlrx_mmi_start(struct wlrx_mmi_data *di)
 
 	hwlog_info("start mmi test\n");
 	di->iout_first_match = false;
-	wlc_set_high_pwr_test_flag(true);
+	wlrx_set_high_pwr_test_flag(WLTRX_DRV_MAIN, true);
 	timeout = di->dts_para.timeout + WLRX_MMI_TO_BUFF;
 	if (delayed_work_pending(&di->timeout_work))
 		cancel_delayed_work_sync(&di->timeout_work);

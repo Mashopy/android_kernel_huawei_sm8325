@@ -1891,8 +1891,8 @@ static void sh366101_bat_work(struct work_struct *work)
 
 static struct coul_cali_ops sh366101_cali_ops = {
 	.dev_name = "aux",
-	.get_current = sh366101_get_calibration_curr,
-	.get_voltage = sh366101_get_calibration_vol,
+	.get_cali_current = sh366101_get_calibration_curr,
+	.get_cali_voltage = sh366101_get_calibration_vol,
 	.set_current_offset = sh366101_set_current_offset,
 	.set_current_gain = sh366101_set_current_gain,
 	.set_voltage_gain = sh366101_set_voltage_gain,
@@ -1902,8 +1902,8 @@ static struct coul_cali_ops sh366101_cali_ops = {
 /* main battery gauge use aux calibration data for compatible */
 static struct coul_cali_ops sh366101_aux_cali_ops = {
 	.dev_name = "main",
-	.get_current = sh366101_get_calibration_curr,
-	.get_voltage = sh366101_get_calibration_vol,
+	.get_cali_current = sh366101_get_calibration_curr,
+	.get_cali_voltage = sh366101_get_calibration_vol,
 	.set_current_offset = sh366101_set_current_offset,
 	.set_current_gain = sh366101_set_current_gain,
 	.set_voltage_gain = sh366101_set_voltage_gain,
@@ -1916,9 +1916,9 @@ static int sh366101_get_log_head(char *buffer, int size, void *dev_data)
 	if (!di || !buffer)
 		return -EPERM;
 	if (di->ic_role == SH366101_IC_TYPE_MAIN)
-		snprintf(buffer, size, " vol  soc  current  temp   cycle  ");
+		snprintf(buffer, size, "vol    soc    current   temp   cycle   ");
 	else
-		snprintf(buffer, size, " vol1  soc1  current1  temp1   cycle1  ");
+		snprintf(buffer, size, "vol1   soc1   current1  temp1  cycle1  ");
 
 	return 0;
 }
@@ -1928,12 +1928,9 @@ static int sh366101_dump_log_data(char *buffer, int size, void *dev_data)
 	struct sh366101_dev *di = dev_data;
 	if (!di || !buffer)
 		return -EPERM;
-	if (di->ic_role == SH366101_IC_TYPE_MAIN)
-		snprintf(buffer, size, "%-7d%-7d%-7d%-9d%-9d   ",
-			di->voltage, di->ui_soc, di->curr, di->temp, di->cycle);
-	else
-		snprintf(buffer, size, "%-7d%-7d%-7d%-9d%-9d   ",
-			di->voltage, di->ui_soc, di->curr, di->temp, di->cycle);
+
+	snprintf(buffer, size, "%-7d%-7d%-10d%-7d%-8d",
+		di->voltage, di->ui_soc, di->curr, di->temp, di->cycle);
 
 	return 0;
 }

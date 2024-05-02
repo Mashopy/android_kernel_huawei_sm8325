@@ -29,6 +29,7 @@ HWLOG_REGIST();
 
 static struct resist_data g_resist_base_data;
 struct dc_cable_ops *g_cable_ops;
+static struct dc_cable_type_para g_cable_type_info;
 
 /* for second resistance check */
 #define SEC_RESIST_IBUS_TH        4000
@@ -65,16 +66,39 @@ int dc_cable_detect(void)
 	return g_cable_ops->detect();
 }
 
-static bool dc_ignore_cable_detect(void)
+unsigned int dc_get_cable_type_info(unsigned int type)
+{
+	switch (type) {
+	case DC_CABLE_DETECT_OK:
+		return (unsigned int)g_cable_type_info.cable_detect_ok;
+	case DC_ORIG_CABLE_TYPE:
+		return (unsigned int)g_cable_type_info.orig_cable_type;
+	case DC_CABLE_TYPE:
+		return (unsigned int)g_cable_type_info.cable_type;
+	case DC_IS_CTC_CABLE:
+		return (unsigned int)g_cable_type_info.is_ctc_cable;
+	case DC_CTC_CABLE_TYPE:
+		return (unsigned int)g_cable_type_info.ctc_cable_type;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+void dc_clear_cable_type_info(void)
+{
+	memset(&g_cable_type_info, 0, sizeof(g_cable_type_info));
+}
+
+static bool dc_ignore_cable_detect(int ratio)
 {
 	int ibus_limit_by_adapter;
 	int adapter_type = dc_get_adapter_type();
 	int bat_vol = hw_battery_get_series_num() * BAT_RATED_VOLT;
-	struct direct_charge_device *l_di = direct_charge_get_di();
 
 	/* get max current by adapter */
-	ibus_limit_by_adapter = dc_get_adapter_max_current(bat_vol * l_di->dc_volt_ratio);
-
+	ibus_limit_by_adapter = dc_get_adapter_max_current(bat_vol * ratio);
 	if ((ibus_limit_by_adapter <= CABLE_DETECT_CURRENT_THLD) ||
 		(adapter_type == ADAPTER_TYPE_10V2A) ||
 		(adapter_type == ADAPTER_TYPE_10V2P25A) ||
@@ -84,66 +108,85 @@ static bool dc_ignore_cable_detect(void)
 	return false;
 }
 
-/* stdandard cable: double 56k cable */
-static void dc_detect_std_cable(void)
+static int dc_update_cable_type(int ratio)
 {
 	int ret;
 	bool cc_moisture_status = false;
-	enum cur_cap c_cap;
-	struct direct_charge_device *l_di = direct_charge_get_di();
+	int curr = 0;
 
-	if (!l_di || l_di->cc_cable_detect_ok)
-		return;
-
-	if (dc_ignore_cable_detect()) {
-		l_di->cc_cable_detect_ok = 1; /* detect success flag */
-		l_di->full_path_res_thld = l_di->std_cable_full_path_res_max;
-		dc_send_icon_uevent();
-		return;
+	if (dc_ignore_cable_detect(ratio)) {
+		g_cable_type_info.cable_type = DC_STD_CABLE;
+		g_cable_type_info.cable_detect_ok = 1; /* detect success flag */
+		return 0;
 	}
 
 	if (!dc_is_support_cable_detect()) {
-		l_di->full_path_res_thld =
-			l_di->nonstd_cable_full_path_res_max;
-		hwlog_err("cd_ops or cable_detect is null\n");
-		direct_charge_set_stage_status(DC_STAGE_DEFAULT);
+		hwlog_err("does not support cable detect return\n");
+		return -EPERM;
+	}
+
+	if (!dc_get_adapter_cable_info(&curr)) {
+		g_cable_type_info.is_dpdm_cable = true;
+		g_cable_type_info.cable_max_curr = curr;
+		g_cable_type_info.cable_type = DC_STD_CABLE;
+		g_cable_type_info.cable_detect_ok = 1; /* detect success flag */
+		return 0;
+	}
+
+	g_cable_type_info.is_ctc_cable = pd_dpm_get_ctc_cable_flag();
+	g_cable_type_info.ctc_cable_type = pd_dpm_get_cvdo_cur_cap();
+	ret = dc_cable_detect();
+	cc_moisture_status = pd_dpm_get_cc_moisture_status();
+	if (!ret || (g_cable_type_info.ctc_cable_type >= PD_DPM_CURR_5A))
+		g_cable_type_info.orig_cable_type = DC_STD_CABLE;
+	if (ret && !cc_moisture_status && (g_cable_type_info.ctc_cable_type < PD_DPM_CURR_5A)) {
+		hwlog_info("stdandard cable detect fail\n");
+		g_cable_type_info.cable_detect_ok = 0;
+	} else {
+		hwlog_info("stdandard cable detect ok\n");
+		g_cable_type_info.cable_type = DC_STD_CABLE;
+		g_cable_type_info.cable_detect_ok = 1;
+	}
+	return 0;
+}
+
+void dc_update_cable_resistance_thld(struct dc_cable_info *info)
+{
+	if (g_cable_type_info.cable_detect_ok) {
+		info->full_path_res_thld = info->std_cable_full_path_res_max;
+		dc_send_icon_uevent();
 		return;
 	}
 
-	ret = dc_cable_detect();
-	cc_moisture_status = pd_dpm_get_cc_moisture_status();
-	c_cap = pd_dpm_get_cvdo_cur_cap();
-	if (!ret || (c_cap >= PD_DPM_CURR_5A))
-		l_di->orig_cable_type = DC_STD_CABLE;
-	if (ret && !cc_moisture_status && (c_cap < PD_DPM_CURR_5A)) {
-		hwlog_info("stdandard cable detect fail\n");
-		l_di->cc_cable_detect_ok = 0;
-		if (pd_dpm_get_ctc_cable_flag()) {
-			l_di->full_path_res_thld =
-				l_di->ctc_cable_full_path_res_max;
-			l_di->cable_type = DC_STD_CABLE;
-			dc_send_icon_uevent();
-		} else {
-			l_di->full_path_res_thld =
-				l_di->nonstd_cable_full_path_res_max;
-			l_di->cable_type = DC_NONSTD_CABLE;
-			if (l_di->is_show_ico_first)
-				dc_send_icon_uevent();
-		}
-	} else {
-		hwlog_info("stdandard cable detect ok\n");
-		l_di->cable_type = DC_STD_CABLE;
-		l_di->cc_cable_detect_ok = 1;
-		l_di->full_path_res_thld = l_di->std_cable_full_path_res_max;
+	if (g_cable_type_info.is_ctc_cable) {
+		info->full_path_res_thld = info->ctc_cable_full_path_res_max;
+		g_cable_type_info.cable_type = DC_STD_CABLE;
 		dc_send_icon_uevent();
+	} else {
+		info->full_path_res_thld = info->nonstd_cable_full_path_res_max;
+		g_cable_type_info.cable_type = DC_NONSTD_CABLE;
+		if (info->is_show_ico_first)
+			dc_send_icon_uevent();
 	}
 }
 
-static int dc_get_emark_cable_max_current(void)
+/* stdandard cable: double 56k cable */
+void dc_detect_std_cable(void)
 {
-	enum cur_cap c_cap = pd_dpm_get_cvdo_cur_cap();
+	struct direct_charge_device *l_di = direct_charge_get_di();
 
-	switch (c_cap) {
+	if (!l_di || g_cable_type_info.cable_detect_ok)
+		return;
+
+	if (dc_update_cable_type(l_di->dc_volt_ratio)) {
+		direct_charge_set_stage_status(DC_STAGE_DEFAULT);
+		return;
+	}
+}
+
+static int dc_get_emark_cable_max_current(unsigned int type)
+{
+	switch (type) {
 	case PD_DPM_CURR_5A:
 		return CTC_EMARK_CURR_5A;
 	case PD_DPM_CURR_6A:
@@ -153,50 +196,46 @@ static int dc_get_emark_cable_max_current(void)
 	}
 }
 
-int dc_get_cable_max_current(void)
+int dc_get_cable_max_current(int mode)
 {
 	int cable_limit = 0;
-	struct direct_charge_device *l_di = direct_charge_get_di();
+	struct direct_charge_device *l_di = direct_charge_get_di_by_mode(mode);
 
 	if (!l_di)
 		return 0;
 
-	if (l_di->cc_cable_detect_ok) {
-		if (pd_dpm_get_ctc_cable_flag())
-			cable_limit = dc_get_emark_cable_max_current() * l_di->dc_volt_ratio;
+	if (g_cable_type_info.is_dpdm_cable)
+		return l_di->dc_volt_ratio * g_cable_type_info.cable_max_curr;
+
+	if (g_cable_type_info.cable_detect_ok) {
+		if (!g_cable_type_info.is_ctc_cable)
+			return 0;
+		cable_limit = dc_get_emark_cable_max_current(g_cable_type_info.ctc_cable_type) *
+			l_di->dc_volt_ratio;
+	} else if (g_cable_type_info.is_ctc_cable) {
+		cable_limit = l_di->max_current_for_ctc_cable;
 	} else {
-		if (pd_dpm_get_ctc_cable_flag())
-			cable_limit = l_di->max_current_for_ctc_cable;
-		else
-			cable_limit = l_di->max_current_for_nonstd_cable;
+		cable_limit = l_di->max_current_for_nonstd_cable;
 	}
+
 	return cable_limit;
-}
-
-void dc_detect_cable(void)
-{
-	dc_detect_std_cable();
-	direct_charge_set_stage_status(DC_STAGE_SWITCH_DETECT);
-
-	dc_send_soc_decimal_uevent();
-	dc_send_cable_type_uevent();
-	dc_send_max_power_uevent();
 }
 
 static int dc_get_path_resistance_info(struct resist_data *data, int working_mode)
 {
-	if (direct_charge_get_device_ibus(&(data->ibus)))
+	struct adapter_source_info source_info = { 0 };
+	unsigned int flag = BIT(ADAPTER_OUTPUT_VOLT) | BIT(ADAPTER_OUTPUT_CURR);
+
+	if (dc_get_adapter_source_info(flag, &source_info))
 		return -EPERM;
+	data->vadapt = source_info.output_volt;
+	data->iadapt = source_info.output_curr;
 
 	if (direct_charge_get_device_vbus(&(data->vbus)))
 		return -EPERM;
 
-	if (dc_get_adapter_voltage(&(data->vadapt)))
+	if (direct_charge_get_device_ibus(&(data->ibus)))
 		return -EPERM;
-
-	if (dc_get_adapter_current(&(data->iadapt)))
-		return -EPERM;
-
 	data->ibus += dc_get_gain_ibus();
 	if (data->ibus == 0) {
 		hwlog_err("ibus is zero\n");
@@ -337,9 +376,9 @@ int dc_resist_handler(int mode, int value)
 	if (!l_di)
 		return 0;
 
-	if (pd_dpm_get_ctc_cable_flag())
+	if (g_cable_type_info.is_ctc_cable)
 		para = l_di->ctc_resist_para;
-	else if (!l_di->cc_cable_detect_ok)
+	else if (g_cable_type_info.cable_detect_ok == CABLE_DETECT_NOK)
 		para = l_di->nonstd_resist_para;
 	else
 		para = l_di->std_resist_para;
@@ -350,8 +389,8 @@ int dc_resist_handler(int mode, int value)
 			return para[i].resist_cur_max;
 	}
 
-	hwlog_err("current resist is illegal, cable=%d, resist=%d\n",
-		l_di->cc_cable_detect_ok, value);
+	hwlog_err("current resist is illegal, cable_detect_ok=%u, resist=%d\n",
+		g_cable_type_info.cable_detect_ok, value);
 	return 0;
 }
 
@@ -366,7 +405,7 @@ int dc_second_resist_handler(void)
 	if (!l_di || !l_di->second_resist_check_ok)
 		return 0;
 
-	if (pd_dpm_get_ctc_cable_flag())
+	if (g_cable_type_info.is_ctc_cable)
 		para = l_di->ctc_second_resist_para;
 	else
 		para = l_di->second_resist_para;

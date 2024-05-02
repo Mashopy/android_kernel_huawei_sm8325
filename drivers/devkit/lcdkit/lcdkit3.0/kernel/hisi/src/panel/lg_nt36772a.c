@@ -83,16 +83,16 @@ static int lg_nt36772a_rgbw(struct hisi_fb_data_type *hisifd, int mode)
 	rgbw_mode = hisifd->de_info.ddic_rgbw_mode;
 	switch (rgbw_mode) {
 	case RGBW_SET1_MODE:
-		ret = lg_nt36772a_rgbw_set(hisifd, &disp_info->rgbw.mode1_cmds);
+		ret = lg_nt36772a_rgbw_set(hisifd, &DISP_INFO->rgbw.mode1_cmds);
 		break;
 	case RGBW_SET2_MODE:
-		ret = lg_nt36772a_rgbw_set(hisifd, &disp_info->rgbw.mode2_cmds);
+		ret = lg_nt36772a_rgbw_set(hisifd, &DISP_INFO->rgbw.mode2_cmds);
 		break;
 	case RGBW_SET3_MODE:
-		ret = lg_nt36772a_rgbw_set(hisifd, &disp_info->rgbw.mode3_cmds);
+		ret = lg_nt36772a_rgbw_set(hisifd, &DISP_INFO->rgbw.mode3_cmds);
 		break;
 	case RGBW_SET4_MODE:
-		ret = lg_nt36772a_rgbw_set(hisifd, &disp_info->rgbw.mode4_cmds);
+		ret = lg_nt36772a_rgbw_set(hisifd, &DISP_INFO->rgbw.mode4_cmds);
 		break;
 	default:
 		ret = LCD_KIT_FAIL;

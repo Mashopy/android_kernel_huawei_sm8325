@@ -22,6 +22,6 @@
 
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
 
-int hwufcs_notifier_call(struct notifier_block *nb, unsigned long event, void *data);
-
+void hwufcs_handle_set_test_mode(bool flag);
+void hwufcs_handle_msg(void);
 #endif /* _ADAPTER_PROTOCOL_UFCS_HANDLE_H_ */

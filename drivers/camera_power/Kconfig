@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# huawei huawei camera_power module
+#
+
+config CAMERA_POWER
+	tristate "huawei camera_power"
+	help
+	  Say m here to enable huawei camera_power module.

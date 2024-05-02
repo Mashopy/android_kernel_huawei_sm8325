@@ -335,7 +335,11 @@ static int qcom_dload_reboot(struct notifier_block *this, unsigned long event,
 
 	if (cmd) {
 		if (!strcmp(cmd, "edl"))
+#ifndef CONFIG_FINAL_RELEASE
 			set_download_mode(QCOM_DOWNLOAD_EDL);
+#else
+			pr_err("CONFIG_FINAL_RELEASE is enable, no QCOM_DOWNLOAD_EDL\n");
+#endif
 		else if (!strcmp(cmd, "qcom_dload"))
 			msm_enable_dump_mode(true);
 	}

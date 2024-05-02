@@ -995,6 +995,69 @@ out_err:
     return error;
 }
 
+static int fingerprint_power_uninit(struct fp_data* fingerprint)
+{
+    int error = 0;
+
+    fpc_log_info("DIsable Enter!\n");
+
+    if (fingerprint->avdd) {
+        error = regulator_disable(fingerprint->avdd);
+        if (error) {
+            fpc_log_err("disable avdd failed\n");
+            goto out_err;
+        }
+    } else {
+        fpc_log_err("fingerprint->avdd is NULL, some project don't need disable this power\n");
+    }
+
+    if (fingerprint->vdd) {
+        error = regulator_disable(fingerprint->vdd);
+        if (error) {
+            fpc_log_err("disable vdd failed\n");
+            goto out_err;
+        }
+    } else {
+        fpc_log_err("fingerprint->vdd is NULL\n");
+    }
+
+    if (gpio_is_valid(fingerprint->avdd_en_gpio)) {
+        fpc_log_info("fingerprint_avdd_en_gpio -> GPIO%d\n", fingerprint->avdd_en_gpio);
+        error = gpio_request(fingerprint->avdd_en_gpio, "fingerprint_avdd_en_gpio");
+        if (error) {
+            fpc_log_err("gpio_request (avdd_en_gpio) failed\n");
+            goto out_err;
+        }
+        error = gpio_direction_output(fingerprint->avdd_en_gpio, 0);
+        if (error) {
+            fpc_log_err("gpio_direction_output 0 (avdd_en_gpio) failed\n");
+            goto out_err;
+        }
+        mdelay(100);
+    } else {
+        fpc_log_info("fingerprint->avdd_en_gpio is NULL, some project don't need disabel this gpio\n");
+    }
+
+    if (gpio_is_valid(fingerprint->vdd_en_gpio)) {
+        fpc_log_info("fingerprint_vdd_en_gpio -> GPIO%d\n", fingerprint->vdd_en_gpio);
+        error = gpio_request(fingerprint->vdd_en_gpio, "fingerprint_vdd_en_gpio");
+        if (error) {
+            fpc_log_err("gpio_request (vdd_en_gpio) failed\n");
+            goto out_err;
+        }
+        error = gpio_direction_output(fingerprint->vdd_en_gpio, 0);
+        if (error) {
+            fpc_log_err("gpio_direction_output (vdd_en_gpio) failed\n");
+            goto out_err;
+        }
+    } else {
+        fpc_log_info("fingerprint->vdd_en_gpio is NULL, some project don't need disable this gpio\n");
+    }
+
+out_err:
+    return error;
+}
+
 static int fingerprint_key_remap_reverse(int key)
 {
     switch(key)
@@ -1485,7 +1548,15 @@ static long fingerprint_ioctl(struct file* file, unsigned int cmd, unsigned long
 	case FP_IOC_CMD_GET_TOUCH_INFO:
 		error = fp_ioc_get_touch_info(fingerprint, argp);
 		break;
-	default:
+	case FP_IOC_CMD_SET_POWEROFF:
+		fpc_log_info("%s FP_IOC_CMD_SET_POWEROFF\n", __func__);
+		fingerprint_power_uninit(fingerprint);
+		break;
+	case FP_IOC_CMD_SET_POWERON:
+		fpc_log_info("%s FP_IOC_CMD_SET_POWERON\n", __func__);
+		fingerprint_power_init(fingerprint);
+		break;
+        default:
 		fpc_log_err("error = -EFAULT\n");
 		error = -EFAULT;
 		break;

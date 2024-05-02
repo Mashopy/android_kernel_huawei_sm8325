@@ -1360,6 +1360,16 @@ void hi6526_parse_dts(struct device_node *np, struct hi6526_device_info *di)
 	}
 	scharger_inf("prase_dts dbg_check_en=%d\n", di->param_dts.dbg_check_en);
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	ret = of_property_read_u32(np, "avdd_enable_flag",
+		(u32 *)&(di->avdd_enabled));
+	if (ret) {
+		di->avdd_enabled = 0;
+		scharger_err("get avdd_enable_flag failed\n");
+	}
+	scharger_inf("prase_dts avdd_enable_flag=%d\n", (u32 *)&(di->avdd_enabled));
+#endif
+
 	hi6526_parse_adc_dts(np, di);
 	dc_regulator_parse_dts(np, di);
 	hi6526_opt_cfg_parse_dts(np, di);

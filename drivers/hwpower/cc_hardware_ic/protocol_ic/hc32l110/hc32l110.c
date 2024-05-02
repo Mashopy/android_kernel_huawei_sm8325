@@ -76,17 +76,11 @@ bool hc32l110_is_support_fcp(struct hc32l110_device_info *di)
 	return false;
 }
 
-static void hc32l110_hard_reset(struct hc32l110_device_info *di)
+static void hc32l110_soft_reset_by_i2c(struct hc32l110_device_info *di)
 {
-	hwlog_info("hard reset\n");
-
-	/* reset pin pull low */
-	(void)gpio_direction_output(di->gpio_reset, 0);
-	power_usleep(DT_USLEEP_100US);
-
-	/* reset pin pull high */
-	(void)gpio_direction_output(di->gpio_reset, 1);
-	power_msleep(DT_MSLEEP_50MS, 0, NULL);
+	hwlog_info("soft reset by i2c\n");
+	(void)hc32l110_write_byte(di, HC32L110_SCP_CTL_REG, 0);
+	power_usleep(DT_USLEEP_10MS);
 }
 
 static void hc32l110_set_low_power_mode(struct hc32l110_device_info *di)
@@ -115,7 +109,7 @@ static int hc32l110_notifier_call(struct notifier_block *nb,
 
 	switch (event) {
 	case POWER_NE_USB_DISCONNECT:
-		hc32l110_hard_reset(di);
+		hc32l110_soft_reset_by_i2c(di);
 		hc32l110_set_low_power_mode(di);
 		break;
 	case POWER_NE_USB_CONNECT:
@@ -212,7 +206,7 @@ static int hc32l110_probe(struct i2c_client *client,
 	if (hc32l110_fw_get_ver_id(di))
 		goto fail_free_gpio;
 
-	hc32l110_hard_reset(di);
+	hc32l110_soft_reset_by_i2c(di);
 	hc32l110_set_low_power_mode(di);
 
 	if (power_event_bnc_register(POWER_BNT_CONNECT, &di->event_nb))
@@ -238,6 +232,7 @@ static int hc32l110_probe(struct i2c_client *client,
 fail_free_gpio:
 	gpio_free(di->gpio_enable);
 	gpio_free(di->gpio_reset);
+	gpio_free(di->gpio_int);
 fail_free_mem:
 	devm_kfree(&client->dev, di);
 	return -EPERM;
@@ -302,7 +297,7 @@ static __exit void hc32l110_exit(void)
 	i2c_del_driver(&hc32l110_driver);
 }
 
-module_init(hc32l110_init);
+rootfs_initcall(hc32l110_init);
 module_exit(hc32l110_exit);
 
 MODULE_LICENSE("GPL v2");

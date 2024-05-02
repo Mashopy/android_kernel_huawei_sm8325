@@ -32,13 +32,16 @@
 #include <linux/ion.h>
 #include <linux/version.h>
 #include <log/log_usertype.h>
-
+#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
+#include <platform/trace/hooks/memcheck.h>
+#else
+#include <platform/trace/events/memcheck.h>
+#endif
 #include "lowmem_dbg.h"
-
-#include <platform/linux/memcheck.h>
 
 #define LMK_PRT_TSK_RSS 10000
 #define LMK_INTERVAL 3
+#define LMK_REPORT_POINTS ((4UL << 30) / PAGE_SIZE) // 4GB
 
 /* SERVICE_ADJ(5) * OOM_SCORE_ADJ_MAX / -OOM_DISABLE */
 #define LMK_SERVICE_ADJ 500
@@ -69,6 +72,7 @@ static void tasks_dump(bool verbose)
 	short tsk_oom_adj = 0;
 	unsigned long tsk_nr_ptes = 0;
 	char frozen_mark = ' ';
+	unsigned long points;
 
 	pr_info("[ pid ]   uid  tgid total_vm    rss nptes  swap   adj s name\n");
 
@@ -110,7 +114,15 @@ static void tasks_dump(bool verbose)
 			task_state_char(task->state),
 			task->comm,
 			frozen_mark); /*lint !e1058*/
+
+		points = get_mm_rss(task->mm) + get_mm_counter(task->mm, MM_SWAPENTS) +
+			tsk_nr_ptes / PAGE_SIZE;
+
 		task_unlock(task);
+
+		/* 4GB */
+		if (points > LMK_REPORT_POINTS)
+			trace_lowmem_report(task, points);
 	}
 	rcu_read_unlock();
 }
@@ -136,13 +148,11 @@ static void lowmem_dump(struct work_struct *work)
 #endif
 	tasks_dump(verbose);
 
-	if (verbose) {
-		mm_mem_stats_show();
-		mm_vmalloc_detail_show();
-		ion_heap_show();
-		ashmem_info_show();
-		get_slub_detail_info();
-	}
+#if (KERNEL_VERSION(5, 4, 0) <= LINUX_VERSION_CODE)
+	if (verbose)
+		trace_mm_mem_stats_show(0);
+#endif
+
 	pr_info("user mm dump end, verbose-%d\n", verbose);
 
 	mutex_unlock(&lowmem_dump_mutex);

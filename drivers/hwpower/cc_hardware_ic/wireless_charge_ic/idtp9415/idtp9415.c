@@ -2946,6 +2946,8 @@ static int idtp9415_irq_init(struct idtp9415_dev_info *di,
 {
 	int ret;
 
+	INIT_WORK(&di->irq_work, idtp9415_irq_work);
+
 	ret = power_gpio_config_interrupt(np,
 		"gpio_int", "idtp9415_int", &di->gpio_int, &di->irq_int);
 	if (ret)
@@ -2960,7 +2962,6 @@ static int idtp9415_irq_init(struct idtp9415_dev_info *di,
 	}
 	enable_irq_wake(di->irq_int);
 	di->irq_active = true;
-	INIT_WORK(&di->irq_work, idtp9415_irq_work);
 
 	return 0;
 

@@ -17,6 +17,9 @@
  */
 
 #include "lcd_kit_sysfs.h"
+#ifdef CONFIG_MATTING_ALGO_TASK
+#include "matting_algo_fs_interface.h"
+#endif
 
 static ssize_t lcd_kit_model_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -948,6 +951,16 @@ static DEVICE_ATTR(finger_unlock_state, 0644, lcd_kit_finger_unlock_show,
 static DEVICE_ATTR(pre_camera_position, 0644,
 	lcd_kit_pre_camera_position_show, NULL);
 static DEVICE_ATTR(panel_version, 0644, lcd_kit_panel_version_show, NULL);
+#ifdef CONFIG_MATTING_ALGO_TASK
+static DEVICE_ATTR(matting_algo_debug, 0644, dev_reg_matting_algo_debug_show,
+	dev_reg_matting_algo_debug_store);
+static DEVICE_ATTR(matting_algo_crop_debug, 0644, dev_reg_matting_algo_crop_debug_show,
+	dev_reg_matting_algo_crop_debug_store);
+static DEVICE_ATTR(matting_algo_lux_value, 0644, dev_reg_matting_algo_lux_value_show,
+	dev_reg_matting_algo_lux_value_store);
+static DEVICE_ATTR(matting_algo_als_param, 0644, dev_reg_matting_algo_als_param_show,
+	dev_reg_matting_algo_als_param_store);
+#endif
 
 static struct attribute *lcd_kit_sysfs_attrs[LCD_KIT_SYSFS_MAX] = {NULL};
 struct attribute *lcd_kit_conf[] = {
@@ -980,6 +993,12 @@ struct attribute *lcd_kit_conf[] = {
 	&dev_attr_pre_camera_position.attr,
 	&dev_attr_panel_version.attr,
 	&dev_attr_lcd_cabc_mode.attr,
+#ifdef CONFIG_MATTING_ALGO_TASK
+	&dev_attr_matting_algo_debug.attr,
+	&dev_attr_matting_algo_crop_debug.attr,
+	&dev_attr_matting_algo_lux_value.attr,
+	&dev_attr_matting_algo_als_param.attr,
+#endif
 };
 
 struct attribute_group lcd_kit_sysfs_attr_group = {

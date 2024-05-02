@@ -49,13 +49,12 @@
 HWLOG_REGIST();
 
 #define BUF_LEN                             80
-#define HL7139_PAGE0_NUM                    0x12
+#define HL7139_PAGE0_NUM                    0x17
 #define HL7139_PAGE1_NUM                    0x07
 #define HL7139_PAGE0_BASE                   HL7139_DEVICE_ID_REG
 #define HL7139_PAGE1_BASE                   HL7139_SCP_CTL_REG
 #define HL7139_DBG_VAL_SIZE                 6
 
-static bool g_first_enter_flag = true;
 static int hl7139_reg_init(void *dev_data);
 static void hl7139_lvc_opt_regs(void *dev_data);
 static void hl7139_sc_opt_regs(void *dev_data);
@@ -151,12 +150,13 @@ static int hl7139_lvc_charge_enable(int enable, void *dev_data)
 {
 	int ret;
 	struct hl7139_device_info *di = dev_data;
+	u8 reg = 0;
 
 	if (!di) {
 		hwlog_err("di is null\n");
 		return -EPERM;
 	}
-
+	hwlog_info("enter hl7139_lvc_charge_enable\n");
 	hl7139_lvc_opt_regs(di);
 
 	ret = hl7139_write_mask(di, HL7139_CTRL3_REG, HL7139_CTRL3_DEV_MODE_MASK,
@@ -169,23 +169,27 @@ static int hl7139_lvc_charge_enable(int enable, void *dev_data)
 	if (ret)
 		return -EPERM;
 
+	ret = hl7139_read_byte(di, HL7139_CTRL0_REG, &reg);
+	if (ret)
+		return -EPERM;
+	hwlog_info("charge_enable [%x]=0x%x\n", HL7139_CTRL0_REG, reg);
 	return 0;
 }
 
 static int hl7139_proc_check_irq_action(struct hl7139_device_info *di, int enable)
 {
 	if (enable == HL7139_CTRL0_CHG_EN) {
-		if (g_first_enter_flag) {
+		if (di->first_enter_flag) {
 			hwlog_err("%s: start\n", __func__);
-			g_first_enter_flag = false;
+			di->first_enter_flag = false;
 			schedule_delayed_work(&di->check_irq_work, msecs_to_jiffies(HL7139_SOFT_INT_CHECK_TIME));
 		}
 	}
 
 	if (enable == HL7139_CTRL0_CHG_OFF) {
-		if (!g_first_enter_flag) {
+		if (!di->first_enter_flag) {
 			hwlog_err("%s: cancel\n", __func__);
-			g_first_enter_flag = true;
+			di->first_enter_flag = true;
 			cancel_delayed_work_sync(&di->check_irq_work);
 		}
 	}
@@ -683,14 +687,25 @@ static int hl7139_config_ibat_ocp_ma(int ocp_threshold, void *dev_data)
 
 	/* config ibat regulation */
 	ibat_regulation = ocp_threshold - HL7139_IBAT_OCP_TH_ABOVE_500MA;
-	if (ibat_regulation < HL7139_IBAT_REG_TH_MIN)
-		ibat_regulation = HL7139_IBAT_REG_TH_MIN;
+	if (di->rev_id == HL7139_OLD_VERSION) {
+		if (ibat_regulation < HL7139_IBAT_REG_TH_MIN)
+			ibat_regulation = HL7139_IBAT_REG_TH_MIN;
 
-	if (ibat_regulation > HL7139_IBAT_REG_TH_MAX)
-		ibat_regulation = HL7139_IBAT_REG_TH_MAX;
+		if (ibat_regulation > HL7139_IBAT_REG_TH_MAX)
+			ibat_regulation = HL7139_IBAT_REG_TH_MAX;
 
-	value = (u8)((ibat_regulation - HL7139_IBAT_REG_TH_MIN) /
-		HL7139_IBAT_REG_TH_STEP);
+		value = (u8)((ibat_regulation - HL7139_IBAT_REG_TH_MIN) /
+			HL7139_IBAT_REG_TH_STEP);
+	} else {
+		if (ibat_regulation < HL7139A_IBAT_REG_TH_MIN)
+			ibat_regulation = HL7139A_IBAT_REG_TH_MIN;
+
+		if (ibat_regulation > HL7139A_IBAT_REG_TH_MAX)
+			ibat_regulation = HL7139A_IBAT_REG_TH_MAX;
+
+		value = (u8)((ibat_regulation - (HL7139A_IBAT_REG_TH_MIN)) /
+			HL7139A_IBAT_REG_TH_STEP);
+	}
 	ret = hl7139_write_mask(di, HL7139_IBAT_REG_REG, HL7139_IBAT_REG_IBAT_REG_TH_MASK,
 		HL7139_IBAT_REG_IBAT_REG_TH_SHIFT, value);
 	if (ret)
@@ -748,51 +763,58 @@ int hl7139_config_vbus_ovp_ref_mv(int ovp_threshold, void *dev_data)
 
 static int hl7139_config_ibus_ocp_ma(int ocp_threshold, int chg_mode, void *dev_data)
 {
-	u8 value;
+	u8 ocp_reg_value;
+	u8 iin_reg_value;
 	int ret;
 	int iin_regulation;
 	struct hl7139_device_info *di = dev_data;
 
-	/* config iin ocp offset */
-	value = (HL7139_IIN_OCP_TH_ABOVE_250MA - HL7139_IIN_OCP_TH_ABOVE_100MA) /
-		HL7139_IIN_OCP_TH_ABOVE_STEP;
-	ret = hl7139_write_mask(di, HL7139_IIN_OC_REG, HL7139_IIN_OC_IIN_OCP_TH_MASK,
-		HL7139_IIN_OC_IIN_OCP_TH_SHIFT, value); /* ibus ocp offset 250ma */
-	if (ret)
-		return -EPERM;
-	hwlog_info("config_iin_ocp_offset_mv [%x]=0x%x\n", HL7139_IIN_OC_REG, value);
-
-	iin_regulation = ocp_threshold - HL7139_IIN_OCP_TH_ABOVE_250MA;
+	/* HL7139 ibus ocp offset BP500ma;HL7139A ibus ocp offset BP2100ma */
 	if (chg_mode == LVC_MODE) {
-		if (iin_regulation < HL7139_IIN_REG_TH_BP_MIN)
-			iin_regulation = HL7139_IIN_REG_TH_BP_MIN;
+		if (di->rev_id == HL7139_OLD_VERSION) {
+			ocp_reg_value = (HL7139_IIN_OCP_TH_ABOVE_500MA - HL7139_IIN_OCP_TH_ABOVE_300MA) /
+				HL7139_IIN_OCP_TH_ABOVE_BP_STEP;
+			iin_regulation = ocp_threshold - HL7139_IIN_OCP_TH_ABOVE_500MA;
+		} else {
+			ocp_reg_value = (HL7139A_IIN_OCP_TH_ABOVE_2100MA - HL7139A_IIN_OCP_TH_ABOVE_950MA) /
+				HL7139A_IIN_OCP_TH_ABOVE_BP_STEP;
+			iin_regulation = ocp_threshold - HL7139A_IIN_OCP_TH_ABOVE_2100MA;
+		}
+		iin_regulation = (iin_regulation < HL7139_IIN_REG_TH_BP_MIN) ? HL7139_IIN_REG_TH_BP_MIN : iin_regulation;
+		iin_regulation = (iin_regulation > HL7139_IIN_REG_TH_BP_MAX) ? HL7139_IIN_REG_TH_BP_MAX : iin_regulation;
 
-		if (iin_regulation > HL7139_IIN_REG_TH_BP_MAX)
-			iin_regulation = HL7139_IIN_REG_TH_BP_MAX;
-
-		value = (u8)((iin_regulation - HL7139_IIN_REG_TH_BP_MIN) /
+		iin_reg_value = (u8)((iin_regulation - HL7139_IIN_REG_TH_BP_MIN) /
 			HL7139_IIN_REG_TH_BP_STEP);
 	} else if (chg_mode == SC_MODE) {
-		if (iin_regulation < HL7139_IIN_REG_TH_CP_MIN)
-			iin_regulation = HL7139_IIN_REG_TH_CP_MIN;
+	/* HL7139 ibus ocp offset CP250ma;HL7139A ibus ocp offset CP1050ma */
+		if (di->rev_id == HL7139_OLD_VERSION) {
+			ocp_reg_value = (HL7139_IIN_OCP_TH_ABOVE_250MA - HL7139_IIN_OCP_TH_ABOVE_150MA) /
+				HL7139_IIN_OCP_TH_ABOVE_STEP;
+			iin_regulation = ocp_threshold - HL7139_IIN_OCP_TH_ABOVE_250MA;
+		} else {
+			ocp_reg_value = (HL7139A_IIN_OCP_TH_ABOVE_1050MA - HL7139A_IIN_OCP_TH_ABOVE_950MA) /
+				HL7139A_IIN_OCP_TH_ABOVE_STEP;
+			iin_regulation = ocp_threshold - HL7139A_IIN_OCP_TH_ABOVE_1050MA;
+		}
+		iin_regulation = (iin_regulation < HL7139_IIN_REG_TH_CP_MIN) ? HL7139_IIN_REG_TH_CP_MIN : iin_regulation;
+		iin_regulation = (iin_regulation > HL7139_IIN_REG_TH_CP_MAX) ? HL7139_IIN_REG_TH_CP_MAX : iin_regulation;
 
-		if (iin_regulation > HL7139_IIN_REG_TH_CP_MAX)
-			iin_regulation = HL7139_IIN_REG_TH_CP_MAX;
-		value = (u8)((iin_regulation - HL7139_IIN_REG_TH_CP_MIN) /
+		iin_reg_value = (u8)((iin_regulation - HL7139_IIN_REG_TH_CP_MIN) /
 			HL7139_IIN_REG_TH_CP_STEP);
 	} else {
 		hwlog_err("chg mode error:chg_mode=%d\n", chg_mode);
 		return -EPERM;
 	}
 
-	ret = hl7139_write_mask(di, HL7139_IIN_REG_REG,
-		HL7139_IIN_REG_IIN_REG_TH_MASK,
-		HL7139_IIN_REG_IIN_REG_TH_SHIFT, value);
+	ret = hl7139_write_mask(di, HL7139_IIN_OC_REG, HL7139_IIN_OC_IIN_OCP_TH_MASK,
+		HL7139_IIN_OC_IIN_OCP_TH_SHIFT, ocp_reg_value);
+	ret += hl7139_write_mask(di, HL7139_IIN_REG_REG, HL7139_IIN_REG_IIN_REG_TH_MASK,
+		HL7139_IIN_REG_IIN_REG_TH_SHIFT, iin_reg_value);
 	if (ret)
 		return -EPERM;
 
-	hwlog_info("config_ibus_reg_threshold_ma [%x]=0x%x\n",
-		HL7139_IIN_REG_REG, value);
+	hwlog_info("config_iin_ocp_offset_ma [%x]=0x%x,config_ibus_reg_threshold_ma [%x]=0x%x\n",
+		HL7139_IIN_OC_REG, ocp_reg_value, HL7139_IIN_REG_REG, iin_reg_value);
 	return 0;
 }
 
@@ -850,13 +872,17 @@ static void hl7139_lvc_opt_regs(void *dev_data)
 	struct hl7139_device_info *di = dev_data;
 
 	/* needed setting value */
+	if (di->rev_id == HL7139_OLD_VERSION)
+		hl7139_config_ibus_ocp_ma(HL7139_IIN_OCP_BP_INIT, LVC_MODE, di);
+	else
+		hl7139_config_ibus_ocp_ma(HL7139A_IIN_OCP_BP_INIT, LVC_MODE, di);
+
 	hl7139_config_rlt_ovp_ref(HL7139_TRACK_OV_UV_TRACK_OV_MAX, di);
-	hl7139_config_rlt_uvp_ref(HL7139_TRACK_OV_UV_TRACK_UV_MIN, di);
+	hl7139_config_rlt_uvp_ref(HL7139_TRACK_OV_UV_TRACK_UV_INIT, di);
 	hl7139_config_vbuscon_ovp_ref_mv(HL7139_VGS_SEL_INIT, di);
 	hl7139_config_vbus_ovp_ref_mv(HL7139_VBUS_OVP_INIT, di);
 	hl7139_config_vbat_ovp_mv(di->vbat_ovp_para, di);
 	hl7139_config_ibat_ocp_ma(di->ibat_ocp_para, di);
-	hl7139_config_ibus_ocp_ma(di->sc_ibus_ocp, LVC_MODE, di);
 	hl7139_config_tdie_otp_regulation(di->tdie_regulation, di);
 }
 
@@ -892,6 +918,25 @@ static void hl7139_close_ibat_ocp(void *dev_data)
 		HL7139_INT_MSK_REG_M_MASK, HL7139_INT_MSK_REG_M_SHIFT, 1);
 }
 
+static int hl7139a_reg_init(struct hl7139_device_info *di)
+{
+	int ret;
+	u8 value = 0;
+
+	ret = hl7139_config_ibat_ocp_ma(HL7139A_IBAT_OCP_INIT, di);
+	ret += hl7139_config_ibus_ocp_ma(HL7139A_IIN_OCP_BP_INIT, LVC_MODE, di);
+	ret += hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_PASS1);
+	ret += hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_PASS2); // enter test mode
+	ret += hl7139_write_mask(di, HL7139_SCP_DRV_CRL_1_REG, HL7139_SCP_DRV1_ON_MASK, HL7139_SCP_DRV1_ON_SHIFT, 1);
+	ret += hl7139_write_mask(di, HL7139_SCP_DRV_CRL_2_REG, HL7139_SCP_DRV2_WEAK_MASK, HL7139_SCP_DRV2_WEAK_SHIFT, 1);
+	ret += hl7139_write_byte(di, HL7139_TEST_MODE_REG, HL7139_TEST_MODE_EXIT); // exit test mode
+	ret += hl7139_read_byte(di, HL7139_SCP_DRV_CRL_1_REG, &value);
+	hwlog_info("HL7139_SCP_DRV_CRL_1_REG:[%x]0x%x\n", HL7139_SCP_DRV_CRL_1_REG, value);
+	ret += hl7139_read_byte(di, HL7139_SCP_DRV_CRL_2_REG, &value);
+	hwlog_info("HL7139_SCP_DRV_CRL_2_REG:[%x]0x%x\n", HL7139_SCP_DRV_CRL_2_REG, value);
+
+	return ret;
+}
 static int hl7139_reg_init(void *dev_data)
 {
 	int ret = 0;
@@ -901,8 +946,15 @@ static int hl7139_reg_init(void *dev_data)
 	if (di->rev_id == 0) {
 		ret += hl7139_set_nwatchdog(1, di);
 	} else {
-		ret += hl7139_config_watchdog_ms(HL7139_WD_TMR_10000MS, di);
-		ret += hl7139_set_nwatchdog(0, di);
+		ret += hl7139_config_watchdog_ms(HL7139_WD_TMR_1000MS, di);
+		ret += hl7139_set_nwatchdog(1, di);
+	}
+
+	if (di->rev_id == HL7139_OLD_VERSION) {
+		ret += hl7139_config_ibat_ocp_ma(HL7139_IBAT_OCP_INIT, di);
+		ret += hl7139_config_ibus_ocp_ma(HL7139_IIN_OCP_BP_INIT, LVC_MODE, di);
+	} else {
+		ret += hl7139a_reg_init(di);
 	}
 
 	ret += hl7139_config_rlt_ovp_ref(HL7139_TRACK_OV_UV_TRACK_OV_MIN, di);
@@ -911,8 +963,6 @@ static int hl7139_reg_init(void *dev_data)
 	ret += hl7139_config_vbus_ovp_ref_mv(HL7139_VBUS_OVP_INIT, di);
 	ret += hl7139_config_switching_frequency(di->switching_frequency, di);
 	ret += hl7139_config_vbat_ovp_mv(HL7139_VBAT_OVP_INIT, di);
-	ret += hl7139_config_ibat_ocp_ma(HL7139_IBAT_OCP_INIT, di);
-	ret += hl7139_config_ibus_ocp_ma(HL7139_IIN_OCP_BP_INIT, LVC_MODE, di);
 
 	/* enable ENADC */
 	ret += hl7139_write_mask(di, HL7139_ADC_CTRL0_REG,
@@ -934,7 +984,7 @@ static int hl7139_reg_init(void *dev_data)
 	if (di->check_irq_work_support)
 		ret += hl7139_write_byte(di, HL7139_INT_MSK_REG, 0xFF);
 	else
-		ret += hl7139_write_byte(di, HL7139_INT_MSK_REG, 0);
+		ret += hl7139_write_byte(di, HL7139_INT_MSK_REG, 0x01);
 	if (ret) {
 		hwlog_err("reg_init fail\n");
 		return -EPERM;
@@ -943,29 +993,6 @@ static int hl7139_reg_init(void *dev_data)
 	if (di->close_ibat_ocp)
 		hl7139_close_ibat_ocp(dev_data);
 
-	return 0;
-}
-
-static int hl7139_deep_standby_mode(int standby, void *dev_data)
-{
-	int ret;
-	u8 reg = 0;
-	u8 value = standby ? 0x1 : 0x0;
-	struct hl7139_device_info *di = dev_data;
-
-	if (!di)
-		return -ENODEV;
-
-	ret = hl7139_write_mask(di, HL7139_STBY_CTRL_REG, HL7139_STBY_CTRL_DEEP_STBY_EN_MASK,
-		HL7139_STBY_CTRL_DEEP_STBY_EN_SHIFT, value);
-	if (ret)
-		return -EPERM;
-
-	ret = hl7139_read_byte(di, HL7139_STBY_CTRL_REG, &reg);
-	if (ret)
-		return -EPERM;
-
-	hwlog_info("standby_deep[%x]=0x%x\n", HL7139_STBY_CTRL_REG, reg);
 	return 0;
 }
 
@@ -985,6 +1012,29 @@ static int hl7139_charge_init(void *dev_data)
 		di->device_id, di->rev_id);
 
 	di->init_finish_flag = HL7139_INIT_FINISH;
+	return 0;
+}
+
+static int hl7139_enable_adc(int enable, void *dev_data)
+{
+	int ret;
+	u8 reg = 0;
+	u8 value = enable ? 0x1 : 0x0;
+	struct hl7139_device_info *di = dev_data;
+
+	if (!di)
+		return -ENODEV;
+
+	ret = hl7139_write_mask(di, HL7139_ADC_CTRL0_REG,
+		HL7139_ADC_CTRL0_ADC_READ_EN_MASK, HL7139_ADC_CTRL0_ADC_READ_EN_SHIFT, value);
+	if (ret)
+		return -EPERM;
+
+	ret = hl7139_read_byte(di, HL7139_ADC_CTRL0_REG, &reg);
+	if (ret)
+		return -EPERM;
+
+	hwlog_info("adc_enable [%x]=0x%x\n", HL7139_ADC_CTRL0_REG, reg);
 	return 0;
 }
 
@@ -1066,7 +1116,9 @@ static int hl7139_db_value_dump(struct hl7139_device_info *di,
 	(void)hl7139_get_device_temp(&temp, di);
 	(void)hl7139_read_byte(di, HL7139_CTRL3_REG, &reg);
 
-	if (((reg & HL7139_CTRL3_DEV_MODE_MASK) >> HL7139_CTRL3_DEV_MODE_SHIFT) ==
+	if (hl7139_is_device_close(di))
+		snprintf(buff, sizeof(buff), "%s", "OFF    ");
+	else if (((reg & HL7139_CTRL3_DEV_MODE_MASK) >> HL7139_CTRL3_DEV_MODE_SHIFT) ==
 		HL7139_CTRL3_BPMODE)
 		snprintf(buff, sizeof(buff), "%s", "LVC    ");
 	else if (((reg & HL7139_CTRL3_DEV_MODE_MASK) >> HL7139_CTRL3_DEV_MODE_SHIFT) ==
@@ -1100,7 +1152,7 @@ static int hl7139_dump_reg_value(char *reg_value, int size, void *dev_data)
 		return -EPERM;
 	}
 
-	len = snprintf(reg_value, size, "%s ", di->name);
+	len = snprintf(reg_value, size, "%-10s", di->name);
 	len += hl7139_db_value_dump(di, buff, BUF_LEN);
 	if (len < size)
 		strncat(reg_value, buff, strlen(buff));
@@ -1137,7 +1189,7 @@ static int hl7139_reg_head(char *reg_head, int size, void *dev_data)
 	int tmp;
 	int len = 0;
 	char buff[BUF_LEN] = {0};
-	const char *half_head = "     dev     mode   Ibus   Vbus   Ibat   Vbat   Temp   ";
+	const char *half_head = "dev       mode   Ibus   Vbus   Ibat   Vbat   Temp   ";
 	struct hl7139_device_info *di = dev_data;
 
 	if (!di || !reg_head) {
@@ -1332,7 +1384,7 @@ static void hl7139_interrupt_clear(struct hl7139_device_info *di)
 
 static void hl7139_interrupt_work(struct work_struct *work)
 {
-	u8 flag[5] = {0}; /* read 5 bytes */
+	u8 flag[3] = {0}; /* read 3 bytes */
 	struct hl7139_device_info *di = NULL;
 	struct nty_data *data = NULL;
 
@@ -1347,12 +1399,6 @@ static void hl7139_interrupt_work(struct work_struct *work)
 	(void)hl7139_read_byte(di, HL7139_INT_REG, &flag[0]);
 	(void)hl7139_read_byte(di, HL7139_STATUS_A_REG, &flag[1]);
 	(void)hl7139_read_byte(di, HL7139_STATUS_B_REG, &flag[2]);
-	/* to confirm the scp interrupt */
-	(void)hl7139_read_byte(di, HL7139_SCP_ISR1_REG, &flag[3]);
-	(void)hl7139_read_byte(di, HL7139_SCP_ISR2_REG, &flag[4]);
-
-	di->scp_isr_backup[0] |= flag[3];
-	di->scp_isr_backup[1] |= flag[4];
 
 	data = &(di->nty_data);
 	data->event1 = flag[0];
@@ -1367,8 +1413,6 @@ static void hl7139_interrupt_work(struct work_struct *work)
 
 	hwlog_info("INT_REG [%x]=0x%x, STATUS_A_REG [%x]=0x%x, STATUS_B_REG [%x]=0x%x\n",
 		HL7139_INT_REG, flag[0], HL7139_STATUS_A_REG, flag[1], HL7139_STATUS_B_REG, flag[2]);
-	hwlog_info("ISR1 [%x]=0x%x, ISR2 [%x]=0x%x\n",
-		HL7139_SCP_ISR1_REG, flag[3], HL7139_SCP_ISR2_REG, flag[4]);
 
 	/* clear irq */
 	enable_irq(di->irq_int);
@@ -1376,7 +1420,7 @@ static void hl7139_interrupt_work(struct work_struct *work)
 
 static void hl7139_check_irq_work(struct work_struct *work)
 {
-	u8 flag[5] = {0}; /* read 5 bytes */
+	u8 flag[3] = {0}; /* read 3 bytes */
 	struct hl7139_device_info *di = NULL;
 	struct nty_data *data = NULL;
 
@@ -1388,12 +1432,6 @@ static void hl7139_check_irq_work(struct work_struct *work)
 	(void)hl7139_read_byte(di, HL7139_INT_STS_B_REG, &flag[0]);
 	(void)hl7139_read_byte(di, HL7139_STATUS_A_REG, &flag[1]);
 	(void)hl7139_read_byte(di, HL7139_STATUS_B_REG, &flag[2]);
-	/* to confirm the scp interrupt */
-	(void)hl7139_read_byte(di, HL7139_SCP_ISR1_REG, &flag[3]);
-	(void)hl7139_read_byte(di, HL7139_SCP_ISR2_REG, &flag[4]);
-
-	di->scp_isr_backup[0] |= flag[3];
-	di->scp_isr_backup[1] |= flag[4];
 
 	data = &(di->nty_data);
 	data->event1 = flag[0];
@@ -1409,8 +1447,6 @@ static void hl7139_check_irq_work(struct work_struct *work)
 
 	hwlog_info("INT_STS_B_REG [%x]=0x%x, STATUS_A_REG [%x]=0x%x, STATUS_B_REG [%x]=0x%x\n",
 		HL7139_INT_STS_B_REG, flag[0], HL7139_STATUS_A_REG, flag[1], HL7139_STATUS_B_REG, flag[2]);
-	hwlog_info("ISR1 [%x]=0x%x, ISR2 [%x]=0x%x\n",
-		HL7139_SCP_ISR1_REG, flag[3], HL7139_SCP_ISR2_REG, flag[4]);
 
 	schedule_delayed_work(&di->check_irq_work, msecs_to_jiffies(HL7139_SOFT_INT_CHECK_TIME));
 }
@@ -1457,6 +1493,23 @@ static int hl7139_irq_init(struct hl7139_device_info *di, struct device_node *np
 
 	enable_irq_wake(di->irq_int);
 
+	return 0;
+}
+
+static int hl7139_data_init(struct hl7139_device_info *di)
+{
+	int ret;
+	u8 val;
+	di->back_regd8 = 0;
+	di->first_enter_flag = true;
+	di->scp_error_flag = HL7139_SCP_NO_ERR;
+
+	ret = hl7139_read_byte(di, HL7139_SCP_BASE_FSW_REG, &val);
+	if (ret)
+		return -EPERM;
+
+	di->back_regd8 = val;
+	hwlog_err("hl7139_data_init regd8 = 0x%x\n", di->back_regd8);
 	return 0;
 }
 
@@ -1548,6 +1601,10 @@ static int hl7139_probe(struct i2c_client *client, const struct i2c_device_id *i
 	if (ret)
 		goto hl7139_fail_1;
 
+	ret = hl7139_data_init(di);
+	if (ret)
+		goto hl7139_fail_1;
+
 	(void)power_pinctrl_config(di->dev, "pinctrl-names", 1); /* 1:pinctrl-names length */
 	ret = hl7139_irq_init(di, np);
 	if (ret)
@@ -1610,7 +1667,7 @@ static int hl7139_i2c_suspend(struct device *dev)
 
 	di = i2c_get_clientdata(client);
 	if (di)
-		hl7139_deep_standby_mode(1, (void *)di);
+		hl7139_enable_adc(0, (void *)di);
 
 	return 0;
 }
@@ -1632,7 +1689,7 @@ static void hl7139_i2c_complete(struct device *dev)
 	if (!di)
 		return;
 
-	hl7139_deep_standby_mode(0, (void *)di);
+	hl7139_enable_adc(1, (void *)di);
 }
 
 static const struct dev_pm_ops hl7139_pm_ops = {

@@ -4484,6 +4484,8 @@ int g_touch_driver_dev_data_init(struct ts_kit_platform_data *pdata)
 
 static int touch_driver_pinctrl_init(void)
 {
+	int ret;
+
 	TS_LOG_INFO("%s: enter\n", __func__);
 	g_zinitix_pdata->ts_pinctrl = devm_pinctrl_get(&g_zinitix_dev_data->ts_platform_data->ts_dev->dev);
 	if (IS_ERR(g_zinitix_pdata->ts_pinctrl)) {
@@ -4494,12 +4496,14 @@ static int touch_driver_pinctrl_init(void)
 	g_zinitix_pdata->pinctrl_state_default = pinctrl_lookup_state(g_zinitix_pdata->ts_pinctrl, "default");
 	if (IS_ERR(g_zinitix_pdata->pinctrl_state_default)) {
 		TS_LOG_ERR("failed to pinctrl lookup state default\n");
+		ret = -EINVAL;
 		goto err_pinctrl_put;
 	}
 
 	g_zinitix_pdata->pinctrl_state_idle = pinctrl_lookup_state(g_zinitix_pdata->ts_pinctrl, "idle");
 	if (IS_ERR(g_zinitix_pdata->pinctrl_state_idle)) {
 		TS_LOG_ERR("failed to pinctrl lookup state idle\n");
+		ret = -EINVAL;
 		goto err_pinctrl_put;
 	}
 	pinctrl_select_state(g_zinitix_pdata->ts_pinctrl,
@@ -4509,7 +4513,7 @@ static int touch_driver_pinctrl_init(void)
 err_pinctrl_put:
 	devm_pinctrl_put(g_zinitix_pdata->ts_pinctrl);
 	g_zinitix_pdata->ts_pinctrl = NULL;
-	return -EINVAL;
+	return ret;
 }
 
 static int touch_driver_chip_detect(struct ts_kit_platform_data *pdata)

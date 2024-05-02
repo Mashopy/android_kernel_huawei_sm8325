@@ -149,6 +149,9 @@ int qcom_mipi_dsi_cmd_tx(struct dsi_display *display, struct dsi_ctrl *dsi_ctrl,
 		LCD_KIT_ERR("dsi_ctrl is NULL");
 		return LCD_KIT_FAIL;
 	}
+#ifdef CONFIG_LCD_KIT_HYBRID
+	flags = DSI_CTRL_CMD_FETCH_MEMORY;
+#endif
 	memset(&cmd, 0, sizeof(struct dsi_cmd_desc));
 	ret = lcd_kit_cmds_to_qcom_cmds_tx(cmds, &cmd, link_state);
 	if (ret != LCD_KIT_OK) {
@@ -192,6 +195,9 @@ int qcom_mipi_dsi_cmd_rx(struct dsi_display *display, struct dsi_ctrl *dsi_ctrl,
 		LCD_KIT_ERR("buf or cmds is NULL\n");
 		return LCD_KIT_FAIL;
 	}
+#ifdef CONFIG_LCD_KIT_HYBRID
+	flags = (DSI_CTRL_CMD_FETCH_MEMORY | DSI_CTRL_CMD_READ);
+#endif
 	memset(&cmd, 0, sizeof(struct dsi_cmd_desc));
 	ret = lcd_kit_cmds_to_qcom_cmds_rx(cmds, &cmd, link_state, buffer);
 	if (ret != LCD_KIT_OK) {
@@ -249,6 +255,7 @@ int qcom_mipi_dsi_cmds_transfer(struct dsi_display *display,
 		if (lcd_kit_cmd_is_write(&cmds->cmds[i])) {
 			ret = qcom_mipi_dsi_cmd_tx(display, dsi_ctrl, &cmds->cmds[i],
 				cmds->link_state);
+			lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, true);
 			if (ret != LCD_KIT_OK) {
 				LCD_KIT_ERR("the %d mipi cmd tx fail, ret = %d\n",
 					i, ret);
@@ -257,6 +264,7 @@ int qcom_mipi_dsi_cmds_transfer(struct dsi_display *display,
 		} else {
 			ret = qcom_mipi_dsi_cmd_rx(display, dsi_ctrl, &buffer[0], &rx_len,
 				&cmds->cmds[i], cmds->link_state);
+			lcd_kit_delay(cmds->cmds[i].wait, cmds->cmds[i].waittype, true);
 			if (ret != LCD_KIT_OK) {
 				LCD_KIT_ERR("the %d mipi cmd rx fail, ret = %d\n",
 					i, ret);

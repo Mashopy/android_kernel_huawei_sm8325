@@ -278,7 +278,7 @@ static void buck_charge_monitor_work(struct work_struct *work)
 
 static void buck_charge_stop_monitor_work(struct work_struct *work)
 {
-	struct buck_charge_dev *l_dev = container_of(work, struct buck_charge_dev, buck_charge_work.work);
+	struct buck_charge_dev *l_dev = container_of(work, struct buck_charge_dev, stop_charge_work);
 
 	if (!l_dev)
 		return;
@@ -287,6 +287,7 @@ static void buck_charge_stop_monitor_work(struct work_struct *work)
 	power_vote_set(ITERM_VOTE_OBJECT, CHARGE_FFC_VOTER, true, l_dev->iterm);
 	power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_FCP_VOTER, false, 0);
 	power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_RT_VOTER, false, 0);
+	power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_USER_VOTER, false, 0);
 }
 
 static int buck_charge_event_notifier_call(struct notifier_block *nb,
@@ -330,6 +331,30 @@ static int buck_charge_dc_event_notifier_call(struct notifier_block *nb,
 	case POWER_NE_DC_CHECK_START:
 		l_dev->dc_adp = true;
 		hwlog_info("dc check start\n");
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static int buck_charge_chg_event_notifier_call(struct notifier_block *nb,
+	unsigned long event, void *data)
+{
+	struct buck_charge_dev *l_dev = g_buck_charge_dev;
+
+	if (!l_dev)
+		return NOTIFY_OK;
+
+	switch (event) {
+	case POWER_NE_CHG_CHARGING_DONE:
+		if (l_dev->ibus_limit_after_chg_done)
+			power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_USER_VOTER, true, l_dev->ibus_limit_after_chg_done);
+		break;
+	case POWER_NE_CHG_CHARGING_RECHARGE:
+		if (l_dev->ibus_limit_after_chg_done)
+			power_vote_set(USB_ICL_VOTE_OBJECT, CHARGE_USER_VOTER, false, 0);
 		break;
 	default:
 		break;
@@ -407,6 +432,8 @@ static int buck_charge_parse_dts(struct device_node *np, struct buck_charge_dev 
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "jeita_support", &di->jeita_support, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "force_term_support", &di->force_term_support, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ffc_only_chr_done", &di->ffc_only_chr_done, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "ibus_limit_after_chg_done",
+		&di->ibus_limit_after_chg_done, 0);
 	if (di->jeita_support)
 		buck_charge_jeita_parse_jeita_table(np, (void *)di);
 
@@ -448,10 +475,17 @@ static int buck_charge_probe(struct platform_device *pdev)
 	if (ret)
 		goto fail_bnc_register;
 
+	l_dev->chg_event_nb.notifier_call = buck_charge_chg_event_notifier_call;
+	ret = power_event_bnc_register(POWER_BNT_CHG, &l_dev->chg_event_nb);
+	if (ret)
+		goto fail_bnc_register1;
+
 	g_buck_charge_dev = l_dev;
 	platform_set_drvdata(pdev, l_dev);
 	return 0;
 
+fail_bnc_register1:
+	power_event_bnc_unregister(POWER_BNT_DC, &l_dev->dc_event_nb);
 fail_bnc_register:
 	power_event_bnc_unregister(POWER_BNT_CHARGING, &l_dev->event_nb);
 fail_free_mem:
@@ -470,6 +504,7 @@ static int buck_charge_remove(struct platform_device *pdev)
 	cancel_delayed_work(&l_dev->buck_charge_work);
 	power_event_bnc_unregister(POWER_BNT_CHARGING, &l_dev->event_nb);
 	power_event_bnc_unregister(POWER_BNT_DC, &l_dev->dc_event_nb);
+	power_event_bnc_unregister(POWER_BNT_CHG, &l_dev->chg_event_nb);
 	platform_set_drvdata(pdev, NULL);
 	kfree(l_dev);
 	g_buck_charge_dev = NULL;

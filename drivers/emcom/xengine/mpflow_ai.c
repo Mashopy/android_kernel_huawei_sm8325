@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2020-2021. All rights reserved.
+ * Copyright (c) Huawei Technologies Co., Ltd. 2020-2023. All rights reserved.
  * Description: mpflow module implemention
  * Author: xialiang xialiang4@huawei.com
  * Create: 2020-06-08
@@ -44,9 +44,6 @@ HWLOG_REGIST();
 #define EMCOM_GOOD_RECV_RATE_THR_BYTE_PER_SEC 400000
 #define EMCOM_GOOD_RTT_THR_MS 120
 #define SKARR_SZ 200
-#define INVALID_MARK 0
-#define MPROUTE_FWMARK_CONTROL_MASK 0xFFFF0000
-#define MPROUTE_FWMARK_NEW_MASK 0xFFFF
 
 spinlock_t g_mpflow_ai_lock;
 struct emcom_xengine_mpflow_ai_info g_mpflow_ai_uids[EMCOM_MPFLOW_AI_MAX_APP];
@@ -72,9 +69,9 @@ struct emcom_xengine_mpflow_ai_info* emcom_xengine_mpflow_ai_get_info(void)
 	return g_mpflow_ai_uids;
 }
 
-spinlock_t emcom_xengine_mpflow_ai_get_lock(void)
+spinlock_t* emcom_xengine_mpflow_ai_get_lock(void)
 {
-	return g_mpflow_ai_lock;
+	return &g_mpflow_ai_lock;
 }
 
 bool emcom_xengine_mpflow_ai_uid_empty(void)
@@ -87,6 +84,39 @@ bool emcom_xengine_mpflow_ai_uid_empty(void)
 	}
 
 	return true;
+}
+
+void emcom_xengine_mpflow_ai_mproute_reinit(void)
+{
+	int8_t index;
+	uint32_t uid;
+	bool unregister_hook = true;
+
+	spin_lock_bh(&g_mpflow_ai_lock);
+	for (index = 0; index < EMCOM_MPFLOW_AI_MAX_APP; index++) {
+		if (g_mpflow_ai_uids[index].uid == UID_INVALID_APP)
+			continue;
+		if (g_mpflow_ai_uids[index].running_state != MPROUTER_RUNNING) {
+			unregister_hook = false;
+			continue;
+		}
+		uid = g_mpflow_ai_uids[index].uid;
+		emcom_logd("mproute reinit uid: %u", uid);
+
+		emcom_mproute_close_tcp_flow(uid, INVALID_MARK, INVALID_MARK);
+		emcom_mproute_close_udp_flow(uid, INVALID_MARK, INTF_CHANGE, INVALID_MARK);
+
+		emcom_xengine_mpflow_ai_app_clear(index, uid);
+		emcom_xengine_mpflow_delete((int)uid, EMCOM_MPROUTE_VER_V1);
+	}
+	spin_unlock_bh(&g_mpflow_ai_lock);
+	if (unregister_hook)
+		emcom_xengine_mpflow_unregister_nf_hook(EMCOM_MPFLOW_VER_V2);
+}
+
+bool emcom_xengine_mpflow_is_bindmode_valid(int bind_mode)
+{
+	return (bind_mode > EMCOM_MPFLOW_BIND_NONE) && (bind_mode < EMCOM_MPFLOW_BIND_MAX);
 }
 
 static struct emcom_xengine_mpflow_ip_bind_policy *
@@ -121,9 +151,8 @@ bool emcom_xengine_mpflow_ai_get_addr_port(struct sockaddr *addr, __be32 *s_addr
 		*(s_addr + EMCOM_MPFLOW_AI_CLAT_IPV6 - 1) = usin->sin_addr.s_addr;
 		*port = ntohs(usin->sin_port);
 		return true;
-	}
 #if IS_ENABLED(CONFIG_IPV6)
-	else if (addr->sa_family == AF_INET6) {
+	} else if (addr->sa_family == AF_INET6) {
 		struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)addr;
 
 		for (i = 0; i < EMCOM_MPFLOW_AI_CLAT_IPV6; i++)
@@ -131,9 +160,8 @@ bool emcom_xengine_mpflow_ai_get_addr_port(struct sockaddr *addr, __be32 *s_addr
 
 		*port = ntohs(usin6->sin6_port);
 		return true;
-	}
 #endif
-	else {
+	} else {
 		emcom_loge("sa_family error, sa_family: %hu", addr->sa_family);
 		return false;
 	}
@@ -145,15 +173,13 @@ bool emcom_xengine_mpflow_ai_get_port(struct sockaddr *addr, uint16_t *port)
 		struct sockaddr_in *usin = (struct sockaddr_in *)addr;
 		*port = ntohs(usin->sin_port);
 		return true;
-	}
 #if IS_ENABLED(CONFIG_IPV6)
-	else if (addr->sa_family == AF_INET6) {
+	} else if (addr->sa_family == AF_INET6) {
 		struct sockaddr_in6 *usin6 = (struct sockaddr_in6 *)addr;
 		*port = ntohs(usin6->sin6_port);
 		return true;
-	}
 #endif
-	else {
+	} else {
 		emcom_loge("sa_family error, sa_family: %hu", addr->sa_family);
 		return false;
 	}
@@ -221,16 +247,14 @@ static bool emcom_xengine_mpflow_ai_get_addr(uint16_t sa_family,
 		struct in_addr *usin = (struct in_addr *)addr;
 		*(s_addr + s_addr_len - 1) = usin->s_addr;
 		return true;
-	}
 #if IS_ENABLED(CONFIG_IPV6)
-	else if (sa_family == AF_INET6) {
+	} else if (sa_family == AF_INET6) {
 		struct in6_addr *usin6 = (struct in6_addr *)addr;
 		for (i = 0; i < s_addr_len; i++)
 			*(s_addr + i) = usin6->s6_addr32[i];
 		return true;
-	}
 #endif
-	else {
+	} else {
 		return false;
 	}
 }
@@ -322,25 +346,8 @@ static void emcom_xengine_mpflow_ai_path_handover(struct sock *sk, uint16_t bind
 		return;
 	}
 
-	switch (bind_mode) {
-	case EMCOM_MPFLOW_BIND_WIFI0:
-		selected_path_iface = EMCOM_WLAN0_IFNAME;
-		break;
-	case EMCOM_MPFLOW_BIND_LTE0:
-		selected_path_iface = EMCOM_CELL0_IFNAME;
-		break;
-	case EMCOM_MPFLOW_BIND_WIFI1:
-		selected_path_iface = EMCOM_WLAN1_IFNAME;
-		break;
-	case EMCOM_MPFLOW_BIND_LTE1:
-		selected_path_iface = EMCOM_CELL1_IFNAME;
-		break;
-	case EMCOM_MPFLOW_BIND_WIFI2:
-		selected_path_iface = EMCOM_WLAN2_IFNAME;
-		break;
-	default:
-		break;
-	}
+	if (emcom_xengine_mpflow_is_bindmode_valid(bind_mode))
+		selected_path_iface = emcom_xengine_get_network_iface_name(bind_mode - 1);
 
 	emcom_logi("path_handover sk:%pK sport[%u] dev_if[%d] bind[%d] family[%u] dev[%s]",
 		sk, sk->sk_num, sk->sk_bound_dev_if,
@@ -423,6 +430,23 @@ static void emcom_xengine_mpflow_ai_udp_intf_reset(const struct reset_flow_polic
 	}
 }
 
+static void emcom_xengine_mpflow_ai_print_reset_policy_info(struct reset_flow_policy_info *reset)
+{
+	if (reset->flow.l3proto == ETH_P_IP) {
+		emcom_logi("SrcIP["IPV4_FMT"] SrcPort[%u] "
+			"DstIP["IPV4_FMT"] DstPort[%u] l4proto[%u] l3proto[%u] intf[%u]",
+			ipv4_info(reset->flow.ipv4_sip), reset->flow.src_port,
+			ipv4_info(reset->flow.ipv4_dip), reset->flow.dst_port,
+			reset->flow.l4proto, reset->flow.l3proto, reset->flow.sk_dev_itf);
+	} else {
+		emcom_logi("SrcIP["IPV6_FMT"] SrcPort[%u] "
+			"DstIP["IPV6_FMT"] DstPort[%u] l4proto[%u] l3proto[%u] intf[%u]",
+			ipv6_info(reset->flow.ipv6_sip), reset->flow.src_port,
+			ipv6_info(reset->flow.ipv6_dip), reset->flow.dst_port,
+			reset->flow.l4proto, reset->flow.l3proto, reset->flow.sk_dev_itf);
+	}
+}
+
 /*
  * mod flow local interface
  */
@@ -433,26 +457,16 @@ void emcom_xengine_mpflow_ai_reset_loc_intf(const uint8_t *data, uint16_t len)
 	int8_t app_index;
 	struct emcom_xengine_mpflow_ai_info *app = NULL;
 
+	emcom_logd(" emcom netlink mod local interface");
+
 	if ((data == NULL) || (len < sizeof(struct reset_flow_policy_info))) {
 		emcom_loge("mod flow pointer null or length %d error", len);
 		return;
 	}
 
 	reset = (struct reset_flow_policy_info *)data;
-	if (reset->flow.l3proto == ETH_P_IP) {
-		emcom_logi("receive reset. SrcIP["IPV4_FMT"] SrcPort[%u] "
-			"DstIP["IPV4_FMT"] DstPort[%u] l4proto[%u] l3proto[%u] intf[%u]",
-			ipv4_info(reset->flow.ipv4_sip), reset->flow.src_port,
-			ipv4_info(reset->flow.ipv4_dip), reset->flow.dst_port,
-			reset->flow.l4proto, reset->flow.l3proto, reset->flow.sk_dev_itf);
-	} else {
-		emcom_logi("receive reset. SrcIP["IPV6_FMT"] SrcPort[%u] "
-			"DstIP["IPV6_FMT"] DstPort[%u] l4proto[%u] l3proto[%u] intf[%u]",
-			ipv6_info(reset->flow.ipv6_sip), reset->flow.src_port,
-			ipv6_info(reset->flow.ipv6_dip), reset->flow.dst_port,
-			reset->flow.l4proto, reset->flow.l3proto, reset->flow.sk_dev_itf);
-	}
-	emcom_logi("reset mode[%u] blinktime[%u]", reset->policy.rst_bind_mode, reset->policy.const_perid);
+	emcom_xengine_mpflow_ai_print_reset_policy_info(reset);
+	emcom_logi("receive reset mode[%u] blinktime[%u]", reset->policy.rst_bind_mode, reset->policy.const_perid);
 
 	spin_lock_bh(&g_mpflow_ai_lock);
 	app_index = emcom_xengine_mpflow_ai_finduid(reset->uid);
@@ -483,43 +497,20 @@ void emcom_xengine_mpflow_ai_reset_loc_intf(const uint8_t *data, uint16_t len)
 		app->rst_duration = msecs_to_jiffies(reset->policy.const_perid);
 		app->rst_devif = reset->flow.sk_dev_itf;
 		spin_unlock_bh(&g_mpflow_ai_lock);
-		if (reset->flow.l3proto == ETH_P_IP) {
-			emcom_logi("[MPFlow_KERNEL]Reset Completed. SrcIP["IPV4_FMT"] SrcPort[%u] "
-				"DstIP["IPV4_FMT"] DstPort[%u] l4proto[%u] intf[%u]",
-				ipv4_info(reset->flow.ipv4_sip), reset->flow.src_port,
-				ipv4_info(reset->flow.ipv4_dip), reset->flow.dst_port,
-				reset->flow.l4proto, reset->flow.sk_dev_itf);
-		} else {
-			emcom_logi("[MPFlow_KERNEL]Reset Completed. SrcIP["IPV6_FMT"] SrcPort[%u] "
-				"DstIP["IPV6_FMT"] DstPort[%u] l4proto[%u] intf[%u]",
-				ipv6_info(reset->flow.ipv6_sip), reset->flow.src_port,
-				ipv6_info(reset->flow.ipv6_dip), reset->flow.dst_port,
-				reset->flow.l4proto, reset->flow.sk_dev_itf);
-		}
+		emcom_xengine_mpflow_ai_print_reset_policy_info(reset);
+		emcom_logi("[MPFlow_KERNEL]Reset Completed ");
 	}
 }
 
 static uint16_t emcom_xengine_transfer_bindmode(uint16_t bind_mode)
 {
 	uint16_t qos_device = EMCOM_MPFLOW_BIND_NONE;
-	switch (bind_mode) {
-	case EMCOM_MPFLOW_WIFI0_MASK:
-		qos_device = EMCOM_MPFLOW_BIND_WIFI0;
-		break;
-	case EMCOM_MPFLOW_LTE0_MASK:
-		qos_device = EMCOM_MPFLOW_BIND_LTE0;
-		break;
-	case EMCOM_MPFLOW_WIFI1_MASK:
-		qos_device = EMCOM_MPFLOW_BIND_WIFI1;
-		break;
-	case EMCOM_MPFLOW_LTE1_MASK:
-		qos_device = EMCOM_MPFLOW_BIND_LTE1;
-		break;
-	case EMCOM_MPFLOW_WIFI2_MASK:
-		qos_device = EMCOM_MPFLOW_BIND_WIFI2;
-		break;
-	default:
-		break;
+	uint16_t bind_index;
+	for (bind_index = EMCOM_MPFLOW_BIND_WIFI0; bind_index < EMCOM_MPFLOW_BIND_MAX; ++bind_index) {
+		if (bind_mode == (1 << (bind_index - 1))) {
+			qos_device = bind_index;
+			break;
+		}
 	}
 
 	return qos_device;
@@ -527,48 +518,24 @@ static uint16_t emcom_xengine_transfer_bindmode(uint16_t bind_mode)
 
 static uint8_t emcom_xengine_transfer_ifname(const char* ifname)
 {
-	if (strncmp(ifname, EMCOM_WLAN0_IFNAME, strlen(EMCOM_WLAN0_IFNAME)) == 0) {
-		return EMCOM_MPFLOW_BIND_WIFI0;
-	}
-	if (strncmp(ifname, EMCOM_CELL0_IFNAME, strlen(EMCOM_CELL0_IFNAME)) == 0) {
-		return EMCOM_MPFLOW_BIND_LTE0;
-	}
-	if (strncmp(ifname, EMCOM_WLAN1_IFNAME, strlen(EMCOM_WLAN1_IFNAME)) == 0) {
-		return EMCOM_MPFLOW_BIND_WIFI1;
-	}
-	if (strncmp(ifname, EMCOM_CELL1_IFNAME, strlen(EMCOM_CELL1_IFNAME)) == 0) {
-		return EMCOM_MPFLOW_BIND_LTE1;
-	}
-	if (strncmp(ifname, EMCOM_WLAN2_IFNAME, strlen(EMCOM_WLAN2_IFNAME)) == 0) {
-		return EMCOM_MPFLOW_BIND_WIFI2;
+	uint8_t index;
+	for (index = EMCOM_XENGINE_NET_WLAN0; index < EMCOM_XENGINE_NET_MAX_NUM; ++index) {
+		char *cur_ifname = emcom_xengine_get_network_iface_name(index);
+		if (strncmp(ifname, cur_ifname, strlen(cur_ifname)) == 0)
+			return index + 1;
 	}
 
-	emcom_logd("ifname is wrong!");
+	emcom_logd("ifname:%s is wrong!", ifname);
 	return EMCOM_MPFLOW_BIND_NONE;
 }
 
 static void emcom_xengine_net_type_transfer_ifname(int net_type, char* ifname, int len)
 {
 	int ret;
-	switch (net_type) {
-	case EMCOM_XENGINE_NET_WLAN0:
-		ret = strcpy_s(ifname, len, EMCOM_WLAN0_IFNAME);
-		break;
-	case EMCOM_XENGINE_NET_CELL0:
-		ret = strcpy_s(ifname, len, EMCOM_CELL0_IFNAME);
-		break;
-	case EMCOM_XENGINE_NET_WLAN1:
-		ret = strcpy_s(ifname, len, EMCOM_WLAN1_IFNAME);
-		break;
-	case EMCOM_XENGINE_NET_CELL1:
-		ret = strcpy_s(ifname, len, EMCOM_CELL1_IFNAME);
-		break;
-	case EMCOM_XENGINE_NET_WLAN2:
-		ret = strcpy_s(ifname, len, EMCOM_WLAN2_IFNAME);
-		break;
-	default:
+	if (emcom_xengine_is_net_type_valid(net_type)) {
+		ret = strcpy_s(ifname, len, emcom_xengine_get_network_iface_name(net_type));
+	} else {
 		ret = memset_s(ifname, len, 0, len);
-		break;
 	}
 	if (ret)
 		emcom_loge("strcpy_s failed ret=%d, net_type=%d", ret, net_type);
@@ -636,6 +603,15 @@ NEED_RESET:
 		return true;
 }
 
+static bool emcom_xengine_mpflow_ai_check_loop_sk_or_excluded_port(
+				const struct emcom_xengine_mpflow_ai_info *app, struct sock *sk)
+{
+	if (emcom_xengine_mpflow_ai_check_loop_sk(sk))
+		return true;
+	if (!sk->is_mp_flow_bind && sk->sk_bound_dev_if)
+		return true;
+	return emcom_xengine_mpflow_ai_is_excluded_port(app, ntohs(sk->sk_dport), IPPROTO_TCP);
+}
 /*
  * transfer flow to one
  */
@@ -664,12 +640,7 @@ static void emcom_xengine_mpflow_ai_close_tcp_flow(const struct emcom_xengine_mp
 				uid_t sock_uid = sock_i_uid(sk).val;
 				char ifname[IFNAMSIZ] = {0};
 				uint8_t bind_type;
-				if (uid != sock_uid)
-					continue;
-				if (emcom_xengine_mpflow_ai_check_loop_sk(sk))
-					continue;
-				if ((!sk->is_mp_flow_bind && sk->sk_bound_dev_if) ||
-					emcom_xengine_mpflow_ai_is_excluded_port(app, ntohs(sk->sk_dport), IPPROTO_TCP))
+				if (uid != sock_uid || emcom_xengine_mpflow_ai_check_loop_sk_or_excluded_port(app, sk))
 					continue;
 
 				if (netdev_get_name(sock_net(sk), ifname, sk->sk_bound_dev_if) != 0) {
@@ -703,6 +674,23 @@ static void emcom_xengine_mpflow_ai_close_tcp_flow(const struct emcom_xengine_mp
 	}
 }
 
+static bool emcom_xengine_mpflow_ai_check_loop_sk_or_dev_bonded(struct sock *sk, char *ifname)
+{
+	if (emcom_xengine_mpflow_ai_check_loop_sk(sk))
+		return true;
+	if (netdev_get_name(sock_net(sk), ifname, sk->sk_bound_dev_if) != 0) {
+		if (sk->sk_bound_dev_if == EMCOM_MPFLOW_BIND_NONE) {
+			int net_type = emcom_xengine_get_net_type(sk->sk_mark & EMCOM_XENGINE_NET_ID_MASK);
+			emcom_xengine_net_type_transfer_ifname(net_type, ifname, IFNAMSIZ);
+			emcom_logi("sk:%pK port: %u, state: %u devif: %d ifname: %s mark: %#x",
+				sk, sk->sk_num, sk->sk_state, sk->sk_bound_dev_if, ifname, sk->sk_mark);
+		} else {
+			return true;
+		}
+	}
+	return false;
+}
+
 static void emcom_xengine_mpflow_ai_close_udp_flow(const uint32_t uid, const uint16_t bindmode,
 	const uint16_t ori_dev, const reset_act act)
 {
@@ -725,20 +713,9 @@ static void emcom_xengine_mpflow_ai_close_udp_flow(const uint32_t uid, const uin
 				uid_t sock_uid = sock_i_uid(sk).val;
 				char ifname[IFNAMSIZ] = {0};
 				uint8_t bind_type;
-				if (uid != sock_uid) {
+				if (uid != sock_uid ||
+					emcom_xengine_mpflow_ai_check_loop_sk_or_dev_bonded(sk, ifname)) {
 					continue;
-				}
-				if (emcom_xengine_mpflow_ai_check_loop_sk(sk))
-					continue;
-				if (netdev_get_name(sock_net(sk), ifname, sk->sk_bound_dev_if) != 0) {
-					if (sk->sk_bound_dev_if == EMCOM_MPFLOW_BIND_NONE) {
-						int net_type = emcom_xengine_get_net_type(sk->sk_mark & EMCOM_XENGINE_NET_ID_MASK);
-						emcom_xengine_net_type_transfer_ifname(net_type, ifname, sizeof(ifname));
-						emcom_logi("sk:%pK port: %u, state: %u devif: %d ifname: %s mark: %#x",
-							sk, sk->sk_num, sk->sk_state, sk->sk_bound_dev_if, ifname, sk->sk_mark);
-					} else {
-						continue;
-					}
 				}
 				bind_type = emcom_xengine_transfer_ifname(ifname);
 				if (!emcom_xengine_mpflow_ai_need_reset(sk, bindmode, bind_type, ori_dev)) {
@@ -780,6 +757,8 @@ void emcom_xengine_mpflow_ai_close_all_flow(const uint8_t *data, uint16_t len)
 	reset_act act;
 	struct emcom_xengine_mpflow_ai_info *app = NULL;
 
+	emcom_logd(" emcom netlink transfer mpflow to one");
+
 	if ((data == NULL) || (len < sizeof(struct transfer_flow_info))) {
 		emcom_loge("mod flow pointer null or length %d error", len);
 		return;
@@ -819,12 +798,21 @@ void emcom_xengine_mpflow_ai_close_all_flow(const uint8_t *data, uint16_t len)
 	emcom_xengine_mpflow_ai_close_udp_flow(uid, bindmode, ori_dev, act);
 }
 
+static void emcom_xengine_mpflow_ai_cpy_ratio(const uint8_t *src_ratio, uint8_t *dst_ratio)
+{
+	uint32_t ratio_index;
+	for (ratio_index = WLAN0_RATIO; ratio_index < BURST_SIZE; ++ratio_index)
+		dst_ratio[ratio_index] = src_ratio[ratio_index];
+}
+
 void emcom_xengine_mpflow_ai_change_burst_ratio(const uint8_t *data, uint16_t len)
 {
 	struct change_burst_ratio *new_burst_ratio = NULL;
 	uint32_t uid;
 	int8_t app_index;
 	struct emcom_xengine_mpflow_ai_info *app = NULL;
+
+	emcom_logd(" emcom netlink change burst ratio");
 
 	if ((data == NULL) || (len < sizeof(struct change_burst_ratio))) {
 		emcom_loge("change burst ratio pointer null or length %u error", len);
@@ -840,11 +828,8 @@ void emcom_xengine_mpflow_ai_change_burst_ratio(const uint8_t *data, uint16_t le
 		return;
 	}
 	app = &g_mpflow_ai_uids[app_index];
-	app->burst_info.burst_ratio[WLAN0_RATIO] = new_burst_ratio->ratio[WLAN0_RATIO];
-	app->burst_info.burst_ratio[CELL0_RATIO] = new_burst_ratio->ratio[CELL0_RATIO];
-	app->burst_info.burst_ratio[WLAN1_RATIO] = new_burst_ratio->ratio[WLAN1_RATIO];
-	app->burst_info.burst_ratio[CELL1_RATIO] = new_burst_ratio->ratio[CELL1_RATIO];
-	app->burst_info.burst_ratio[WLAN2_RATIO] = new_burst_ratio->ratio[WLAN2_RATIO];
+	emcom_xengine_mpflow_ai_cpy_ratio(new_burst_ratio->ratio, app->burst_info.burst_ratio);
+
 	spin_unlock_bh(&g_mpflow_ai_lock);
 }
 
@@ -873,8 +858,9 @@ void emcom_xengine_mpflow_ai_app_clear(int8_t index, uid_t uid)
 	g_mpflow_ai_uids[index].uid = 0;
 	g_mpflow_ai_uids[index].enableflag = 0;
 	g_mpflow_ai_uids[index].port_num = 0;
-	g_mpflow_ai_uids[index].rst_mark = -1;
-	g_mpflow_ai_uids[index].rst_bind_mode = EMCOM_XENGINE_MPFLOW_AI_BINDMODE_NONE;
+	g_mpflow_ai_uids[index].rst_to_mark = INVALID_MARK;
+	g_mpflow_ai_uids[index].all_flow_mark = INVALID_MARK;
+	g_mpflow_ai_uids[index].rst_bind_mode = EMCOM_MPFLOW_BIND_NONE;
 	g_mpflow_ai_uids[index].rst_jiffies = 0;
 	g_mpflow_ai_uids[index].rst_devif = 0;
 }
@@ -915,13 +901,15 @@ static void emcom_xengine_mpflow_ai_hash_clear(const struct emcom_xengine_mpflow
 	}
 }
 
-void emcom_xengine_mpflow_ai_ip_config(const char *data, uint16_t len)
+void emcom_xengine_mpflow_ai_ip_bind_cfg(const char *data, uint16_t len)
 {
 	struct emcom_xengine_mpflow_ai_ip_cfg *config = NULL;
 	struct emcom_xengine_mpflow_ip_bind_policy *ip = NULL;
 	struct emcom_xengine_mpflow_ai_info *app = NULL;
 	__be32 daddr[EMCOM_MPFLOW_AI_CLAT_IPV6] = {0};
 	int8_t app_index;
+
+	emcom_logd(" emcom netlink mpflow ip policy config");
 
 	if (!data || (len != sizeof(struct emcom_xengine_mpflow_ai_ip_cfg))) {
 		emcom_loge("invalid data, length: %u expect: %zu", len,
@@ -1005,11 +993,8 @@ static void emcom_xengine_mpflow_ai_policy_init(
 
 			/* reserved for future logic */
 			app->ports[app->port_num].pattern.select_mode = policy->mode;
-			app->ports[app->port_num].pattern.ratio[WLAN0_RATIO] = policy->ratio[WLAN0_RATIO];
-			app->ports[app->port_num].pattern.ratio[CELL0_RATIO]  = policy->ratio[CELL0_RATIO];
-			app->ports[app->port_num].pattern.ratio[WLAN1_RATIO] = policy->ratio[WLAN1_RATIO];
-			app->ports[app->port_num].pattern.ratio[CELL1_RATIO]  = policy->ratio[CELL1_RATIO];
-			app->ports[app->port_num].pattern.ratio[WLAN2_RATIO] = policy->ratio[WLAN2_RATIO];
+			emcom_xengine_mpflow_ai_cpy_ratio(policy->ratio, app->ports[app->port_num].pattern.ratio);
+
 			/* reserved for future logic end */
 
 			if (policy->l4_protocol == IPPROTO_TCP) {
@@ -1026,46 +1011,75 @@ static void emcom_xengine_mpflow_ai_policy_init(
 	}
 }
 
-void emcom_xengine_mpflow_ai_init_bind_config(const char *data, uint16_t len)
+static bool emcom_xengine_mpflow_ai_check_bind_config_valid(const char *data, uint16_t len,
+						struct emcom_xengine_mpflow_ai_init_bind_cfg **config)
 {
-	struct emcom_xengine_mpflow_ai_init_bind_cfg *config = NULL;
-	struct emcom_xengine_mpflow_ai_init_bind_policy *burst_policy = NULL;
-	struct emcom_xengine_mpflow_ai_info *app = NULL;
-	mproute_policy *mproute_policy = NULL;
-	int8_t app_index;
-	uint32_t i, j;
-
 	if (!data || (len != sizeof(struct emcom_xengine_mpflow_ai_init_bind_cfg))) {
 		emcom_loge("input length error expect: %zu, real: %u",
 			sizeof(struct emcom_xengine_mpflow_ai_init_bind_cfg), len);
-		return;
+		return false;
 	}
 
-	config = (struct emcom_xengine_mpflow_ai_init_bind_cfg *)data;
-	if (!emcom_xengine_mpflow_ai_start(config->uid))
-		return;
+	*config = (struct emcom_xengine_mpflow_ai_init_bind_cfg *)data;
+	if (!emcom_xengine_mpflow_ai_start((*config)->uid))
+		return false;
 
-	emcom_logi("[MPFlow_KERNEL] Config received. policy num: %u", config->policy_num);
+	emcom_logi("[MPFlow_KERNEL] Config received. policy num: %u", (*config)->policy_num);
 
-	if (config->policy_num > EMCOM_MPFLOW_BIND_PORT_CFG_SIZE) {
+	if ((*config)->policy_num > EMCOM_MPFLOW_BIND_PORT_CFG_SIZE) {
 		emcom_loge("too many policy");
-		return;
+		return false;
 	}
-	burst_policy = &config->burst_bind;
+	return true;
+}
+
+static bool emcom_xengine_mpflow_ai_check_bind_policy_valid(
+				struct emcom_xengine_mpflow_ai_init_bind_policy *burst_policy)
+{
+	if (burst_policy->port_num > EMCOM_MPFLOW_BIND_PORT_CFG_SIZE) {
+		emcom_loge("too many port: %d", burst_policy->port_num);
+		return false;
+	}
 	emcom_logi("burst: proto[%u] mode[%u] portnum[%u]", burst_policy->l4_protocol, burst_policy->mode,
 		burst_policy->port_num);
 
 	if (burst_policy->l4_protocol != 0) {
 		if ((burst_policy->l4_protocol != IPPROTO_TCP) && (burst_policy->l4_protocol != IPPROTO_UDP)) {
 			emcom_loge("burst: invalid protocol: %d", burst_policy->l4_protocol);
-			return;
+			return false;
 		}
 	}
 
 	if (burst_policy->mode > EMCOM_MPFLOW_IP_BURST_FIX) {
 		emcom_loge("burst: invalid mode: %d", burst_policy->mode);
-		return;
+		return false;
 	}
+	return true;
+}
+
+static void emcom_xengine_mpflow_ai_set_burst_info_from_burst_policy(struct emcom_xengine_mpflow_ai_info *app,
+				struct emcom_xengine_mpflow_ai_init_bind_policy *burst_policy)
+{
+	app->burst_info.burst_protocol = burst_policy->l4_protocol;
+	app->burst_info.burst_mode = burst_policy->mode;
+	emcom_xengine_mpflow_ai_cpy_ratio(burst_policy->ratio, app->burst_info.burst_ratio);
+}
+
+void emcom_xengine_mpflow_ai_init_bind_config(const char *data, uint16_t len)
+{
+	struct emcom_xengine_mpflow_ai_init_bind_cfg *config = NULL;
+	struct emcom_xengine_mpflow_ai_init_bind_policy *burst_policy = NULL;
+	struct emcom_xengine_mpflow_ai_info *app = NULL;
+	int8_t app_index;
+	uint32_t i, j;
+
+	emcom_logd(" emcom netlink mpflow init bind config");
+
+	if (!emcom_xengine_mpflow_ai_check_bind_config_valid(data, len, &config))
+		return;
+	burst_policy = &config->burst_bind;
+	if (!emcom_xengine_mpflow_ai_check_bind_policy_valid(burst_policy))
+		return;
 
 	spin_lock_bh(&g_mpflow_ai_lock);
 	app_index = emcom_xengine_mpflow_ai_finduid(config->uid);
@@ -1076,14 +1090,7 @@ void emcom_xengine_mpflow_ai_init_bind_config(const char *data, uint16_t len)
 	}
 	app = &g_mpflow_ai_uids[app_index];
 	app->burst_info.burst_port_num = 0;
-	app->burst_info.burst_protocol = burst_policy->l4_protocol;
-	app->burst_info.burst_mode = burst_policy->mode;
-	app->burst_info.burst_ratio[WLAN0_RATIO] = burst_policy->ratio[WLAN0_RATIO];
-	app->burst_info.burst_ratio[CELL0_RATIO] = burst_policy->ratio[CELL0_RATIO];
-	app->burst_info.burst_ratio[WLAN1_RATIO] = burst_policy->ratio[WLAN1_RATIO];
-	app->burst_info.burst_ratio[CELL1_RATIO] = burst_policy->ratio[CELL1_RATIO];
-	app->burst_info.burst_ratio[WLAN2_RATIO] = burst_policy->ratio[WLAN2_RATIO];
-
+	emcom_xengine_mpflow_ai_set_burst_info_from_burst_policy(app, burst_policy);
 	j = 0;
 	for (i = 0; i < burst_policy->port_num; i++) {
 		emcom_logi("burst: port range[%d, %d]", burst_policy->port_range[i].start_port,
@@ -1097,10 +1104,10 @@ void emcom_xengine_mpflow_ai_init_bind_config(const char *data, uint16_t len)
 		app->burst_info.burst_ports[j].end_port = burst_policy->port_range[i].end_port;
 		j++;
 	}
-	mproute_policy = emcom_mproute_get_policy();
+
+	app->burst_info.launch_path = emcom_mproute_get_best_mark();
 	app->burst_info.burst_port_num = j;
 	app->burst_info.launch_device = EMCOM_MPFLOW_BIND_WIFI;
-	app->burst_info.launch_path = mproute_policy->best_mark;
 	app->burst_info.burst_cnt = 0;
 	app->burst_info.jiffies = 0;
 
@@ -1167,8 +1174,7 @@ static void emcom_xengine_mpflow_ai_clear_blocked(int uid, uint16_t net_bit)
 	}
 }
 
-
-void emcom_xengine_mpflow_ai_iface_cfg(const char *data, uint16_t len)
+void emcom_xengine_mpflow_ai_port_bind_cfg(const char *data, uint16_t len)
 {
 	struct emcom_xengine_mpflow_ai_iface_config *config = NULL;
 	struct emcom_xengine_mpflow_ai_info *app = NULL;
@@ -1176,6 +1182,7 @@ void emcom_xengine_mpflow_ai_iface_cfg(const char *data, uint16_t len)
 	int8_t port_index;
 	uint16_t config_high_bit;
 	uint16_t app_high_bit;
+	emcom_logd(" emcom netlink mpflow port policy config");
 
 	if (!data || (len != sizeof(struct emcom_xengine_mpflow_ai_iface_config))) {
 		emcom_loge("invalid data length %u expect: %zu", len,
@@ -1224,31 +1231,30 @@ void emcom_xengine_mpflow_ai_iface_cfg(const char *data, uint16_t len)
 	spin_unlock_bh(&g_mpflow_ai_lock);
 }
 
-static bool emcom_xengine_mpflow_ai_is_block(const int bind_device, const bool is_wifi0_block,
-	const bool is_lte0_block, const bool is_wifi1_block, const bool is_lte1_block, const bool is_wifi2_block)
+static void emcom_xengine_mpflow_init_blocked_array(uid_t uid, bool *blocked_array)
+{
+	uint32_t net_type;
+	for (net_type = EMCOM_XENGINE_NET_WLAN0; net_type < EMCOM_XENGINE_NET_MAX_NUM; net_type++)
+		blocked_array[net_type] = emcom_xengine_mpflow_blocked(uid, emcom_xengine_get_network_iface_name(net_type),
+									EMCOM_MPFLOW_VER_V2);
+}
+
+static bool emcom_xengine_mpflow_check_all_blocked(bool *blocked_array)
+{
+	uint32_t net_type;
+	for (net_type = EMCOM_XENGINE_NET_WLAN0; net_type < EMCOM_XENGINE_NET_MAX_NUM; net_type++) {
+		if (!blocked_array[net_type])
+			return false;
+	}
+	return true;
+}
+
+static bool emcom_xengine_mpflow_ai_is_block(const int bind_device, const bool *blocked_array)
 {
 	bool res = true;
 
-	switch (bind_device) {
-	case EMCOM_MPFLOW_BIND_WIFI0:
-		res = is_wifi0_block;
-		break;
-	case EMCOM_MPFLOW_BIND_LTE0:
-		res = is_lte0_block;
-		break;
-	case EMCOM_MPFLOW_BIND_WIFI1:
-		res = is_wifi1_block;
-		break;
-	case EMCOM_MPFLOW_BIND_LTE1:
-		res = is_lte1_block;
-		break;
-	case EMCOM_MPFLOW_BIND_WIFI2:
-		res = is_wifi2_block;
-		break;
-
-	default:
-		break;
-	}
+	if (emcom_xengine_mpflow_is_bindmode_valid(bind_device))
+		res = blocked_array[bind_device - 1];
 
 	return res;
 }
@@ -1258,13 +1264,9 @@ int emcom_xengine_mpflow_ai_bind_random(struct emcom_xengine_mpflow_ai_bind_patt
 {
 	uint16_t bind_device = calc->last_device;
 	int cnt = 0;
-	bool is_wifi0_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN0_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_lte0_block = emcom_xengine_mpflow_blocked(uid, EMCOM_CELL0_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_wifi1_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN1_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_lte1_block = emcom_xengine_mpflow_blocked(uid, EMCOM_CELL1_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_wifi2_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN2_IFNAME, EMCOM_MPFLOW_VER_V2);
-	if ((is_wifi0_block == true) && (is_lte0_block == true) &&
-		(is_wifi1_block == true) && (is_lte1_block == true) && (is_wifi2_block == true)) {
+	bool blocked_array[EMCOM_XENGINE_NET_MAX_NUM];
+	emcom_xengine_mpflow_init_blocked_array(uid, blocked_array);
+	if (emcom_xengine_mpflow_check_all_blocked(blocked_array)) {
 		calc->last_device = EMCOM_MPFLOW_BIND_NONE;
 		return EMCOM_MPFLOW_BIND_NONE;
 	}
@@ -1275,14 +1277,13 @@ int emcom_xengine_mpflow_ai_bind_random(struct emcom_xengine_mpflow_ai_bind_patt
 			emcom_loge("mpflow ai can't find bind_device");
 			break;
 		}
-		if (bind_device == EMCOM_MPFLOW_BIND_WIFI2) {
+		if ((bind_device + 1) >= EMCOM_MPFLOW_BIND_MAX) {
 			bind_device = EMCOM_MPFLOW_BIND_WIFI0;
 		} else {
 			bind_device++;
 		}
 	} while ((((high_bit >> (bind_device - 1)) & 0x1) == 0x0) ||
-		emcom_xengine_mpflow_ai_is_block(bind_device, is_wifi0_block, is_lte0_block, is_wifi1_block, is_lte1_block,
-			is_wifi2_block));
+		emcom_xengine_mpflow_ai_is_block(bind_device, blocked_array));
 
 	emcom_logi("mpflow ai bind random to device: %d", bind_device);
 	calc->last_device = bind_device;
@@ -1331,12 +1332,12 @@ bool emcom_xengine_mpflow_ai_start(uid_t uid)
 		app->uid = uid;
 		app->port_num = 0;
 		app->enableflag = EMCOM_MPFLOW_AI_ENABLEFLAG_DPORT;
-		app->rst_bind_mode = EMCOM_XENGINE_MPFLOW_AI_BINDMODE_NONE;
-		app->rst_mark = -1;
+		app->rst_bind_mode = EMCOM_MPFLOW_BIND_NONE;
+		app->rst_to_mark = INVALID_MARK;
 		app->rst_duration = EMCOM_MPFLOW_AI_RESET_DURATION;
 		app->rst_jiffies = 0;
-		app->all_flow_mark = -1;
-		app->all_flow_mode = EMCOM_XENGINE_MPFLOW_AI_BINDMODE_NONE;
+		app->all_flow_mark = INVALID_MARK;
+		app->all_flow_mode = EMCOM_MPFLOW_BIND_NONE;
 		app->all_flow_duration = EMCOM_MPFLOW_AI_RESET_DURATION;
 		app->all_flow_jiffies = 0;
 		app->rst_all_flow = false;
@@ -1354,6 +1355,8 @@ void emcom_xengine_mpflow_ai_stop(const char *pdata, uint16_t len)
 	int8_t index;
 	int32_t stop_reason;
 	bool mpflow_ai_uids_empty = false;
+
+	emcom_logd(" emcom netlink stop mpflow control algorithm v2");
 
 	if (!pdata || (len != sizeof(struct emcom_xengine_mpflow_parse_stop_info))) {
 		emcom_loge("mpflow ai stop data or length %d is error", len);
@@ -1383,64 +1386,87 @@ bool emcom_xengine_mpflow_ai_in_busrt_range(int8_t index, uint16_t dport, uint8_
 	struct emcom_xengine_mpflow_dport_range *entry = NULL;
 	int8_t i;
 
-	if (app->burst_info.burst_protocol == 0 || app->burst_info.burst_port_num == 0) {
+	if (app->burst_info.burst_protocol == 0 || app->burst_info.burst_port_num == 0)
 		return true;
-	}
 
-	if (app->burst_info.burst_protocol != proto) {
+	if (app->burst_info.burst_protocol != proto)
 		return false;
-	}
 
 	for (i = 0; i < app->burst_info.burst_port_num; i++) {
 		entry = &app->burst_info.burst_ports[i];
-		if ((entry->start_port <= dport) && (dport <= entry->end_port)) {
+		if ((entry->start_port <= dport) && (dport <= entry->end_port))
 			return true;
-		}
 	}
 	return false;
 }
 
 static bool emcom_xengine_mpflow_ai_bind_block(uid_t uid, uint16_t qos_device)
 {
-	bool is_wifi0_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN0_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_lte0_block = emcom_xengine_mpflow_blocked(uid, EMCOM_CELL0_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_wifi1_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN1_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_lte1_block = emcom_xengine_mpflow_blocked(uid, EMCOM_CELL1_IFNAME, EMCOM_MPFLOW_VER_V2);
-	bool is_wifi2_block = emcom_xengine_mpflow_blocked(uid, EMCOM_WLAN2_IFNAME, EMCOM_MPFLOW_VER_V2);
-	if ((is_wifi0_block && (qos_device == EMCOM_MPFLOW_BIND_WIFI0)) ||
-		(is_lte0_block && (qos_device == EMCOM_MPFLOW_BIND_LTE0)) ||
-		(is_wifi1_block && (qos_device == EMCOM_MPFLOW_BIND_WIFI1)) ||
-		(is_lte1_block && (qos_device == EMCOM_MPFLOW_BIND_LTE1)) ||
-		(is_wifi2_block && (qos_device == EMCOM_MPFLOW_BIND_WIFI2)) ||
-		((is_wifi0_block == true) && (is_lte0_block == true) &&
-			(is_wifi1_block == true) && (is_lte1_block == true) && (is_wifi2_block == true))) {
-		emcom_logi("mpflow bind blocked uid: %u, bindmode: %#x, blocked:%d, %d, %d, %d, %d",
-					uid, qos_device, is_wifi0_block, is_lte0_block, is_wifi1_block, is_lte1_block, is_wifi2_block);
-		return true;
-	}
+	uint16_t net_type;
+	for (net_type = EMCOM_XENGINE_NET_WLAN0; net_type < EMCOM_XENGINE_NET_MAX_NUM; ++net_type) {
+		if (!emcom_xengine_mpflow_blocked(uid, emcom_xengine_get_network_iface_name(net_type),
+								EMCOM_MPFLOW_VER_V2))
+			return false;
 
-	return false;
+		if (qos_device == (net_type + 1)) {
+			emcom_logi("mpflow bind blocked uid: %u, qos_device: %#x", uid, qos_device);
+			return true;
+		}
+	}
+	emcom_logi("mpflow bind all blocked uid: %u, qos_device: %#x", uid, qos_device);
+
+	return true;
 }
 
 static void emcom_xengine_mpflow_ai_get_ratio(struct emcom_xengine_mpflow_ai_burst_port *burst_info,
 	uint8_t* cur_burst_ratio, uint16_t high_bit)
 {
-	cur_burst_ratio[WLAN0_RATIO] = burst_info->burst_ratio[WLAN0_RATIO];
-	cur_burst_ratio[CELL0_RATIO] = burst_info->burst_ratio[CELL0_RATIO];
-	cur_burst_ratio[WLAN1_RATIO] = burst_info->burst_ratio[WLAN1_RATIO];
-	cur_burst_ratio[CELL1_RATIO] = burst_info->burst_ratio[CELL1_RATIO];
-	cur_burst_ratio[WLAN2_RATIO] = burst_info->burst_ratio[WLAN2_RATIO];
+	uint32_t ratio_index;
+	for (ratio_index = WLAN0_RATIO; ratio_index < BURST_SIZE; ++ratio_index) {
+		if (((high_bit >> ratio_index) & 0x1) == 0x0) {
+			cur_burst_ratio[ratio_index] = 0;
+		} else {
+			cur_burst_ratio[ratio_index] = burst_info->burst_ratio[ratio_index];
+		}
+	}
+}
 
-	if ((high_bit & 0x1) == 0x0)
-		cur_burst_ratio[WLAN0_RATIO] = 0;
-	if (((high_bit >> CELL0_RATIO) & 0x1) == 0x0)
-		cur_burst_ratio[CELL0_RATIO] = 0;
-	if (((high_bit >> WLAN1_RATIO) & 0x1) == 0x0)
-		cur_burst_ratio[WLAN1_RATIO] = 0;
-	if (((high_bit >> CELL1_RATIO) & 0x1) == 0x0)
-		cur_burst_ratio[CELL1_RATIO] = 0;
-	if (((high_bit >> WLAN2_RATIO) & 0x1) == 0x0)
-		cur_burst_ratio[WLAN2_RATIO] = 0;
+static bool emcom_xengine_mpflow_ai_is_ratio_on(uint8_t* cur_burst_ratio)
+{
+	uint32_t ratio_index;
+	for (ratio_index = WLAN0_RATIO; ratio_index < BURST_SIZE; ++ratio_index) {
+		if (cur_burst_ratio[ratio_index] != 0)
+			return true;
+	}
+	return false;
+}
+
+static uint8_t emcom_xengine_mpflow_ai_get_total_ratio(uint8_t *cur_burst_ratio)
+{
+	uint8_t total = 0;
+	uint32_t ratio_index;
+	for (ratio_index = WLAN0_RATIO; ratio_index < BURST_SIZE; ++ratio_index)
+		total += cur_burst_ratio[ratio_index];
+
+	return total;
+}
+
+static bool emcom_xengine_mpflow_ai_check_burst_info_valid(struct emcom_xengine_mpflow_ai_burst_port *burst_info,
+				uint8_t *cur_burst_ratio, uint16_t qos_device)
+{
+	if (burst_info->burst_mode != EMCOM_MPFLOW_IP_BURST_FIX)
+		return false;
+
+	if (!emcom_xengine_mpflow_ai_is_ratio_on(cur_burst_ratio))
+		return false;
+
+	if (burst_info->launch_device != qos_device) {
+		burst_info->burst_cnt = 0;
+		burst_info->jiffies = jiffies;
+		burst_info->launch_device = qos_device;
+		return false;
+	}
+	return true;
 }
 
 int emcom_xengine_mpflow_ai_bind_burst(int8_t index, uint16_t dport, uint8_t proto,
@@ -1453,13 +1479,8 @@ int emcom_xengine_mpflow_ai_bind_burst(int8_t index, uint16_t dport, uint8_t pro
 	uint8_t launch_cnt;
 	uint8_t cur_pos;
 
-	if (qos_device == EMCOM_MPFLOW_BIND_NONE) {
+	if (qos_device == EMCOM_MPFLOW_BIND_NONE || emcom_xengine_mpflow_ai_bind_block(uid, qos_device))
 		return EMCOM_MPFLOW_BIND_NONE;
-	}
-
-	if (emcom_xengine_mpflow_ai_bind_block(uid, qos_device)) {
-		return EMCOM_MPFLOW_BIND_NONE;
-	}
 
 	if (emcom_xengine_mpflow_ai_in_busrt_range(index, dport, proto)) {
 		int burst_device;
@@ -1469,19 +1490,8 @@ int emcom_xengine_mpflow_ai_bind_burst(int8_t index, uint16_t dport, uint8_t pro
 		emcom_logi("burst current qos device: %u last burst qos device: %u, burst cnt: %lu, mode[%u]",
 		qos_device, burst_info->launch_device, burst_info->burst_cnt, burst_info->burst_mode);
 
-		if (burst_info->burst_mode != EMCOM_MPFLOW_IP_BURST_FIX)
+		if (!emcom_xengine_mpflow_ai_check_burst_info_valid(burst_info, cur_burst_ratio, qos_device))
 			return qos_device;
-
-		if (!cur_burst_ratio[WLAN0_RATIO] && !cur_burst_ratio[CELL0_RATIO] && !cur_burst_ratio[WLAN1_RATIO] &&
-			!cur_burst_ratio[CELL1_RATIO] && !cur_burst_ratio[WLAN2_RATIO])
-			return qos_device;
-
-		if (burst_info->launch_device != qos_device) {
-			burst_info->burst_cnt = 0;
-			burst_info->jiffies = jiffies;
-			burst_info->launch_device = qos_device;
-			return qos_device;
-		}
 
 		/*lint -e666*/
 		if (time_after(jiffies, (burst_info->jiffies + EMCOM_MPFLOW_FLOW_BIND_BURST_TIME)) ||
@@ -1494,14 +1504,13 @@ int emcom_xengine_mpflow_ai_bind_burst(int8_t index, uint16_t dport, uint8_t pro
 			burst_info->burst_cnt++;
 			// base device
 			launch_device = burst_info->launch_device;
-			launch_cnt = burst_info->burst_cnt % (cur_burst_ratio[WLAN0_RATIO] + cur_burst_ratio[CELL0_RATIO] +
-				cur_burst_ratio[WLAN1_RATIO] + cur_burst_ratio[CELL1_RATIO] + cur_burst_ratio[WLAN2_RATIO]);
+			launch_cnt = burst_info->burst_cnt % (emcom_xengine_mpflow_ai_get_total_ratio(cur_burst_ratio));
 			// last device postion, bindmode - 1
 			cur_pos = launch_device - 1;
 			// find this burst device
 			while (launch_cnt >= cur_burst_ratio[cur_pos]) {
 				launch_cnt = launch_cnt - cur_burst_ratio[cur_pos];
-				if (cur_pos != (EMCOM_MPFLOW_BIND_WIFI2 - 1)) {
+				if (cur_pos < (EMCOM_MPFLOW_BIND_MAX - 1)) {
 					// jump to next device
 					cur_pos++;
 				} else {
@@ -1521,34 +1530,14 @@ int emcom_xengine_mpflow_ai_bind_burst(int8_t index, uint16_t dport, uint8_t pro
 
 int emcom_xengine_mpflow_ai_get_reset_device(uint16_t mode)
 {
-	int bind_device;
-	switch (mode) {
-	case EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI0:
-		bind_device = EMCOM_MPFLOW_BIND_WIFI0;
-		break;
-
-	case EMCOM_XENGINE_MPFLOW_AI_BINDMODE_LTE0:
-		bind_device = EMCOM_MPFLOW_BIND_LTE0;
-		break;
-
-	case EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI1:
-		bind_device = EMCOM_MPFLOW_BIND_WIFI1;
-		break;
-
-	case EMCOM_XENGINE_MPFLOW_AI_BINDMODE_LTE1:
-		bind_device = EMCOM_MPFLOW_BIND_LTE1;
-		break;
-
-	case EMCOM_XENGINE_MPFLOW_AI_BINDMODE_WIFI2:
-		bind_device = EMCOM_MPFLOW_BIND_WIFI2;
-		break;
-
-	default:
+	uint16_t bind_device;
+	if (emcom_xengine_mpflow_is_bindmode_valid(mode)) {
+		bind_device = mode;
+	} else {
 		bind_device = EMCOM_MPFLOW_BIND_NONE;
-		break;
 	}
 	emcom_logi("mpflow ai bind using reset mode: %u, device: %u", mode, bind_device);
-	return bind_device;
+	return (int)bind_device;
 }
 
 int8_t emcom_xengine_mpflow_ai_get_port_index_in_range(int8_t index, uint16_t dport, uint8_t proto)
@@ -1558,9 +1547,8 @@ int8_t emcom_xengine_mpflow_ai_get_port_index_in_range(int8_t index, uint16_t dp
 	int8_t i;
 	int8_t port_index = EMCOM_MPFLOW_BIND_INVALID_PORT_INDEX;
 
-	if (app->port_num == 0) {
+	if (app->port_num == 0)
 		return EMCOM_MPFLOW_BIND_INVALID_PORT_INDEX;
-	}
 
 	for (i = 0; i < app->port_num; i++) {
 		exist = &app->ports[i].range;
@@ -1697,8 +1685,7 @@ bool emcom_xengine_mpflow_ai_checkvalid(struct sock *sk, struct sockaddr *uaddr,
 		}
 
 		if (time_after(jiffies, app->all_flow_jiffies + app->all_flow_duration)) {
-			mproute_policy *mproute_policy = emcom_mproute_get_policy();
-			app->all_flow_mark = mproute_policy->best_mark;
+			app->all_flow_mark = emcom_mproute_get_best_mark();
 			app->all_flow_mode = EMCOM_XENGINE_MPFLOW_BINDMODE_NONE;
 			app->rst_all_flow = false;
 		} else if (app->rst_all_flow) {
@@ -1737,23 +1724,17 @@ static int emcom_xengine_update_bind_iface_name(char *ifname, unsigned int len, 
 	return memcpy_s(ifname, len, src_ifname, (strlen(src_ifname) + 1));
 }
 
-static int emcom_xengine_mpflow_rehash(int bind_device, struct sock *sk, int8_t index,
-	struct inet_sock *inet, uid_t uid, uint16_t dport, struct sockaddr *uaddr)
+static bool emcom_xengine_mpflow_ai_get_update_iface_name_result(int bind_device, struct sock *sk,
+			struct inet_sock *inet, char *ifname, errno_t *err)
 {
-	struct emcom_xengine_mpflow_ai_info *app = &g_mpflow_ai_uids[index];
-	char ifname[IFNAMSIZ] = {0};
-	errno_t err = EOK;
-	struct net_device *dev = NULL;
-
 	if (bind_device == EMCOM_MPFLOW_BIND_NONE) {
 		/* 1.wzry sgame stuck one min when shutdown LTE, because UDP not create a new sock when receive a reset,
 		the old sock sk_bound_dev_if is LTE, so the UDP sock will continue use LTE to send packet
 		2.as a wifi hotpoint, can not bind wlan, need reset sk_bound_dev_if to 0 */
-		emcom_logd("EMCOM_MPFLOW_BIND_NONE uid: %u, sk: %pK, protocol: %u, DstPort: %u, dev_if: %u", uid, sk, sk->sk_protocol, dport, sk->sk_bound_dev_if);
 		if (sk->sk_bound_dev_if && sk->sk_protocol == IPPROTO_UDP) {
 			/* Fix the bug for weixin app bind wifi ip, then reset to lte, cannot find the sk */
 			if (!emcom_xengine_mpflow_ai_rehash_sk(sk))
-				return MPFLOW_ERROR;
+				return false;
 			sk->sk_bound_dev_if = 0;
 			sk_dst_reset(sk);
 			inet = inet_sk(sk);
@@ -1762,9 +1743,25 @@ static int emcom_xengine_mpflow_rehash(int bind_device, struct sock *sk, int8_t 
 		} else {
 			sk->sk_bound_dev_if = 0;
 		}
-		return MPFLOW_ERROR;
+		return false;
 	} else {
-		err = emcom_xengine_update_bind_iface_name(ifname, IFNAMSIZ - 1, bind_device);
+		*err = emcom_xengine_update_bind_iface_name(ifname, IFNAMSIZ - 1, bind_device);
+		return true;
+	}
+}
+
+static int emcom_xengine_mpflow_ai_bind2device_done(int bind_device, struct sock *sk, int8_t index,
+	struct inet_sock *inet, uid_t uid, uint16_t dport, struct sockaddr *uaddr)
+{
+	struct emcom_xengine_mpflow_ai_info *app = &g_mpflow_ai_uids[index];
+	char ifname[IFNAMSIZ] = {0};
+	errno_t err = EOK;
+	struct net_device *dev = NULL;
+
+	if (!emcom_xengine_mpflow_ai_get_update_iface_name_result(bind_device, sk, inet, ifname, &err)) {
+		emcom_logd("EMCOM_MPFLOW_BIND_NONE uid: %u, sk: %pK, protocol: %u, DstPort: %u, dev_if: %u",
+						uid, sk, sk->sk_protocol, dport, sk->sk_bound_dev_if);
+		return MPFLOW_ERROR;
 	}
 
 	if (err != EOK) {
@@ -1796,7 +1793,7 @@ static int emcom_xengine_mpflow_rehash(int bind_device, struct sock *sk, int8_t 
 
 	if (sk->sk_protocol == IPPROTO_TCP && emcom_mpdns_is_allowed(uid, NULL) && !app->rst_all_flow) {
 		int tar_net = emcom_xengine_get_net_type_by_name(ifname);
-		int cur_net = emcom_xengine_get_net_type(sk->sk_mark & 0x00FF);
+		int cur_net = emcom_xengine_get_net_type(sk->sk_mark & EMCOM_XENGINE_NET_ID_MASK);
 		emcom_mpdns_update_dst_addr(sk, uaddr, cur_net, tar_net);
 	}
 	emcom_logi("bind success uid: %u, ifname: %s, ifindex: %d, srcPort: %u",
@@ -1810,10 +1807,11 @@ static void emcom_xengine_mpflow_ai_bind2device_proc(struct emcom_xengine_mpflow
 {
 	struct sockaddr_in *usin = NULL;
 	struct inet_sock *inet = NULL;
+	uint32_t sk_mark_low;
 
 	if (app->running_state == MPFLOW_RUNNING) {
 		sk->is_mp_flow_bind = 1;
-		if (emcom_xengine_mpflow_rehash(bind_device, sk, index, inet, uid, dport, uaddr) != MPFLOW_OK)
+		if (emcom_xengine_mpflow_ai_bind2device_done(bind_device, sk, index, inet, uid, dport, uaddr) != MPFLOW_OK)
 			return;
 
 		usin = (struct sockaddr_in *)uaddr;
@@ -1826,11 +1824,21 @@ static void emcom_xengine_mpflow_ai_bind2device_proc(struct emcom_xengine_mpflow
 				sk->sk_num, ipv6_info(usin6->sin6_addr), dport);
 		}
 	} else if (bind_device != INVALID_MARK && app->running_state == MPROUTER_RUNNING) {
-		emcom_logi("sk: %pK source mark: %d, bind_device: %d", sk, sk->sk_mark, bind_device);
 		sk->is_mp_flow_bind = 1;
-		sk->sk_mark = (sk->sk_mark & MPROUTE_FWMARK_CONTROL_MASK) |
-			(bind_device & MPROUTE_FWMARK_NEW_MASK);
-		sk_dst_reset(sk);
+		emcom_logi("sk: %pK source mark: %d, bind_device: %d", sk, sk->sk_mark, bind_device);
+		sk_mark_low = sk->sk_mark & MPROUTE_FWMARK_NEW_MASK;
+		if (!sk->is_modify_sk_mark || (sk_mark_low >= MPROUTE_SK_MARK_MIN && sk_mark_low <= MPROUTE_SK_MARK_MAX)) {
+			if (!emcom_xengine_mpflow_ai_rehash_sk(sk)) {
+				emcom_loge("rehash failed");
+				return;
+			}
+			inet = inet_sk(sk);
+			if (inet->inet_saddr != 0)
+				inet->inet_saddr = 0;
+			sk->sk_mark = (sk->sk_mark & MPROUTE_FWMARK_CONTROL_MASK) | (bind_device & MPROUTE_FWMARK_NEW_MASK);
+			emcom_logd("sk: %pK, new mark: %d", sk, sk->sk_mark);
+			sk_dst_reset(sk);
+		}
 	}
 }
 
@@ -1884,6 +1892,21 @@ void emcom_xengine_mpflow_ai_bind2device(struct sock *sk, struct sockaddr *uaddr
 	spin_unlock_bh(&g_mpflow_ai_lock);
 
 	emcom_xengine_mpflow_ai_bind2device_proc(app, uaddr, sk, bind_device, index, dport, uid);
+}
+
+void emcom_xengine_mpflow_ai_reset_app_port_bind_mode(void)
+{
+	int app_index;
+	int port_index;
+
+	spin_lock_bh(&g_mpflow_ai_lock);
+	for (app_index = 0; app_index < EMCOM_MPFLOW_AI_MAX_APP; app_index++) {
+		if (g_mpflow_ai_uids[app_index].uid != UID_INVALID_APP) {
+			for (port_index = 0; port_index < EMCOM_MPFLOW_BIND_PORT_SIZE; port_index++)
+				g_mpflow_ai_uids[app_index].ports[port_index].bind_mode = EMCOM_MPFLOW_BIND_NONE;
+		}
+	}
+	spin_unlock_bh(&g_mpflow_ai_lock);
 }
 
 MODULE_LICENSE("GPL v2");

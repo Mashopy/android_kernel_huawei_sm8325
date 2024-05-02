@@ -23,6 +23,7 @@
 #include <linux/topology.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/cpu.h>
 #include <linux/cpumask.h>

@@ -31,7 +31,7 @@ enum {
 	// By similar pages we mean that they have at least one sample in
 	// common even if at different offsets.
 	// To use LZ-class(+entropy) algorithm for delta-compression of similar pages
-	// minimum sample size may be 3 bytesl
+	// minimum sample size may be 3 bytes
 	// With 3 bytes sample one does not need to calculate hashes at all.
 	// Instead, 3 bytes cast to int32_t, can be used as hash.
 	// Reasonable size of sample - to have proper delta compression gains - may

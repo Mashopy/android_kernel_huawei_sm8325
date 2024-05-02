@@ -53,10 +53,20 @@
 #ifdef CONFIG_SDSIM_MUX
 #include <linux/mmc/sdhci_mux_sdsim.h>
 #endif
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+#include <linux/mmc/dsm_emmc.h>
+#include "../host/cqhci.h"
+#endif
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/mago_mmc_host.h>
+#endif
 
 /* The max erase timeout, used when host->max_busy_timeout isn't specified */
 #define MMC_ERASE_TIMEOUT_MS	(60 * 1000) /* 60 s */
 #define SD_DISCARD_TIMEOUT_MS	(250)
+#ifdef CONFIG_DISK_MAGO
+#define MMC_MAX_RETRY_TIMS  3
+#endif
 
 static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 
@@ -743,8 +753,11 @@ int mmc_init_clk_scaling(struct mmc_host *host)
 		mmc_classdev(host),
 		host->clk_scaling.devfreq,
 		host->ios.clock);
-
+#ifdef CONFIG_DISK_MAGO
+	host->clk_scaling.enable = false;
+#else
 	host->clk_scaling.enable = true;
+#endif
 	host->clk_scaling.is_suspended = false;
 
 	return err;
@@ -1011,6 +1024,9 @@ void mmc_request_done(struct mmc_host *host, struct mmc_request *mrq)
 				mrq->stop->resp[2], mrq->stop->resp[3]);
 		}
 	}
+#ifdef CONFIG_DISK_MAGO
+	mago_mmc_io_latency_mrq_end(host, mrq);
+#endif
 	/*
 	 * Request starter must handle retries - see
 	 * mmc_wait_for_req_done().
@@ -1171,7 +1187,11 @@ int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 }
 EXPORT_SYMBOL(mmc_start_request);
 
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+void mmc_wait_done(struct mmc_request *mrq)
+#else
 static void mmc_wait_done(struct mmc_request *mrq)
+#endif
 {
 	complete(&mrq->completion);
 }
@@ -1215,7 +1235,10 @@ void mmc_wait_for_req_done(struct mmc_host *host, struct mmc_request *mrq)
 		wait_for_completion(&mrq->completion);
 
 		cmd = mrq->cmd;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+		if (!strcmp(mmc_hostname(host), "mmc0"))
+			mmc_dsm_request_response_error_check(host, mrq);
+#endif
 		/*
 		 * If host has timed out waiting for the sanitize
 		 * to complete, card might be still in programming state
@@ -1332,6 +1355,9 @@ void mmc_cqe_request_done(struct mmc_host *host, struct mmc_request *mrq)
 			 mmc_hostname(host),
 			 mrq->data->bytes_xfered, mrq->data->error);
 	}
+#ifdef CONFIG_DISK_MAGO
+	mago_mmc_io_latency_mrq_end(host, mrq);
+#endif
 
 	mrq->done(mrq);
 }
@@ -1365,7 +1391,9 @@ int mmc_cqe_recovery(struct mmc_host *host)
 {
 	struct mmc_command cmd;
 	int err;
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	struct cqhci_host *cq_host = host->cqe_private;
+#endif
 	mmc_retune_hold_now(host);
 
 	/*
@@ -1390,7 +1418,12 @@ int mmc_cqe_recovery(struct mmc_host *host)
 	cmd.flags       &= ~MMC_RSP_CRC; /* Ignore CRC */
 	cmd.busy_timeout = MMC_CQE_RECOVERY_TIMEOUT,
 	err = mmc_wait_for_cmd(host, &cmd, 0);
-
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+	if (mmc_card_mmc(host->card) && (!strcmp(mmc_hostname(host), "mmc0")) && cq_host!= NULL)
+		DSM_EMMC_LOG(host->card, DSM_EMMC_CQE_RECOVERY,
+			"%s:mmc_wait_for_cmd return err is %d, CQHCI_TERRI=0x%08x\n",
+			__func__, err, cqhci_readl(cq_host, CQHCI_TERRI));
+#endif
 	host->cqe_ops->cqe_recovery_finish(host);
 
 	mmc_retune_release(host);
@@ -2244,11 +2277,40 @@ void mmc_power_off(struct mmc_host *host)
 // modify by hw
 EXPORT_SYMBOL(mmc_power_off);
 
+#ifdef CONFIG_DISK_MAGO
+static int mmc_vccq_rst_pwr_cycle(struct mmc_host *host)
+{
+	int ret = 0;
+
+	if (host->emmc_vccq_gpio >= 0) {
+		ret = emmc_gpio_set_value(host->emmc_vccq_gpio, 0);
+		if (ret != 0)
+ 			pr_err("%s: emmc_gpio_set_value vccq 0 error ret %d\n", mmc_hostname(host), ret);
+		msleep(30);
+		ret = emmc_gpio_set_value(host->emmc_vccq_gpio, 1);
+		if (ret != 0)
+ 			pr_err("%s: emmc_gpio_set_value vccq 1 error ret %d\n", mmc_hostname(host), ret);
+		msleep(30);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+#endif
+
 void mmc_power_cycle(struct mmc_host *host, u32 ocr)
 {
+#ifdef CONFIG_DISK_MAGO
+	int ret = 0;
+#endif
 	mmc_power_off(host);
 	/* Wait at least 1 ms according to SD spec */
 	mmc_delay(1);
+#ifdef CONFIG_DISK_MAGO
+	ret = mmc_vccq_rst_pwr_cycle(host);
+	if (ret)
+		pr_err("%s: %s: emmc reset gpio parse error", mmc_hostname(host), __func__);
+#endif
 	mmc_power_up(host, ocr);
 }
 
@@ -2633,6 +2695,11 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 		/* Do not retry else we can't see errors */
 		err = mmc_wait_for_cmd(card->host, &cmd, 0);
 		if (err || R1_STATUS(cmd.resp[0])) {
+#ifdef CONFIG_HUAWEI_EMMC_DSM
+			if (!mmc_card_sd(card) && (!strcmp(mmc_hostname(card->host), "mmc0")))
+				DSM_EMMC_LOG(card, DSM_EMMC_ERASE_ERR,
+					"%s:error %d requesting status %#x\n", __FUNCTION__, err, cmd.resp[0]);
+#endif
 			pr_err("error %d requesting status %#x\n",
 				err, cmd.resp[0]);
 			err = -EIO;
@@ -3024,13 +3091,66 @@ int mmc_sw_reset(struct mmc_host *host)
 }
 EXPORT_SYMBOL(mmc_sw_reset);
 
+ /*
+ * Starting point for MMC card init, if failed, try 3 times.
+ */
+#ifdef CONFIG_DISK_MAGO
+static int mmc_attach_mmc_with_retry(struct mmc_host *host)
+{
+	int mmc_hw_reset_retry_times = 0;
+	int ret;
+
+	while (mmc_hw_reset_retry_times < MMC_MAX_RETRY_TIMS) {
+		if (mmc_attach_mmc(host)) {
+			/* config reset gpio */
+			mmc_power_off(host);
+			mmc_delay(1);
+			ret = mmc_vccq_rst_pwr_cycle(host);
+			if (!ret) {
+				/* power up */
+				mmc_power_up(host, host->ocr_avail);
+				/* some device need */
+				mmc_hw_reset_for_init(host);
+				mmc_go_idle(host);
+			} else {
+				pr_err("%s: %s: emmc reset gpio parse error", mmc_hostname(host), __func__);
+			}
+		} else {
+			pr_err("%s: %s: mmc_attach_success", mmc_hostname(host), __func__);
+			return 0;
+		}
+		mmc_hw_reset_retry_times++;
+	}
+
+	return -EINVAL;
+}
+#endif
+
 static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 {
+#ifdef CONFIG_DISK_MAGO
+	int ret;
+#endif
 	host->f_init = freq;
 
 	pr_debug("%s: %s: trying to init card at %u Hz\n",
 		mmc_hostname(host), __func__, host->f_init);
+#ifdef CONFIG_DISK_MAGO
+	ret = emmc_gpio_set_value(host->emmc_vccq_gpio, 1);
+	msleep(10);
+	if (ret != 0) {
+		pr_err("%s: emmc_gpio_set_value vccq error ret %d\n", ret);
+		return ret;
+	}
 
+	ret = emmc_gpio_set_value(host->emmc_rst_gpio, 1);
+	if (ret != 0) {
+		pr_err("%s: emmc_gpio_set_value reset error ret %d\n", ret);
+		return ret;
+	}
+
+	msleep(10);
+#endif
 	mmc_power_up(host, host->ocr_avail);
 
 	/*
@@ -3062,10 +3182,15 @@ static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 		if (!mmc_attach_sd(host))
 			return 0;
 
-	if (!(host->caps2 & MMC_CAP2_NO_MMC))
+	if (!(host->caps2 & MMC_CAP2_NO_MMC)) {
+#ifdef CONFIG_DISK_MAGO
+		if (!mmc_attach_mmc_with_retry(host))
+			return 0;
+#else
 		if (!mmc_attach_mmc(host))
 			return 0;
-
+#endif
+	}
 	mmc_power_off(host);
 	return -EIO;
 }

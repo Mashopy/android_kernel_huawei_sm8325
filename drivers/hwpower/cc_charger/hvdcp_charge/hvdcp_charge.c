@@ -33,9 +33,6 @@
 #define HWLOG_TAG hvdcp_charge
 HWLOG_REGIST();
 
-static unsigned int g_hvdcp_rt_current_thld;
-static unsigned int g_hvdcp_rt_time;
-static bool g_hvdcp_rt_result;
 static bool g_hvdcp_charging_flag;
 static unsigned int g_hvdcp_charging_stage = HVDCP_STAGE_DEFAUTL;
 static unsigned int g_hvdcp_master_error_cnt;
@@ -54,39 +51,6 @@ static const char * const g_hvdcp_charging_stage_str[HVDCP_STAGE_END] = {
 	[HVDCP_STAGE_RESET_ADAPTER] = "hvdcp_stage_reset_adapter",
 	[HVDCP_STAGE_ERROR] = "hvdcp_stage_error",
 };
-
-unsigned int hvdcp_get_rt_current_thld(void)
-{
-	return g_hvdcp_rt_current_thld;
-}
-
-void hvdcp_set_rt_current_thld(unsigned int curr)
-{
-	g_hvdcp_rt_current_thld = curr;
-	hwlog_info("set_rt_current_thld: curr=%u\n", curr);
-}
-
-unsigned int hvdcp_get_rt_time(void)
-{
-	return g_hvdcp_rt_time;
-}
-
-void hvdcp_set_rt_time(unsigned int time)
-{
-	g_hvdcp_rt_time = time;
-	hwlog_info("set_rt_time: time=%u\n", time);
-}
-
-bool hvdcp_get_rt_result(void)
-{
-	return g_hvdcp_rt_result;
-}
-
-void hvdcp_set_rt_result(bool result)
-{
-	g_hvdcp_rt_result = result;
-	hwlog_info("set_rt_result: result=%d\n", result);
-}
 
 bool hvdcp_get_charging_flag(void)
 {
@@ -338,9 +302,6 @@ void hvdcp_check_master_status(void)
 bool hvdcp_check_running_current(int cur)
 {
 	int ichg;
-
-	if (!power_cmdline_is_factory_mode())
-		return false;
 
 	if (!hvdcp_get_charging_flag())
 		return false;

@@ -48,6 +48,7 @@ enum power_ui_sysfs_type {
 	POWER_UI_SYSFS_WATER_STATUS,
 	POWER_UI_SYSFS_HEATING_STATUS,
 	POWER_UI_SYSFS_ICON_TYPE,
+	POWER_UI_SYSFS_INNER_MAX_POWER,
 	POWER_UI_SYSFS_END,
 };
 
@@ -61,6 +62,7 @@ struct power_ui_info {
 	int water_status;
 	int heating_status;
 	int icon_type;
+	int inner_max_power;
 };
 
 struct power_ui_dev {

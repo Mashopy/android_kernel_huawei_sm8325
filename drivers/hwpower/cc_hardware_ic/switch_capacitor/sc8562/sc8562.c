@@ -20,6 +20,7 @@
 #include "sc8562.h"
 #include "sc8562_i2c.h"
 #include "sc8562_scp.h"
+#include "sc8565_ovp_switch.h"
 #include <linux/delay.h>
 #include <chipset_common/hwpower/common_module/power_dts.h>
 #include <chipset_common/hwpower/common_module/power_event_ne.h>
@@ -32,15 +33,16 @@
 #define HWLOG_TAG sc8562_chg
 HWLOG_REGIST();
 
+#define SC8562_REG_DUMP_MAX_NUM  0x14
+
 static void sc8562_dump_register(struct sc8562_device_info *di)
 {
-	u8 i;
-	u8 val = 0;
+	int i;
+	u8 value[SC8562_REG_DUMP_MAX_NUM] = { 0 };
 
-	for (i = SC8562_VBAT_OVP_REG; i <= SC8562_PMID2OUT_UVP_REG; i++) {
-		if (!sc8562_read_byte(di, i, &val))
-			hwlog_info("reg[0x%x]=0x%x", i, val);
-	}
+	sc8562_read_block(di, SC8562_VBAT_OVP_REG, value, SC8562_REG_DUMP_MAX_NUM);
+	for (i = 0; i < SC8562_REG_DUMP_MAX_NUM; i++)
+		hwlog_info("ic_%u reg[0x%x]=0x%x\n", di->ic_role, SC8562_VBAT_OVP_REG + i, value[i]);
 }
 
 static int sc8562_discharge(int enable, void *dev_data)
@@ -81,17 +83,19 @@ static int sc8562_get_device_id(void *dev_data)
 	ret = sc8562_read_byte(di, SC8562_DEVICE_ID_REG, &part_info);
 	if (ret) {
 		di->get_id_time = SC8562_NOT_USED;
-		hwlog_err("get_device_id read failed\n");
+		hwlog_err("ic_%u get_device_id read failed\n", di->ic_role);
 		return SC8562_DEVICE_ID_GET_FAIL;
 	}
 
 	if (part_info == SC8562_DEVICE_ID_SC8562)
 		di->device_id = SWITCHCAP_SC8562;
+	else if (part_info == SC8565_DEVICE_ID_SC8562)
+		di->device_id = SWITCHCAP_SC8565;
 	else
 		di->device_id = SC8562_DEVICE_ID_GET_FAIL;
 
-	hwlog_info("get_device_id [%x]=0x%x, device_id: 0x%x\n",
-		SC8562_DEVICE_ID_REG, part_info, di->device_id);
+	hwlog_info("ic_%u get_device_id [%x]=0x%x, device_id: 0x%x\n",
+		di->ic_role, SC8562_DEVICE_ID_REG, part_info, di->device_id);
 
 	return di->device_id;
 }
@@ -111,7 +115,7 @@ static int sc8562_get_vbat_mv(void *dev_data)
 	/* VBAT ADC LBS: 1.25mV */
 	vbat = (int)data * 125 / 100;
 
-	hwlog_info("VBAT_ADC=0x%x, vbat=%d\n", data, vbat);
+	hwlog_info("ic_%u VBAT_ADC=0x%x, vbat=%d\n", di->ic_role, data, vbat);
 
 	return vbat;
 }
@@ -128,12 +132,17 @@ static int sc8562_get_ibat_ma(int *ibat, void *dev_data)
 	if (sc8562_read_word(di, SC8562_IBAT_ADC1_REG, &data))
 		return -EIO;
 
-	/* IBAT ADC LBS: 3.125mA */
-	ibat_ori = (int)data * 3125 / 1000;
+	if (di->device_id == SWITCHCAP_SC8565)
+		/* IBAT ADC LBS: 3.75mA */
+		ibat_ori = (int)data * 375 / 100;
+	else
+		/* IBAT ADC LBS: 3.125mA */
+		ibat_ori = (int)data * 3125 / 1000;
 	*ibat = ibat_ori * di->sense_r_config;
 	*ibat /= di->sense_r_actual;
 
-	hwlog_info("IBAT_ADC=0x%x ibat_ori=%d ibat=%d\n", data, ibat_ori, *ibat);
+	hwlog_info("ic_%u IBAT_ADC=0x%x ibat_ori=%d ibat=%d\n",
+		di->ic_role, data, ibat_ori, *ibat);
 
 	return 0;
 }
@@ -152,7 +161,7 @@ static int sc8562_get_ibus_ma(int *ibus, void *dev_data)
 	/* IBUS ADC LBS: 1.5625mA */
 	*ibus = (int)data * 6400 / 4096;
 
-	hwlog_info("IBUS_ADC=0x%x, ibus=%d\n", data, *ibus);
+	hwlog_info("ic_%u IBUS_ADC=0x%x, ibus=%d\n", di->ic_role, data, *ibus);
 
 	return 0;
 }
@@ -171,7 +180,7 @@ int sc8562_get_vbus_mv(int *vbus, void *dev_data)
 	/* VBUS ADC LBS: 6.25mV */
 	*vbus = (int)data * 6250 / 1000;
 
-	hwlog_info("VBUS_ADC=0x%x, vbus=%d\n", data, *vbus);
+	hwlog_info("ic_%u VBUS_ADC=0x%x, vbus=%d\n", di->ic_role, data, *vbus);
 
 	return 0;
 }
@@ -190,7 +199,7 @@ static int sc8562_get_vusb_mv(int *vusb, void *dev_data)
 	/* VUSB_ADC LSB: 6.25mV */
 	*vusb = (int)data * 625 / 100;
 
-	hwlog_info("VUSB_ADC=0x%x, vusb=%d\n", data, *vusb);
+	hwlog_info("ic_%u VUSB_ADC=0x%x, vusb=%d\n", di->ic_role, data, *vusb);
 
 	return 0;
 }
@@ -209,7 +218,7 @@ static int sc8562_get_device_temp(int *temp, void *dev_data)
 	/* TDIE_ADC LSB: 0.5C */
 	*temp = (int)data * 5 / 10;
 
-	hwlog_info("TDIE_ADC=0x%x temp=%d\n", data, *temp);
+	hwlog_info("ic_%u TDIE_ADC=0x%x temp=%d\n", di->ic_role, data, *temp);
 
 	return 0;
 }
@@ -228,7 +237,7 @@ static int sc8562_get_vout_mv(int *vout, void *dev_data)
 	/* VOUT_ADC LSB: 1.25mV */
 	*vout = (int)data * 125 / 100;
 
-	hwlog_info("VOUT_ADC=0x%x, vout=%d\n", data, *vout);
+	hwlog_info("ic_%u VOUT_ADC=0x%x, vout=%d\n", di->ic_role, data, *vout);
 
 	return 0;
 }
@@ -242,6 +251,9 @@ static int sc8562_config_watchdog_ms(int time, void *dev_data)
 
 	if (!di)
 		return -EPERM;
+
+	if (di->watchdog_time && time > 0)
+		time = (time > di->watchdog_time) ? time : di->watchdog_time;
 
 	if (time >= SC8562_WD_TMR_TIMING_30000MS)
 		val = SC8562_WD_TMR_30000MS;
@@ -262,7 +274,8 @@ static int sc8562_config_watchdog_ms(int time, void *dev_data)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_watchdog_ms [%x]=0x%x\n", SC8562_CTRL3_REG, reg);
+	hwlog_info("ic_%u config_watchdog_ms [%x]=0x%x\n",
+		di->ic_role, SC8562_CTRL3_REG, reg);
 	return 0;
 }
 
@@ -289,8 +302,8 @@ static int sc8562_config_vbat_ovp_th_mv(struct sc8562_device_info *di, int ovp_t
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_vbat_ovp_threshold_mv [%x]=0x%x\n",
-		SC8562_VBAT_OVP_REG, vbat);
+	hwlog_info("ic_%u config_vbat_ovp_threshold_mv [%x]=0x%x\n",
+		di->ic_role, SC8562_VBAT_OVP_REG, vbat);
 
 	return 0;
 }
@@ -313,8 +326,8 @@ static int sc8562_config_ibat_ocp_th_ma(struct sc8562_device_info *di, int ocp_t
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_ibat_ocp_threshold_ma [%x]=0x%x\n",
-		SC8562_IBAT_OCP_REG, value);
+	hwlog_info("ic_%u config_ibat_ocp_threshold_ma [%x]=0x%x\n",
+		di->ic_role, SC8562_IBAT_OCP_REG, value);
 	return 0;
 }
 
@@ -323,23 +336,44 @@ int sc8562_config_vusb_ovp_th_mv(struct sc8562_device_info *di, int ovp_th)
 	u8 value;
 	int ret;
 
-	if (ovp_th < SC8562_VUSB_OVP_MIN) {
-		ovp_th = SC8562_VUSB_OVP_DEF;
-		value = SC8562_VUSB_OVP_DEF_VAL;
-	} else if (ovp_th > SC8562_VUSB_OVP_MAX) {
-		ovp_th = SC8562_VUSB_OVP_MAX;
-		value = (u8)((ovp_th - SC8562_VUSB_OVP_MIN) / SC8562_VUSB_OVP_STEP);
-	} else {
-		value = (u8)((ovp_th - SC8562_VUSB_OVP_MIN) / SC8562_VUSB_OVP_STEP);
-	}
+	if (ovp_th < SC8562_VUSB_VWPC_OVP_MIN)
+		value = SC8562_VUSB_VWPC_OVP_DEF_VAL;
+	else if (ovp_th >= SC8562_VUSB_VWPC_OVP_MAX)
+		value = SC8562_VUSB_VWPC_OVP_MAX_VAL;
+	else
+		value = (u8)((ovp_th - SC8562_VUSB_VWPC_OVP_MIN) / SC8562_VUSB_VWPC_OVP_STEP);
+
 	ret = sc8562_write_mask(di, SC8562_VUSB_OVP_REG, SC8562_VUSB_OVP_TH_MASK,
 		SC8562_VUSB_OVP_TH_SHIFT, value);
 	ret += sc8562_read_byte(di, SC8562_VUSB_OVP_REG, &value);
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_vusb_ovp_threshold_mv [%x]=0x%x\n",
-		SC8562_VUSB_OVP_REG, value);
+	hwlog_info("ic_%u config_vusb_ovp_threshold_mv [%x]=0x%x\n",
+		di->ic_role, SC8562_VUSB_OVP_REG, value);
+	return 0;
+}
+
+static int sc8562_config_vwpc_ovp_th_mv(struct sc8562_device_info *di, int ovp_th)
+{
+	u8 value;
+	int ret;
+
+	if (ovp_th < SC8562_VUSB_VWPC_OVP_MIN)
+		value = SC8562_VUSB_VWPC_OVP_DEF_VAL;
+	else if (ovp_th >= SC8562_VUSB_VWPC_OVP_MAX)
+		value = SC8562_VUSB_VWPC_OVP_MAX_VAL;
+	else
+		value = (u8)((ovp_th - SC8562_VUSB_VWPC_OVP_MIN) / SC8562_VUSB_VWPC_OVP_STEP);
+
+	ret = sc8562_write_mask(di, SC8562_VWPC_OVP_REG, SC8562_VWPC_OVP_TH_MASK,
+		SC8562_VWPC_OVP_TH_SHIFT, value);
+	ret += sc8562_read_byte(di, SC8562_VWPC_OVP_REG, &value);
+	if (ret)
+		return -EIO;
+
+	hwlog_info("ic_%u config_vwpc_ovp_threshold_mv [%x]=0x%x\n",
+		di->ic_role, SC8562_VWPC_OVP_REG, value);
 	return 0;
 }
 
@@ -361,8 +395,8 @@ int sc8562_config_vout_ovp_th_mv(struct sc8562_device_info *di, int ovp_th)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_vout_ovp_threshold_mv [%x]=0x%x\n",
-		SC8562_VOUT_VBUS_OVP_REG, value);
+	hwlog_info("ic_%u config_vout_ovp_threshold_mv [%x]=0x%x\n",
+		di->ic_role, SC8562_VOUT_VBUS_OVP_REG, value);
 	return 0;
 }
 
@@ -382,6 +416,7 @@ int sc8562_config_vbus_ovp_th_mv(struct sc8562_device_info *di, int ovp_th, int 
 		value = (u8)((ovp_th - SC8562_VBUS_OVP_FBPSC_MIN) / SC8562_VBUS_OVP_FBPSC_STEP);
 		break;
 	case SC8562_CHG_F21SC_MODE:
+	case SC8562_CHG_R12_CONVERTER_MODE:
 		if (ovp_th < SC8562_VBUS_OVP_F21SC_MIN)
 			ovp_th = SC8562_VBUS_OVP_F21SC_MIN;
 
@@ -416,8 +451,8 @@ int sc8562_config_vbus_ovp_th_mv(struct sc8562_device_info *di, int ovp_th, int 
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_vbus_ovp_threshole_mv [%x]=0x%x\n",
-		SC8562_VOUT_VBUS_OVP_REG, value);
+	hwlog_info("ic_%u config_vbus_ovp_threshole_mv [%x]=0x%x\n",
+		di->ic_role, SC8562_VOUT_VBUS_OVP_REG, value);
 	return 0;
 }
 
@@ -439,8 +474,8 @@ static int sc8562_config_ibus_ocp_th_ma(struct sc8562_device_info *di, int ocp_t
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_ibus_ocp_threshold_ma [%x]=0x%x\n",
-		SC8562_IBUS_OCP_REG, value);
+	hwlog_info("ic_%u config_ibus_ocp_threshold_ma [%x]=0x%x\n",
+		di->ic_role, SC8562_IBUS_OCP_REG, value);
 	return 0;
 }
 
@@ -459,15 +494,19 @@ static int sc8562_config_switching_frequency(int data, struct sc8562_device_info
 	freq_shift = SC8562_SW_FREQ_SHIFT_NORMAL;
 	ret = sc8562_write_mask(di, SC8562_CTRL2_REG, SC8562_CTRL2_FSW_SET_MASK,
 		SC8562_CTRL2_FSW_SET_SHIFT, freq);
-	ret += sc8562_write_mask(di, SC8562_CTRL2_REG, SC8562_CTRL2_FREQ_DITHER_MASK,
-		SC8562_CTRL2_FREQ_DITHER_SHIFT, freq_shift);
+	if (di->device_id == SWITCHCAP_SC8565)
+		ret += sc8562_write_mask(di, SC8562_CTRL2_REG, SC8565_CTRL2_FREQ_DITHER_MASK,
+			SC8565_CTRL2_FREQ_DITHER_SHIFT, freq_shift);
+	else
+		ret += sc8562_write_mask(di, SC8562_CTRL2_REG, SC8562_CTRL2_FREQ_DITHER_MASK,
+			SC8562_CTRL2_FREQ_DITHER_SHIFT, freq_shift);
 	if (ret)
 		return -EIO;
 
-	hwlog_info("config_switching_frequency [%x]=0x%x\n",
-		SC8562_CTRL2_REG, freq);
-	hwlog_info("config_adjustable_switching_frequency [%x]=0x%x\n",
-		SC8562_CTRL2_REG, freq_shift);
+	hwlog_info("ic_%u config_switching_frequency [%x]=0x%x\n",
+		di->ic_role, SC8562_CTRL2_REG, freq);
+	hwlog_info("ic_%u config_adjustable_switching_frequency [%x]=0x%x\n",
+		di->ic_role, SC8562_CTRL2_REG, freq_shift);
 
 	return 0;
 }
@@ -487,44 +526,50 @@ static int sc8562_config_ibat_sns_res(struct sc8562_device_info *di)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("congfig_ibat_sns_res=%d\n", di->sense_r_config);
+	hwlog_info("ic_%u congfig_ibat_sns_res=%d\n",
+		di->ic_role, di->sense_r_config);
 	return 0;
 }
 
 static int sc8562_threshold_reg_init(struct sc8562_device_info *di, u8 mode)
 {
-	int ret, vbus_ovp, vusb_ovp, ibat_ocp, ibus_ocp;
+	int ret, vbus_ovp, vwpc_ovp, vusb_ovp, ibat_ocp, ibus_ocp;
 
 	if (mode == SC8562_CHG_FBYPASS_MODE) {
 		vbus_ovp = SC8562_VBUS_OVP_FBPSC_INIT;
-		vusb_ovp = SC8562_VUSB_OVP_DEF;
+		vusb_ovp = SC8562_VUSB_VWPC_OVP_DEF;
+		vwpc_ovp = SC8562_VUSB_VWPC_OVP_F21SC_INIT;
 		ibat_ocp = SC8562_IBAT_OCP_FBPSC_INIT;
 		ibus_ocp = SC8562_IBUS_OCP_FBPSC_INIT;
-	} else if (mode == SC8562_CHG_F21SC_MODE) {
+	} else if (mode == SC8562_CHG_F21SC_MODE || mode == SC8562_CHG_R12_CONVERTER_MODE) {
 		vbus_ovp = SC8562_VBUS_OVP_F21SC_INIT;
-		vusb_ovp = SC8562_VUSB_OVP_F21SC_INIT;
-		ibat_ocp = SC8562_IBAT_OCP_F21SC_INIT;
-		ibus_ocp = SC8562_IBUS_OCP_F21SC_INIT;
+		vusb_ovp = SC8562_VUSB_VWPC_OVP_F21SC_INIT;
+		vwpc_ovp = SC8562_VUSB_VWPC_OVP_F21SC_INIT;
+		ibat_ocp = di->sc_ibat_ocp;
+		ibus_ocp = di->sc_ibus_ocp;
 	} else if (mode == SC8562_CHG_F41SC_MODE) {
 		vbus_ovp = SC8562_VBUS_OVP_F41SC_INIT;
-		vusb_ovp = SC8562_VUSB_OVP_F41SC_INIT;
-		ibat_ocp = SC8562_IBAT_OCP_F41SC_INIT;
-		ibus_ocp = SC8562_IBUS_OCP_F41SC_INIT;
+		vusb_ovp = SC8562_VUSB_VWPC_OVP_F41SC_INIT;
+		vwpc_ovp = SC8562_VUSB_VWPC_OVP_F41SC_INIT;
+		ibat_ocp = di->sc4_ibat_ocp;
+		ibus_ocp = di->sc4_ibus_ocp;
 	} else {
 		vbus_ovp = SC8562_VBUS_OVP_F21SC_INIT;
-		vusb_ovp = SC8562_VUSB_OVP_F21SC_INIT;
-		ibat_ocp = SC8562_IBAT_OCP_F21SC_INIT;
-		ibus_ocp = SC8562_IBUS_OCP_F21SC_INIT;
+		vusb_ovp = SC8562_VUSB_VWPC_OVP_F21SC_INIT;
+		vwpc_ovp = SC8562_VUSB_VWPC_OVP_F21SC_INIT;
+		ibat_ocp = di->sc_ibat_ocp;
+		ibus_ocp = di->sc_ibus_ocp;
 	}
 
 	ret = sc8562_config_vusb_ovp_th_mv(di, vusb_ovp);
+	ret += sc8562_config_vwpc_ovp_th_mv(di, vwpc_ovp);
 	ret += sc8562_config_vout_ovp_th_mv(di, SC8562_VOUT_OVP_INIT);
 	ret += sc8562_config_vbus_ovp_th_mv(di, vbus_ovp, mode);
 	ret += sc8562_config_ibus_ocp_th_ma(di, ibus_ocp);
 	ret += sc8562_config_vbat_ovp_th_mv(di, SC8562_VBAT_OVP_INIT);
 	ret += sc8562_config_ibat_ocp_th_ma(di, ibat_ocp);
 	if (ret)
-		hwlog_err("protect threshold init failed\n");
+		hwlog_err("ic_%u protect threshold init failed\n", di->ic_role);
 
 	di->charge_mode = mode;
 	return ret;
@@ -553,7 +598,7 @@ static int sc8562_lvc_charge_enable(int enable, void *dev_data)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("ic_role=%d, lvc_charge_enable [%x]=0x%x, [%x]=0x%x\n",
+	hwlog_info("ic_role=%u, lvc_charge_enable [%x]=0x%x, [%x]=0x%x\n",
 		di->ic_role, SC8562_CTRL1_REG, ctrl1_reg,
 		SC8562_CTRL4_REG, ctrl4_reg);
 	return 0;
@@ -582,7 +627,7 @@ static int sc8562_sc_charge_enable(int enable, void *dev_data)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("ic_role=%d, sc_charge_enable [%x]=0x%x, [%x]=0x%x\n",
+	hwlog_info("ic_role=%u, sc_charge_enable [%x]=0x%x, [%x]=0x%x\n",
 		di->ic_role, SC8562_CTRL1_REG, ctrl1_reg,
 		SC8562_CTRL4_REG, ctrl4_reg);
 	return 0;
@@ -611,12 +656,11 @@ static int sc8562_sc4_charge_enable(int enable, void *dev_data)
 	if (ret)
 		return -EIO;
 
-	hwlog_info("ic_role=%d, sc4_charge_enable [%x]=0x%x, [%x]=0x%x\n",
+	hwlog_info("ic_role=%u, sc4_charge_enable [%x]=0x%x, [%x]=0x%x\n",
 		di->ic_role, SC8562_CTRL1_REG, ctrl1_reg,
 		SC8562_CTRL4_REG, ctrl4_reg);
 	return 0;
 }
-
 static int sc8562_reg_reset(struct sc8562_device_info *di)
 {
 	int ret;
@@ -627,7 +671,8 @@ static int sc8562_reg_reset(struct sc8562_device_info *di)
 		SC8562_CTRL4_REG_RST_MASK, SC8562_CTRL4_REG_RST_SHIFT,
 		SC8562_REG_RST_ENABLE);
 	power_usleep(DT_USLEEP_1MS);
-	ret += sc8562_config_vusb_ovp_th_mv(di, SC8562_VUSB_OVP_F21SC_INIT);
+	ret += sc8562_config_vusb_ovp_th_mv(di, SC8562_VUSB_VWPC_OVP_F21SC_INIT);
+	ret += sc8562_config_vwpc_ovp_th_mv(di, SC8562_VUSB_VWPC_OVP_F21SC_INIT);
 	if (ret)
 		return -EIO;
 
@@ -636,7 +681,8 @@ static int sc8562_reg_reset(struct sc8562_device_info *di)
 		return -EIO;
 
 	di->charge_mode = SC8562_CHG_F21SC_MODE;
-	hwlog_info("reg_reset [%x]=0x%x\n", SC8562_CTRL4_REG, ctrl4_reg);
+	hwlog_info("ic_%u reg_reset [%x]=0x%x\n",
+		di->ic_role, SC8562_CTRL4_REG, ctrl4_reg);
 	return 0;
 }
 
@@ -649,7 +695,7 @@ static int sc8562_reg_init(struct sc8562_device_info *di)
 {
 	int ret;
 
-	ret = sc8562_config_watchdog_ms(SC8562_WD_TMR_TIMING_5000MS, di);
+	ret = sc8562_config_watchdog_ms(SC8562_WD_TMR_TIMING_DIS, di);
 	ret += sc8562_config_ibat_sns_res(di);
 	ret += sc8562_write_byte(di, SC8562_INT_MASK_REG,
 		SC8562_INT_MASK_REG_INIT);
@@ -661,13 +707,19 @@ static int sc8562_reg_init(struct sc8562_device_info *di)
 		SC8562_DP_BUFF_EN_MASK, SC8562_DP_BUFF_EN_SHIFT, SC8562_DP_BUFF_EN_ENABLE);
 	ret += sc8562_write_byte(di, SC8562_SCP_FLAG_MASK_REG,
 		SC8562_SCP_FLAG_MASK_REG_INIT);
-	ret += gpio_direction_output(di->gpio_enable, SC8562_GPIO_ENABLE);
+	ret += sc8562_write_mask(di, SC8562_IBUS_UCP_REG,
+		SC8562_IBUS_UCP_FALL_DG_SET_MASK, SC8562_IBUS_UCP_FALL_DG_SET_SHIFT,
+		SC8562_IBUS_UCP_FALL_DG_DEFAULT);
+	if (di->gpio_enable > 0)
+		ret += gpio_direction_output(di->gpio_enable, SC8562_GPIO_ENABLE);
 	ret += sc8562_write_mask(di, SC8562_FUN_DIS_REG,
 		SC8562_TSBAT_FLT_DIS_MASK, SC8562_TSBAT_FLT_DIS_SHIFT, SC8562_TSBAT_FLT_DIS_DISABLE);
 	ret += sc8562_write_mask(di, SC8562_CTRL3_REG,
 		SC8562_CTRL3_SS_TIMEOUT_MASK, SC8562_CTRL3_SS_TIMEOUT_SHIFT, SC8562_SS_TIMEOUT_DISABLE);
+	if (di->device_id == SWITCHCAP_SC8565)
+		ret += sc8562_write_byte(di, SC8565_CTRL_INITIAL_REG, 0x01); /* sc8565 internal register, need to confirm */
 	if (ret)
-		hwlog_err("reg_init failed %d\n", ret);
+		hwlog_err("ic_%u reg_init failed %d\n", di->ic_role, ret);
 
 	return ret;
 }
@@ -691,7 +743,8 @@ static int sc8562_enable_adc(int enable, void *dev_data)
 	if (ret)
 		return -EPERM;
 
-	hwlog_info("adc_enable [%x]=0x%x\n", SC8562_ADC_CTRL_REG, reg);
+	hwlog_info("ic_%u adc_enable [%x]=0x%x\n",
+		di->ic_role, SC8562_ADC_CTRL_REG, reg);
 	return 0;
 }
 
@@ -717,7 +770,6 @@ static int sc8562_sc_charge_init(void *dev_data)
 {
 	int ret;
 	struct sc8562_device_info *di = dev_data;
-
 
 	if (!di)
 		return -EPERM;
@@ -750,6 +802,20 @@ static int sc8562_sc4_charge_init(void *dev_data)
 	return 0;
 }
 
+static int sc8562_reg_and_threshold_init(void *dev_data)
+{
+	int ret;
+	struct sc8562_device_info *di = dev_data;
+
+	if (!di)
+		return -EPERM;
+
+	ret = sc8562_reg_init(di);
+	ret += sc8562_threshold_reg_init(di, SC8562_CHG_F21SC_MODE);
+
+	return ret;
+}
+
 static int sc8562_reg_reset_and_init(void *dev_data)
 {
 	int ret;
@@ -759,8 +825,7 @@ static int sc8562_reg_reset_and_init(void *dev_data)
 		return -EPERM;
 
 	ret = sc8562_reg_reset(di);
-	ret += sc8562_reg_init(di);
-	ret += sc8562_threshold_reg_init(di, SC8562_CHG_F21SC_MODE);
+	ret += sc8562_reg_and_threshold_init(di);
 
 	return ret;
 }
@@ -846,7 +911,7 @@ static int sc8562_get_register_head(char *buffer, int size, void *dev_data)
 		return -EPERM;
 
 	snprintf(buffer, size,
-		"dev        mode   Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp");
+		"dev       mode   Ibus   Vbus   Ibat   Vusb   Vout   Vbat   Temp   ");
 
 	return 0;
 }
@@ -870,20 +935,22 @@ static int sc8562_value_dump(char *buffer, int size, void *dev_data)
 	(void)sc8562_get_device_temp(&dv.temp, dev_data);
 	(void)sc8562_read_byte(di, SC8562_CTRL4_REG, &val);
 
-	snprintf(buff, sizeof(buff), "%s    ", di->name);
+	snprintf(buff, sizeof(buff), "%-10s", di->name);
 	strncat(buffer, buff, strlen(buff));
 
 	if (sc8562_is_device_close(dev_data))
-		snprintf(buff, sizeof(buff), "%s", "   OFF    ");
+		snprintf(buff, sizeof(buff), "%s", "OFF    ");
 	else if (((val & SC8562_CTRL4_MODE_MASK) >> SC8562_CTRL4_MODE_SHIFT) ==
 		SC8562_CHG_FBYPASS_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   LVC    ");
+		snprintf(buff, sizeof(buff), "%s", "LVC    ");
 	else if (((val & SC8562_CTRL4_MODE_MASK) >> SC8562_CTRL4_MODE_SHIFT) ==
 		SC8562_CHG_F21SC_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   SC     ");
+		snprintf(buff, sizeof(buff), "%s", "SC     ");
 	else if (((val & SC8562_CTRL4_MODE_MASK) >> SC8562_CTRL4_MODE_SHIFT) ==
 		SC8562_CHG_F41SC_MODE)
-		snprintf(buff, sizeof(buff), "%s", "   SC4    ");
+		snprintf(buff, sizeof(buff), "%s", "SC4    ");
+	else
+		snprintf(buff, sizeof(buff), "%s", "BUCK   ");
 
 	strncat(buffer, buff, strlen(buff));
 	snprintf(buff, sizeof(buff), "%-7d%-7d%-7d%-7d%-7d%-7d%-7d",
@@ -903,7 +970,7 @@ static struct dc_ic_ops sc8562_lvc_ops = {
 	.get_ic_id = sc8562_get_device_id,
 	.config_ic_watchdog = sc8562_config_watchdog_ms,
 	.kick_ic_watchdog = sc8562_kick_watchdog_ms,
-	.ic_reg_reset_and_init = sc8562_reg_reset_and_init,
+	.ic_reg_reset_and_init = sc8562_reg_and_threshold_init,
 	.set_ic_thld = sc8562_lvc_set_threshold,
 };
 
@@ -917,7 +984,7 @@ static struct dc_ic_ops sc8562_sc_ops = {
 	.get_ic_id = sc8562_get_device_id,
 	.config_ic_watchdog = sc8562_config_watchdog_ms,
 	.kick_ic_watchdog = sc8562_kick_watchdog_ms,
-	.ic_reg_reset_and_init = sc8562_reg_reset_and_init,
+	.ic_reg_reset_and_init = sc8562_reg_and_threshold_init,
 	.set_ic_thld = sc8562_sc_set_threshold,
 };
 
@@ -931,7 +998,7 @@ static struct dc_ic_ops sc8562_sc4_ops = {
 	.get_ic_id = sc8562_get_device_id,
 	.config_ic_watchdog = sc8562_config_watchdog_ms,
 	.kick_ic_watchdog = sc8562_kick_watchdog_ms,
-	.ic_reg_reset_and_init = sc8562_reg_reset_and_init,
+	.ic_reg_reset_and_init = sc8562_reg_and_threshold_init,
 	.set_ic_thld = sc8562_sc4_set_threshold,
 };
 
@@ -947,7 +1014,6 @@ static struct dc_batinfo_ops sc8562_batinfo_ops = {
 	.get_ic_vout = sc8562_get_vout_mv,
 	.get_ic_vusb = sc8562_get_vusb_mv,
 };
-
 static struct power_log_ops sc8562_log_ops = {
 	.dev_name = "sc8562",
 	.dump_log_head = sc8562_get_register_head,
@@ -970,7 +1036,7 @@ static void sc8562_init_ops_dev_data(struct sc8562_device_info *di)
 	if (!di->ic_role) {
 		snprintf(di->name, CHIP_DEV_NAME_LEN, "sc8562");
 	} else {
-		snprintf(di->name, CHIP_DEV_NAME_LEN, "sc8562_%d", di->ic_role);
+		snprintf(di->name, CHIP_DEV_NAME_LEN, "sc8562_%u", di->ic_role);
 		di->lvc_ops.dev_name = di->name;
 		di->sc_ops.dev_name = di->name;
 		di->sc4_ops.dev_name = di->name;
@@ -989,11 +1055,15 @@ static void sc8562_ops_register(struct sc8562_device_info *di)
 	ret += dc_ic_ops_register(SC4_MODE, di->ic_role, &di->sc4_ops);
 	ret += dc_batinfo_ops_register(di->ic_role, &di->batinfo_ops, di->device_id);
 	if (ret)
-		hwlog_err("sysinfo ops register failed\n");
+		hwlog_err("ic_%u sysinfo ops register failed\n", di->ic_role);
 
 	ret = sc8562_protocol_ops_register(di);
 	if (ret)
-		hwlog_err("scp or fcp ops register failed\n");
+		hwlog_err("ic_%u scp or fcp ops register failed\n", di->ic_role);
+
+	ret = sc8565_wired_chsw_ops_register(di);
+	if (ret)
+		hwlog_err("ic_%u wired_chsw_ops register failed\n", di->ic_role);
 
 	power_log_ops_register(&di->log_ops);
 }
@@ -1009,36 +1079,36 @@ static void sc8562_interrupt_handle(struct sc8562_device_info *di,
 	int val = 0;
 
 	if (flag[SC8562_IRQ_VUSB_OVP] & SC8562_VUSB_OVP_FLAG_MASK) {
-		hwlog_info("USB OVP happened\n");
+		hwlog_info("ic_%u USB OVP happened\n", di->ic_role);
 		sc8562_fault_event_notify(POWER_NE_DC_FAULT_AC_OVP, data);
 	} else if (flag[SC8562_IRQ_VBAT_OVP] & SC8562_VBAT_OVP_FLAG_MASK) {
 		val = sc8562_get_vbat_mv(di);
-		hwlog_info("BAT OVP happened, vbat=%d\n", val);
+		hwlog_info("ic_%u BAT OVP happened, vbat=%d\n", di->ic_role, val);
 		if (val >= SC8562_VBAT_OVP_INIT)
 			sc8562_fault_event_notify(POWER_NE_DC_FAULT_VBAT_OVP, data);
 	} else if (flag[SC8562_IRQ_IBAT_OCP] & SC8562_IBAT_OCP_FLAG_MASK) {
 		sc8562_get_ibat_ma(&val, di);
-		hwlog_info("BAT OCP happened, ibat=%d\n", val);
+		hwlog_info("ic_%u BAT OCP happened, ibat=%d\n", di->ic_role, val);
 		if (((val >= SC8562_IBAT_OCP_F41SC_INIT) && (di->charge_mode == SC8562_CHG_F41SC_MODE)) ||
 			((val >= SC8562_IBAT_OCP_F21SC_INIT) && (di->charge_mode == SC8562_CHG_F21SC_MODE)) ||
 			((val >= SC8562_IBAT_OCP_FBPSC_INIT) && (di->charge_mode == SC8562_CHG_FBYPASS_MODE)))
 			sc8562_fault_event_notify(POWER_NE_DC_FAULT_IBAT_OCP, data);
 	} else if (flag[SC8562_IRQ_FLT_FLAG] & SC8562_VBUS_OVP_FLAG_MASK) {
 		sc8562_get_vbus_mv(&val, di);
-		hwlog_info("BUS OVP happened, vbus=%d\n", val);
+		hwlog_info("ic_%u BUS OVP happened, vbus=%d\n", di->ic_role, val);
 		if (((val >= SC8562_VBUS_OVP_F41SC_INIT) && (di->charge_mode == SC8562_CHG_F41SC_MODE)) ||
 			((val >= SC8562_VBUS_OVP_F21SC_INIT) && (di->charge_mode == SC8562_CHG_F21SC_MODE)) ||
 			((val >= SC8562_VBUS_OVP_FBPSC_INIT) && (di->charge_mode == SC8562_CHG_FBYPASS_MODE)))
 			sc8562_fault_event_notify(POWER_NE_DC_FAULT_VBUS_OVP, data);
 	} else if (flag[SC8562_IRQ_IBUS_OCP] & SC8562_IBUS_OCP_FLAG_MASK) {
 		sc8562_get_ibus_ma(&val, di);
-		hwlog_info("BUS OCP happened, ibus=%d\n", val);
+		hwlog_info("ic_%u BUS OCP happened, ibus=%d\n", di->ic_role, val);
 		if (((val >= SC8562_IBUS_OCP_F41SC_INIT) && (di->charge_mode == SC8562_CHG_F41SC_MODE)) ||
 			((val >= SC8562_IBUS_OCP_F21SC_INIT) && (di->charge_mode == SC8562_CHG_F21SC_MODE)) ||
 			((val >= SC8562_IBUS_OCP_FBPSC_INIT) && (di->charge_mode == SC8562_CHG_FBYPASS_MODE)))
 			sc8562_fault_event_notify(POWER_NE_DC_FAULT_IBUS_OCP, data);
 	} else if (flag[SC8562_IRQ_FLT_FLAG] & SC8562_VOUT_OVP_FLAG_MASK) {
-		hwlog_info("VOUT OVP happened\n");
+		hwlog_info("ic_%u VOUT OVP happened\n", di->ic_role);
 	}
 
 	if (flag[SC8562_IRQ_SCP_FLAG] & SC8562_TRANS_DONE_FLAG_MASK)
@@ -1076,13 +1146,13 @@ static void sc8562_interrupt_work(struct work_struct *work)
 		sc8562_dump_register(di);
 	}
 
-	hwlog_info("FLAG_VBAT_OVP [0x%x]=0x%x, FLAG_FLT_FLAG [0x%x]=0x%x, FLAG_VUSB_OVP [0x%x]=0x%x\n",
-		SC8562_VBAT_OVP_REG, flag[SC8562_IRQ_VBAT_OVP], SC8562_FLT_FLAG_REG, flag[SC8562_IRQ_FLT_FLAG],
-		SC8562_VUSB_OVP_REG, flag[SC8562_IRQ_VUSB_OVP]);
-	hwlog_info("FLAG_IBUS_OCP [0x%x]=0x%x, FLAG_IBAT_OCP [0x%x]=0x%x, FLAG_SCP_FLAG [0x%x]=0x%x\n",
-		SC8562_IBUS_OCP_REG, flag[SC8562_IRQ_IBUS_OCP], SC8562_IBAT_OCP_REG, flag[SC8562_IRQ_IBAT_OCP],
-		SC8562_SCP_FLAG_MASK_REG, flag[SC8562_IRQ_SCP_FLAG]);
-	hwlog_info("FLAG_INT_FLAG [0x%x]=0x%x\n", SC8562_INT_FLAG_REG, flag[SC8562_IRQ_INT_FLAG]);
+	hwlog_info("ic_%u FLAG_VBAT_OVP [0x%x]=0x%x, FLAG_FLT_FLAG [0x%x]=0x%x, FLAG_VUSB_OVP [0x%x]=0x%x\n",
+		di->ic_role, SC8562_VBAT_OVP_REG, flag[SC8562_IRQ_VBAT_OVP], SC8562_FLT_FLAG_REG,
+		flag[SC8562_IRQ_FLT_FLAG], SC8562_VUSB_OVP_REG, flag[SC8562_IRQ_VUSB_OVP]);
+	hwlog_info("ic_%u FLAG_IBUS_OCP [0x%x]=0x%x, FLAG_IBAT_OCP [0x%x]=0x%x, FLAG_SCP_FLAG [0x%x]=0x%x\n",
+		di->ic_role, SC8562_IBUS_OCP_REG, flag[SC8562_IRQ_IBUS_OCP], SC8562_IBAT_OCP_REG,
+		flag[SC8562_IRQ_IBAT_OCP], SC8562_SCP_FLAG_MASK_REG, flag[SC8562_IRQ_SCP_FLAG]);
+	hwlog_info("ic_%u FLAG_INT_FLAG [0x%x]=0x%x\n", di->ic_role, SC8562_INT_FLAG_REG, flag[SC8562_IRQ_INT_FLAG]);
 
 	enable_irq(di->irq_int);
 }
@@ -1097,7 +1167,7 @@ static irqreturn_t sc8562_interrupt(int irq, void *_di)
 	if (di->init_finish_flag)
 		di->int_notify_enable_flag = true;
 
-	hwlog_info("int happened\n");
+	hwlog_info("ic_%u int happened\n", di->ic_role);
 	disable_irq_nosync(di->irq_int);
 	queue_work(di->int_wq, &di->irq_work);
 
@@ -1109,6 +1179,8 @@ static int sc8562_irq_init(struct sc8562_device_info *di,
 {
 	int ret;
 
+	di->int_wq = create_singlethread_workqueue("sc8562_int_irq");
+	INIT_WORK(&di->irq_work, sc8562_interrupt_work);
 	ret = power_gpio_config_interrupt(np,
 		"gpio_int", "sc8562_gpio_int", &di->gpio_int, &di->irq_int);
 	if (ret)
@@ -1124,8 +1196,6 @@ static int sc8562_irq_init(struct sc8562_device_info *di,
 	}
 
 	enable_irq_wake(di->irq_int);
-	di->int_wq = create_singlethread_workqueue("sc8562_int_irq");
-	INIT_WORK(&di->irq_work, sc8562_interrupt_work);
 
 	return 0;
 }
@@ -1133,26 +1203,32 @@ static int sc8562_irq_init(struct sc8562_device_info *di,
 static int sc8562_gpio_init(struct sc8562_device_info *di,
 	struct device_node *np)
 {
-	if (power_gpio_config_output(np,"gpio_reset", "sc8562_gpio_reset",
+	/* sc8565 has not gpio_reset and gpio_enable */
+	if (of_find_property(np, "gpio_reset", NULL) &&
+		power_gpio_config_output(np, "gpio_reset", "sc8562_gpio_reset",
 		&di->gpio_reset, SC8562_SWITCHCAP_DISABLE))
 		return -EINVAL;
 
-	if (power_gpio_config_output(np, "gpio_enable", "sc8562_gpio_enable",
+	if (of_find_property(np, "gpio_enable", NULL) &&
+		power_gpio_config_output(np, "gpio_enable", "sc8562_gpio_enable",
 		&di->gpio_enable, SC8562_GPIO_ENABLE)) {
-		gpio_free(di->gpio_reset);
+		if (di->gpio_reset > 0)
+			gpio_free(di->gpio_reset);
 		return -EPERM;
 	}
 
 	/* To avoid entering the low-power mode, pull up LPM pin first. */
 	if (power_gpio_config_output(np, "gpio_lpm", "sc8562_gpio_lpm",
 		&di->gpio_lpm, SC8562_GPIO_ENABLE)) {
-		gpio_free(di->gpio_reset);
-		gpio_free(di->gpio_enable);
+		if (di->gpio_reset > 0)
+			gpio_free(di->gpio_reset);
+		if (di->gpio_enable > 0)
+			gpio_free(di->gpio_enable);
 		return -EPERM;
 	}
 
 	/* ic need, ensure that the I2C communication is normal */
-	(void)power_msleep(DT_MSLEEP_50MS, 0, NULL);
+	(void)power_msleep(di->lpm_exit_time, 0, NULL);
 
 	return 0;
 }
@@ -1163,6 +1239,16 @@ static void sc8562_parse_dts(struct device_node *np,
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"switching_frequency", &di->switching_frequency,
 		SC8562_SW_FREQ_750KHZ);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc_ibus_ocp", &di->sc_ibus_ocp, SC8562_IBUS_OCP_F21SC_INIT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc4_ibus_ocp", &di->sc4_ibus_ocp, SC8562_IBUS_OCP_F41SC_INIT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc_ibat_ocp", &di->sc_ibat_ocp, SC8562_IBAT_OCP_F21SC_INIT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"sc4_ibat_ocp", &di->sc4_ibat_ocp, SC8562_IBAT_OCP_F41SC_INIT);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"watchdog_time", &di->watchdog_time, 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "scp_support",
 		(u32 *)&(di->dts_scp_support), 0);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np, "fcp_support",
@@ -1173,6 +1259,10 @@ static void sc8562_parse_dts(struct device_node *np,
 		"sense_r_config", &di->sense_r_config, SENSE_R_1_MOHM);
 	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
 		"sense_r_actual", &di->sense_r_actual, SENSE_R_1_MOHM);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"wired_channel_switch", &di->wired_channel_switch, 0);
+	(void)power_dts_read_u32(power_dts_tag(HWLOG_TAG), np,
+		"lpm_exit_time", &di->lpm_exit_time, DT_MSLEEP_50MS);
 }
 
 static void sc8562_init_lock_mutex(struct sc8562_device_info *di)
@@ -1205,6 +1295,7 @@ static int sc8562_probe(struct i2c_client *client,
 	np = di->dev->of_node;
 	di->client = client;
 	di->chip_already_init = 1;
+	di->i2c_is_working = true;
 
 	sc8562_parse_dts(np, di);
 
@@ -1220,15 +1311,7 @@ static int sc8562_probe(struct i2c_client *client,
 
 	(void)power_pinctrl_config(di->dev, "pinctrl-names", 1); /* 1:pinctrl-names length */
 
-	ret = sc8562_reg_reset(di);
-	if (ret)
-		goto sc8562_fail_1;
-
-	ret = sc8562_reg_init(di);
-	if (ret)
-		goto sc8562_fail_1;
-
-	ret = sc8562_threshold_reg_init(di, SC8562_CHG_F21SC_MODE);
+	ret = sc8562_reg_reset_and_init(di);
 	if (ret)
 		goto sc8562_fail_1;
 
@@ -1244,9 +1327,12 @@ static int sc8562_probe(struct i2c_client *client,
 sc8562_fail_1:
 	sc8562_destroy_lock_mutex(di);
 sc8562_fail_2:
-	gpio_free(di->gpio_lpm);
-	gpio_free(di->gpio_reset);
-	gpio_free(di->gpio_enable);
+	if (di->gpio_lpm > 0)
+		gpio_free(di->gpio_lpm);
+	if (di->gpio_reset > 0)
+		gpio_free(di->gpio_reset);
+	if (di->gpio_enable > 0)
+		gpio_free(di->gpio_enable);
 sc8562_fail_0:
 	di->chip_already_init = 0;
 	devm_kfree(&client->dev, di);
@@ -1299,6 +1385,8 @@ static int sc8562_i2c_suspend(struct device *dev)
 	if (di)
 		sc8562_enable_adc(0, (void *)di);
 
+	di->i2c_is_working = false;
+	hwlog_info("ic_%u %s\n", di->ic_role, __func__);
 	return 0;
 }
 
@@ -1319,7 +1407,9 @@ static void sc8562_i2c_complete(struct device *dev)
 	if (!di)
 		return;
 
+	di->i2c_is_working = true;
 	sc8562_enable_adc(1, (void *)di);
+	hwlog_info("ic_%u %s\n", di->ic_role, __func__);
 }
 
 static const struct dev_pm_ops sc8562_pm_ops = {

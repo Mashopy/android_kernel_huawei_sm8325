@@ -205,13 +205,16 @@ void rb_mreason_set(uint32_t reason)
 		reason_node_local->mreason_num = reason;
 		bbox_print_err("mreason_num set to %d\n", reason);
 	}
+	bbox_print_info("%s", linux_banner);
 	bbox_print_info("end\n");
 }
 EXPORT_SYMBOL(rb_mreason_set);
 
 static void rb_sreason_str_set(char *sreason_info)
 {
+#ifdef CONFIG_ARM64
 	unsigned int sreason_info_size = strlen(sreason_info);
+#endif
 	struct rb_reason_header *reason_node_local = NULL;
 
 	if (!sreason_info || !g_rb_header)
@@ -248,7 +251,9 @@ EXPORT_SYMBOL(rb_sreason_set);
 
 static void rb_attach_info_str_set(char *attach_info)
 {
+#ifdef CONFIG_ARM64
 	unsigned int attach_info_size = strlen(attach_info);
+#endif
 	struct rb_reason_header *reason_node_local = NULL;
 
 	if (!attach_info || !g_rb_header)

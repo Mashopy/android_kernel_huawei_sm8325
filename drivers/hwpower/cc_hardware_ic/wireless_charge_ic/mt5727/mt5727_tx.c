@@ -384,7 +384,7 @@ static int mt5727_tx_set_irq_en(u32 val, void *dev_data)
 
 static void mt5727_tx_select_init_para(struct mt5727_dev_info *di)
 {
-		di->tx_init_para.ping_freq = MT5727_TX_PING_FREQ;
+		di->tx_init_para.ping_freq = di->tx_ping_freq;
 		di->tx_init_para.ping_interval = MT5727_TX_PING_INTERVAL;
 }
 

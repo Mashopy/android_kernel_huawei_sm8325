@@ -128,11 +128,6 @@ exit:
 	di->need_ignore_irq = false;
 }
 
-static int cps4067_tx_get_full_bridge_ith(u16 *ith, void *dev_data)
-{
-	return 0;
-}
-
 static int cps4067_tx_set_bridge(unsigned int v_ask, unsigned int type, void *dev_data)
 {
 	if (v_ask > CPS4067_TX_SWITCH_BRI_CTL_VTH)
@@ -235,26 +230,40 @@ static int cps4067_tx_get_cep(s8 *cep, void *dev_data)
 
 static int cps4067_tx_get_duty(u8 *duty, void *dev_data)
 {
+	int ret;
+	u16 pwm_duty = 0;
+
+	if (!duty) {
+		hwlog_err("get_duty: para null\n");
+		return -EINVAL;
+	}
+
+	ret = cps4067_read_word(dev_data, CPS4067_TX_CURR_DUTY_ADDR, &pwm_duty);
+	if (ret)
+		return ret;
+
+	*duty = (u8)(pwm_duty / CPS4067_TX_PWM_DUTY_UNIT);
 	return 0;
 }
 
 static int cps4067_tx_get_ptx(u32 *ptx, void *dev_data)
 {
-	return 0;
+	return cps4067_read_word(dev_data, CPS4067_TX_POWER_ADDR, (u16 *)ptx);
 }
 
 static int cps4067_tx_get_prx(u32 *prx, void *dev_data)
 {
-	return 0;
+	return cps4067_read_word(dev_data, CPS4067_RX_POWER_ADDR, (u16 *)prx);
 }
 
 static int cps4067_tx_get_ploss(s32 *ploss, void *dev_data)
 {
-	return 0;
-}
+	s16 val = 0;
 
-static int cps4067_tx_get_ploss_id(u8 *id, void *dev_data)
-{
+	if (!ploss || cps4067_read_word(dev_data, CPS4067_TX_PLOSS_ADDR, &val))
+		return -EINVAL;
+
+	*ploss = val;
 	return 0;
 }
 
@@ -288,8 +297,23 @@ static int cps4067_tx_set_ilimit(u16 tx_ilim, void *dev_data)
 	return cps4067_write_word(dev_data, CPS4067_TX_ILIM_ADDR, tx_ilim);
 }
 
-static int cps4067_tx_init_fod_coef(struct cps4067_dev_info *di)
+static int cps4067_tx_init_fod_para(struct cps4067_dev_info *di)
 {
+	int ret;
+
+	ret = cps4067_write_word(di, CPS4067_TX_PLOSS_TH0_ADDR,
+		(u16)di->tx_fod.ploss_th0);
+	ret += cps4067_write_word(di, CPS4067_TX_PLOSS_TH1_ADDR,
+		(u16)di->tx_fod.ploss_th1);
+	ret += cps4067_write_word(di, CPS4067_TX_PLOSS_TH3_ADDR,
+		(u16)di->tx_fod.ploss_th2);
+	ret += cps4067_write_byte(di, CPS4067_TX_PLOSS_CNT_ADDR,
+		(u8)di->tx_fod.ploss_cnt);
+	if (ret) {
+		hwlog_err("init_fod_para: failed\n");
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -341,6 +365,8 @@ exit:
 static void cps4067_tx_select_init_para(struct cps4067_dev_info *di,
 	unsigned int client)
 {
+	di->tx_init_para.ocp_th = CPS4067_TX_OCP_TH;
+
 	switch (client) {
 	case WLTX_CLIENT_UI:
 		di->tx_init_para.ping_freq = di->tx_ping_freq;
@@ -353,6 +379,7 @@ static void cps4067_tx_select_init_para(struct cps4067_dev_info *di,
 	case WLTX_CLIENT_BAT_HEATING:
 		di->tx_init_para.ping_freq = CPS4067_BAT_HEATING_PING_FREQ;
 		di->tx_init_para.ping_interval = CPS4067_BAT_HEATING_PING_INTERVAL;
+		di->tx_init_para.ocp_th = CPS4067_TX_BAT_HEATING_OCP_TH;
 		break;
 	default:
 		di->tx_init_para.ping_freq = di->tx_ping_freq;
@@ -371,10 +398,10 @@ static int cps4067_tx_set_init_para(struct cps4067_dev_info *di)
 		return ret;
 	}
 
-	ret = cps4067_write_word(di, CPS4067_TX_OCP_TH_ADDR, CPS4067_TX_OCP_TH);
+	ret = cps4067_write_word(di, CPS4067_TX_OCP_TH_ADDR, di->tx_init_para.ocp_th);
 	ret += cps4067_write_word(di, CPS4067_TX_OVP_TH_ADDR, CPS4067_TX_OVP_TH);
 	ret += cps4067_write_dword(di, CPS4067_TX_IRQ_EN_ADDR, CPS4067_TX_IRQ_VAL);
-	ret += cps4067_tx_init_fod_coef(di);
+	ret += cps4067_tx_init_fod_para(di);
 	ret += cps4067_tx_set_ping_freq(di->tx_init_para.ping_freq, di);
 	ret += cps4067_tx_set_min_fop(CPS4067_TX_MIN_FOP, di);
 	ret += cps4067_tx_set_max_fop(CPS4067_TX_MAX_FOP, di);
@@ -407,6 +434,7 @@ static int cps4067_tx_chip_init(unsigned int client, void *dev_data)
 	di->irq_cnt = 0;
 	di->g_val.irq_abnormal = false;
 	di->g_val.tx_stop_chrg = false;
+	cps4067_enable_irq_wake(di);
 	cps4067_enable_irq(di);
 
 	cps4067_tx_select_init_para(di, client);
@@ -629,12 +657,12 @@ static struct wltx_ic_ops g_cps4067_tx_ic_ops = {
 	.get_ptx                = cps4067_tx_get_ptx,
 	.get_prx                = cps4067_tx_get_prx,
 	.get_ploss              = cps4067_tx_get_ploss,
-	.get_ploss_id           = cps4067_tx_get_ploss_id,
+	.get_ploss_id           = NULL,
 	.get_ping_freq          = cps4067_tx_get_ping_freq,
 	.get_ping_interval      = cps4067_tx_get_ping_interval,
 	.get_min_fop            = cps4067_tx_get_min_fop,
 	.get_max_fop            = cps4067_tx_get_max_fop,
-	.get_full_bridge_ith    = cps4067_tx_get_full_bridge_ith,
+	.get_full_bridge_ith    = NULL,
 	.set_ping_freq          = cps4067_tx_set_ping_freq,
 	.set_ping_interval      = cps4067_tx_set_ping_interval,
 	.set_min_fop            = cps4067_tx_set_min_fop,

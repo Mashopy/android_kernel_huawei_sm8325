@@ -47,6 +47,7 @@ rScsi-objs := rscsi/rasscsi.o rasbase/rasbase.o  rasbase/rasproc.o
 
 obj-m += rBattery.o
 rBattery-objs := rbattery/rasbattery.o rasbase/rasbase.o  rasbase/rasproc.o rasbase/rasprobe.o
+
 ifeq ($(CONFIG_ARCH_HISI_RPHONE), y)
 ifeq ($(CONFIG_CHIP_HONGHU), y)
 else

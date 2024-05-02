@@ -20,7 +20,7 @@
 #define FI_LAUNCH_APP_MAX		8
 #define FI_TIMER_INTERVAL		2 /* 500ms timer */
 #define FI_NL_SKB_QUEUE_MAXLEN	128
-#define FI_DEV_NUM			5
+#define FI_DEV_NUM			EMCOM_XENGINE_NET_MAX_NUM
 #define FI_WLAN0_IFNAME	emcom_xengine_get_network_iface_name(EMCOM_XENGINE_NET_WLAN0)
 #define FI_CELL0_IFNAME	emcom_xengine_get_network_iface_name(EMCOM_XENGINE_NET_CELL0)
 #define FI_WLAN1_IFNAME	emcom_xengine_get_network_iface_name(EMCOM_XENGINE_NET_WLAN1)
@@ -60,6 +60,8 @@
 
 #define FI_DECIMAL_BASE 10
 
+#define FI_SKB_MAX_FRAG_LIST_NUM 64
+
 #define FI_VER "V4.0 20211222"
 
 typedef enum {
@@ -77,7 +79,7 @@ typedef enum {
 	FI_COLLECT_START_CMD,
 	FI_COLLECT_STATUS_UPDATE_CMD,
 	FI_COLLECT_INFO_UPDATE_CMD,
-	FI_COLLECT_FLOW_CTRL_MAP_UPDATE_CMD,
+	FI_STOP_FLOW_PKT_REPORT_CMD,
 	CMD_NUM,
 } fi_cfg_type;
 
@@ -106,6 +108,8 @@ struct fi_ctx {
 	struct sk_buff_head skb_queue;
 	struct semaphore netlink_sync_sema;
 	struct task_struct *netlink_task;
+	uint8_t mpflow_app_num;
+	uint8_t mproute_app_num;
 };
 
 struct fi_iface_msg {
@@ -124,6 +128,6 @@ extern void fi_init(struct sock *nlfd);
 extern void fi_deinit(void);
 void fi_bw_calc(struct fi_flow_node *flow);
 void fi_rtt_update(struct fi_flow_node *flow);
-int fi_parse_http_rsp_code(const struct sk_buff *skb);
+int fi_parse_http_rsp_code(const struct sk_buff *skb, char *payload, uint32_t parse_len);
 
 #endif /* _FI_H */

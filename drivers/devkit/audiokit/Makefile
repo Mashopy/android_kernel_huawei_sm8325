@@ -8,3 +8,4 @@ obj-$(CONFIG_HUAWEI_ADSP_MISC) += adsp_misc/
 obj-$(CONFIG_AUDIO_TRACE) += trace/
 obj-$(CONFIG_AUDIO_GPIO_CTL) += audio_gpio_ctl/
 obj-y += headset_debug/
+obj-y += microphone_debug/

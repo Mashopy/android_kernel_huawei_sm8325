@@ -357,8 +357,10 @@ static void wpss_reset_work_func(struct work_struct *work)
         return;
     }
 
+#ifndef CONFIG_ARCH_MONACO
 #ifdef CONFIG_HUAWEI_DSM
     hw_wlan_dsm_client_notify(DSM_WIFI_FIRMWARE_RESET_ERROR, g_work_data->wpss_reset_reason);
+#endif
 #endif
     pr_info("[wpss_reset]wpss_reset_work_func reason %s",
         work_data_self->wpss_reset_reason);

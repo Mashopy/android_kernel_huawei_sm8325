@@ -328,6 +328,7 @@ static int mt5735_fw_rx_program_mtp(unsigned int proc_type, void *dev_data)
 static int mt5735_fw_check_mtp(void *dev_data)
 {
 	int ret;
+	u16 vrect = 0;
 	struct mt5735_dev_info *di = dev_data;
 
 	if (!di)
@@ -339,6 +340,9 @@ static int mt5735_fw_check_mtp(void *dev_data)
 	mt5735_disable_irq_nosync(di);
 	wlps_control(di->ic_type, WLPS_RX_EXT_PWR, true);
 	msleep(DT_MSLEEP_100MS); /* for power on, typically 50ms */
+
+	(void)mt5735_read_word(MT5735_MTP_GET_VRECT, &vrect);
+	hwlog_info("[check_mtp] vrect=%u\n", vrect);
 
 	ret = mt5735_check_mtp_match(di);
 	if (ret)
@@ -396,6 +400,11 @@ void mt5735_fw_mtp_check_work(struct work_struct *work)
 
 	if (!di)
 		return;
+
+	if (!power_cmdline_is_factory_mode() && mt5735_rx_is_tx_exist(di)) {
+		hwlog_info("[mtp_check_work] tx exist\n");
+		return;
+	}
 
 	di->g_val.mtp_chk_complete = false;
 	ret = mt5735_fw_check_mtp(di);

@@ -250,6 +250,192 @@ static int hc32l110_scp_adapter_reg_write(u8 val, u8 reg, void *dev_data)
 	return ret;
 }
 
+static int hc32l110_scp_adapter_reg_multi_read(struct hc32l110_device_info *di, u8 reg, u8 *val, u8 data_len)
+{
+	int ret;
+	int i;
+
+	mutex_lock(&di->accp_adapter_reg_lock);
+	hwlog_info("CMD = 0x%x, REG = 0x%x, Num = 0x%x\n", HC32L110_SCP_CMD_MBRRD, reg, data_len);
+
+	for (i = 0; i < HC32L110_SCP_RETRY_TIME; i++) {
+		/* init */
+		hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+			HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+
+		/* before send cmd, clear accp interrupt registers */
+		ret = hc32l110_write_byte(di, HC32L110_RT_BUFFER_0_REG, HC32L110_SCP_CMD_MBRRD);
+		ret += hc32l110_write_byte(di, HC32L110_RT_BUFFER_1_REG, reg);
+		ret += hc32l110_write_byte(di, HC32L110_RT_BUFFER_2_REG, data_len);
+
+		/* initial scp_isr_backup[0],[1] */
+		di->scp_isr_backup[0] = 0;
+		di->scp_isr_backup[1] = 0;
+		ret += hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+			HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_START);
+		if (ret) {
+			hwlog_err("write error, ret is %d\n", ret);
+			/* manual init */
+			hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+				HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+			mutex_unlock(&di->accp_adapter_reg_lock);
+			return -EPERM;
+		}
+
+		/* check cmd transfer success or fail */
+		if (hc32l110_scp_cmd_transfer_check(di) == 0) {
+			/* recived data from adapter */
+			ret = hc32l110_read_block(di, HC32L110_RT_BUFFER_12_REG, val, data_len);
+			break;
+		}
+
+		hc32l110_scp_protocol_restart(di);
+	}
+	if (i >= HC32L110_SCP_RETRY_TIME) {
+		hwlog_err("ack error, retry %d times\n", i);
+		ret = -EPERM;
+	}
+
+	/* manual init */
+	hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+		HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+	power_usleep(DT_USLEEP_10MS); /* wait 10ms for operate effective */
+	mutex_unlock(&di->accp_adapter_reg_lock);
+
+	return ret;
+}
+
+static int hc32l110_scp_reg_multi_read_block(u8 reg, u8 *val, u8 num, void *dev_data)
+{
+	int ret;
+	u8 *reg_val = val;
+	struct hc32l110_device_info *di = dev_data;
+	u8 data_len = (num < HC32L110_SCP_DATA_LEN) ? num : HC32L110_SCP_DATA_LEN;
+
+	if (!di || !val) {
+		hwlog_err("di or val is null\n");
+		return -EPERM;
+	}
+
+	ret = hc32l110_scp_adapter_reg_multi_read(di, reg, reg_val, data_len);
+	if (ret)
+		return ret;
+
+	num -= data_len;
+	/* max is HC32L110_SCP_DATA_LEN. remaining data is read in below */
+	if (num) {
+		reg_val += data_len;
+		reg += data_len;
+		ret = hc32l110_scp_reg_multi_read_block(reg, reg_val, num, di);
+		if (ret) {
+			/* manual init */
+			hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+				HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+			return -EPERM;
+		}
+	}
+
+	/* manual init */
+	hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+		HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+	power_usleep(DT_USLEEP_10MS); /* wait 10ms for operate effective */
+
+	return ret;
+}
+
+static int hc32l110_scp_adapter_reg_multi_write(struct hc32l110_device_info *di, u8 reg, int* val, u8 data_len)
+{
+	int ret;
+	int i, j;
+
+	mutex_lock(&di->accp_adapter_reg_lock);
+	hwlog_info("CMD = 0x%x, REG = 0x%x, Num = 0x%x\n", HC32L110_SCP_CMD_MBRWR, reg, data_len);
+
+	for (i = 0; i < HC32L110_SCP_RETRY_TIME; i++) {
+		/* init */
+		hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+			HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+
+		/* before send cmd, clear accp interrupt registers */
+		ret = hc32l110_write_byte(di, HC32L110_RT_BUFFER_0_REG, HC32L110_SCP_CMD_MBRWR);
+		ret += hc32l110_write_byte(di, HC32L110_RT_BUFFER_1_REG, reg);
+		ret += hc32l110_write_byte(di, HC32L110_RT_BUFFER_2_REG, data_len);
+
+		for (j = 0; j < data_len; j++) {
+			ret += hc32l110_write_byte(di, HC32L110_RT_BUFFER_3_REG + j, (u8)val[j]);
+			hwlog_info("write reg[%x]=0x%x\n", HC32L110_RT_BUFFER_3_REG + j, val[j]);
+		}
+		/* initial scp_isr_backup[0],[1] */
+		di->scp_isr_backup[0] = 0;
+		di->scp_isr_backup[1] = 0;
+		ret += hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+			HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_START);
+		if (ret) {
+			hwlog_err("write error, ret is %d\n", ret);
+			/* manual init */
+			hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+				HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+			mutex_unlock(&di->accp_adapter_reg_lock);
+			return -EPERM;
+		}
+
+		/* check cmd transfer success or fail */
+		if (hc32l110_scp_cmd_transfer_check(di) == 0)
+			break;
+
+		hc32l110_scp_protocol_restart(di);
+	}
+	if (i >= HC32L110_SCP_RETRY_TIME) {
+		hwlog_err("ack error, retry %d times\n", i);
+		ret = -EPERM;
+	}
+	/* manual init */
+	hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+		HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+	power_usleep(DT_USLEEP_10MS); /* wait 10ms for operate effective */
+	mutex_unlock(&di->accp_adapter_reg_lock);
+
+	return ret;
+}
+
+static int hc32l110_scp_reg_multi_write_block(u8 reg, int *val, u8 num, void *dev_data)
+{
+	int ret;
+	int *reg_val = val;
+	struct hc32l110_device_info *di = dev_data;
+	u8 data_len = (num < HC32L110_SCP_DATA_LEN) ? num : HC32L110_SCP_DATA_LEN;
+
+	if (!di || !val) {
+		hwlog_err("di or val is null\n");
+		return -EPERM;
+	}
+
+	ret = hc32l110_scp_adapter_reg_multi_write(di, reg, reg_val, data_len);
+	if (ret)
+		return ret;
+
+	num -= data_len;
+	/* max is HC32L110_SCP_DATA_LEN. remaining data is write in below */
+	if (num) {
+		reg_val += data_len;
+		reg += data_len;
+		ret = hc32l110_scp_reg_multi_write_block(reg, reg_val, num, di);
+		if (ret) {
+			/* manual init */
+			hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+				HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+			return -EPERM;
+		}
+	}
+
+	/* manual init */
+	hc32l110_write_mask(di, HC32L110_SCP_CTL_REG, HC32L110_SCP_CTL_SNDCMD_MASK,
+		HC32L110_SCP_CTL_SNDCMD_SHIFT, HC32L110_SCP_CTL_SNDCMD_RESET);
+	power_usleep(DT_USLEEP_10MS); /* wait 10ms for operate effective */
+
+	return ret;
+}
+
 static int hc32l110_fcp_master_reset(void *dev_data)
 {
 	struct hc32l110_device_info *di = dev_data;
@@ -587,7 +773,9 @@ static int hc32l110_scp_adapter_reset(void *dev_data)
 static struct hwscp_ops hc32l110_hwscp_ops = {
 	.chip_name = "hc32l110",
 	.reg_read = hc32l110_scp_reg_read_block,
+	.reg_multi_read = hc32l110_scp_reg_multi_read_block,
 	.reg_write = hc32l110_scp_reg_write_block,
+	.reg_multi_write = hc32l110_scp_reg_multi_write_block,
 	.detect_adapter = hc32l110_scp_detect_adapter,
 	.soft_reset_master = hc32l110_scp_chip_reset,
 	.soft_reset_slave = hc32l110_scp_adapter_reset,

@@ -68,6 +68,7 @@ static const char * const g_power_if_op_user_table[POWER_IF_OP_USER_END] = {
 	[POWER_IF_OP_USER_BMS_HEATING] = "bms_heating",
 	[POWER_IF_OP_USER_BMS_AUTH] = "bms_auth",
 	[POWER_IF_OP_USER_BATT_CT] = "batt_ct",
+	[POWER_IF_OP_USER_RF] = "rf",
 };
 
 static const char * const g_power_if_op_type_table[POWER_IF_OP_TYPE_END] = {
@@ -76,6 +77,7 @@ static const char * const g_power_if_op_type_table[POWER_IF_OP_TYPE_END] = {
 	[POWER_IF_OP_TYPE_OTG] = "otg",
 	[POWER_IF_OP_TYPE_HVC] = "hvc",
 	[POWER_IF_OP_TYPE_PD] = "pd",
+	[POWER_IF_OP_TYPE_DC] = "dc",
 	[POWER_IF_OP_TYPE_LVC] = "lvc",
 	[POWER_IF_OP_TYPE_SC] = "sc",
 	[POWER_IF_OP_TYPE_MAINSC] = "mainsc",
@@ -176,7 +178,7 @@ static int power_if_get_op_type(const char *str)
 	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(g_power_if_op_type_table); i++) {
-		if (!strcmp(str, g_power_if_op_type_table[i]))
+		if ((g_power_if_op_type_table[i] != NULL) && !strcmp(str, g_power_if_op_type_table[i]))
 			return i;
 	}
 
@@ -538,18 +540,6 @@ static int power_if_operator_get(unsigned int type, unsigned int sysfs_type,
 			hwlog_info("get battery vterm_dec=%d\n", *value);
 		}
 		break;
-	case POWER_IF_SYSFS_RT_TEST_TIME:
-		if (l_ops->get_rt_test_time) {
-			ret = l_ops->get_rt_test_time(value);
-			hwlog_info("get rt_test_time=%d\n", *value);
-		}
-		break;
-	case POWER_IF_SYSFS_RT_TEST_RESULT:
-		if (l_ops->get_rt_test_result) {
-			ret = l_ops->get_rt_test_result(value);
-			hwlog_info("get rt_test_result=%d\n", *value);
-		}
-		break;
 	case POWER_IF_SYSFS_HOTA_IIN_LIMIT:
 		if (l_ops->get_hota_iin_limit) {
 			ret = l_ops->get_hota_iin_limit(value);
@@ -842,8 +832,6 @@ static struct power_sysfs_attr_info power_if_sysfs_field_tbl[] = {
 	power_sysfs_attr_rw(power_if, 0640, POWER_IF_SYSFS_BATT_ICHG_LIMIT, ichg_limit),
 	power_sysfs_attr_rw(power_if, 0640, POWER_IF_SYSFS_BATT_ICHG_RATIO, ichg_ratio),
 	power_sysfs_attr_rw(power_if, 0640, POWER_IF_SYSFS_BATT_VTERM_DEC, vterm_dec),
-	power_sysfs_attr_ro(power_if, 0440, POWER_IF_SYSFS_RT_TEST_TIME, rt_test_time),
-	power_sysfs_attr_ro(power_if, 0440, POWER_IF_SYSFS_RT_TEST_RESULT, rt_test_result),
 	power_sysfs_attr_ro(power_if, 0440, POWER_IF_SYSFS_HOTA_IIN_LIMIT, hota_iin_limit),
 	power_sysfs_attr_ro(power_if, 0440, POWER_IF_SYSFS_STARTUP_IIN_LIMIT, startup_iin_limit),
 	power_sysfs_attr_rw(power_if, 0640, POWER_IF_SYSFS_ENABLE, enable),

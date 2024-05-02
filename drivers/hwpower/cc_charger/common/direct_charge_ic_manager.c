@@ -22,7 +22,10 @@
 #include <linux/string.h>
 #include <linux/math64.h>
 #include <chipset_common/hwpower/common_module/power_common_macro.h>
+#include <huawei_platform/hwpower/common_module/power_platform_macro.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
+#include <chipset_common/hwpower/common_module/power_supply_application.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_comp.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_ic_manager.h>
 #include <chipset_common/hwpower/direct_charge/direct_charge_ic_interface.h>
@@ -391,15 +394,27 @@ int dcm_exit_batinfo(int mode, unsigned int path)
 	return 0;
 }
 
-int dcm_get_ic_vbtb(int mode, unsigned int path)
+static int dcm_get_vbtb_from_coul(unsigned int path)
+{
+	int vbat = POWER_SUPPLY_DEFAULT_VOLTAGE_NOW;
+	struct power_supply *psy = NULL;
+
+	if ((path == CHARGE_IC_AUX) && power_supply_check_psy_available("battery_gauge_aux", &psy)) {
+		power_supply_get_int_property_value("battery_gauge_aux",
+			POWER_SUPPLY_PROP_VOLTAGE_NOW, &vbat);
+	} else {
+		vbat = power_supply_app_get_bat_voltage_now();
+	}
+
+	return vbat;
+}
+
+static int dcm_get_vbtb_from_ic(int mode, unsigned int path)
 {
 	unsigned int index[CHARGE_IC_MAX_NUM] = { 0 };
 	int num = dc_ic_get_ic_index(mode, path, index, CHARGE_IC_MAX_NUM);
 	int vbat = 0;
 	int comp;
-
-	if (dc_ic_get_vbat_from_coul(&vbat))
-		return vbat;
 
 	if (num <= 0)
 		return -EPERM;
@@ -409,6 +424,14 @@ int dcm_get_ic_vbtb(int mode, unsigned int path)
 	vbat += comp;
 
 	return vbat;
+}
+
+int dcm_get_ic_vbtb(int mode, unsigned int path)
+{
+	if (dc_ic_get_vbat_from_coul())
+		return dcm_get_vbtb_from_coul(path);
+
+	return dcm_get_vbtb_from_ic(mode, path);
 }
 
 int dcm_get_ic_vbtb_with_comp(int mode, unsigned int path, const int *vbat_comp)
@@ -492,8 +515,10 @@ int dcm_get_total_ibat(int mode, unsigned int path, int *ibat)
 	if (!ibat || (num <= 0))
 		return -EPERM;
 
-	if (dc_ic_get_ibat_from_coul(ibat))
+	if (dc_ic_get_ibat_from_coul()) {
+		*ibat = power_supply_app_get_bat_current_now();
 		return 0;
+	}
 
 	for (i = 0; i < num; i++) {
 		if (dc_get_ic_ibat(index[i], &tmp_ibat))
@@ -505,6 +530,14 @@ int dcm_get_total_ibat(int mode, unsigned int path, int *ibat)
 	*ibat = total_ibat;
 	hwlog_info("total ibat is %d\n", *ibat);
 	return 0;
+}
+
+static int dcm_get_max_ibat_func_opt(int mode, unsigned int index, int *ibat)
+{
+	if (!dc_get_ic_max_ibat(mode, index, ibat))
+		return 0;
+
+	return dc_ic_get_ic_max_ibat(mode, index, ibat);
 }
 
 int dcm_get_path_max_ibat(int mode, unsigned int path, int *ibat)
@@ -519,7 +552,7 @@ int dcm_get_path_max_ibat(int mode, unsigned int path, int *ibat)
 		return -EPERM;
 
 	for (i = 0; i < num; i++) {
-		if (dc_ic_get_ic_max_ibat(mode, index[i], &tmp_ibat) < 0)
+		if (dcm_get_max_ibat_func_opt(mode, index[i], &tmp_ibat) < 0)
 			return -EPERM;
 		hwlog_info("ic[%u] max ibat is %d\n", index[i], tmp_ibat);
 		total_ibat += tmp_ibat;
@@ -540,12 +573,12 @@ int dcm_get_ic_max_ibat(int mode, unsigned int path, int *ibat)
 	if (!ibat || (num <= 0))
 		return -EINVAL;
 
-	if (dc_ic_get_ic_max_ibat(mode, index[0], &min_ibat) < 0)
+	if (dcm_get_max_ibat_func_opt(mode, index[0], &min_ibat) < 0)
 		return -EPERM;
 
 	hwlog_info("ic[%u] max ibat is %d\n", index[0], min_ibat);
 	for (i = 1; i < num; i++) {
-		if (dc_ic_get_ic_max_ibat(mode, index[i], &tmp_ibat) < 0)
+		if (dcm_get_max_ibat_func_opt(mode, index[i], &tmp_ibat) < 0)
 			return -EPERM;
 		hwlog_info("ic[%u] max ibat is %d\n", index[i], tmp_ibat);
 		if (tmp_ibat && tmp_ibat < min_ibat)

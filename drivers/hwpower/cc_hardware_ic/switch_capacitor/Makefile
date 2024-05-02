@@ -9,3 +9,4 @@ obj-$(CONFIG_AW32280) += aw32280/
 obj-$(CONFIG_SC8562) += sc8562/
 obj-$(CONFIG_SC8546) += sc8546/
 obj-$(CONFIG_CPS2021) += cps2021/
+obj-$(CONFIG_HL7136) += hl7136/

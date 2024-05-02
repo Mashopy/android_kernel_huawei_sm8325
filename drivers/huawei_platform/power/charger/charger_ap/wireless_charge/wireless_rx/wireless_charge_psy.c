@@ -22,6 +22,7 @@
 #include <chipset_common/hwpower/common_module/power_icon.h>
 #include <chipset_common/hwpower/common_module/power_printk.h>
 #include <chipset_common/hwpower/common_module/power_ui_ne.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
 #include <chipset_common/hwpower/wireless_charge/wireless_rx_status.h>
 #include <huawei_platform/hwpower/common_module/power_platform.h>
 #include <huawei_platform/power/huawei_charger_adaptor.h>
@@ -95,6 +96,7 @@ static int wlrx_get_property(struct power_supply *psy,
 
 static enum power_supply_property g_wlrx_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
 static const struct power_supply_desc g_wlrx_desc = {
@@ -109,6 +111,9 @@ int wlrx_power_supply_register(struct platform_device *pdev)
 {
 	struct power_supply *psy = NULL;
 
+	if (power_supply_check_psy_available("Wireless", &psy))
+		return 0;
+
 	psy = power_supply_register(&pdev->dev, &g_wlrx_desc, NULL);
 	if (IS_ERR(psy)) {
 		hwlog_err("power_supply_register failed\n");
@@ -116,4 +121,12 @@ int wlrx_power_supply_register(struct platform_device *pdev)
 	}
 
 	return 0;
+}
+
+void wlrx_power_supply_unregister(void)
+{
+	struct power_supply *psy = NULL;
+
+	if (power_supply_check_psy_available("Wireless", &psy))
+		power_supply_unregister(psy);
 }

@@ -212,7 +212,7 @@ static void iomt_host_latency_stat_update(struct iomt_host_info *iomt_host_info)
 	}
 
 	current_ring_node->stat_tick =
-		((unsigned long)ktime_to_ms(ktime_get()))/IOMT_MS_TO_SEC;
+		((unsigned long)ktime_to_ms(ktime_get())) / IOMT_MS_TO_SEC;
 
 	if (unlikely(!latency_scatter->usertype_obtain_flag))
 		iomt_latency_user_type_obtain(latency_scatter);

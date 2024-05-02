@@ -178,9 +178,6 @@ static int __get_indirect_handle(struct zram_dedup *dedup,
 		if (handle->hash != hash)
 			continue;
 
-		if (handle->len != len)
-			continue;
-
 		cmem = zs_map_object(mem_pool, handle->handle, ZS_MM_RO);
 		ret = memcmp(cdata, cmem, len);
 		zs_unmap_object(mem_pool, handle->handle);
@@ -265,7 +262,6 @@ static struct zram_indirect_handle *zram_insert_indirect_handle(
 	INIT_HLIST_BL_NODE(&ihandle->node);
 	ihandle->handle = handle;
 	ihandle->hash = hash;
-	ihandle->len = len;
 	atomic_set(&ihandle->refs, 1);
 	if (!last_ihandle) {
 		hlist_bl_add_head(&ihandle->node, &bucket->head);

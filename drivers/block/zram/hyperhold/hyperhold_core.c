@@ -37,9 +37,7 @@
 #define BG_SWAPOUT_TYPE_RATIO    1
 #define BG_SWAPOUT_TYPE_SIZE    2
 #define BG_SWAPOUT_MIN_SCORE	900
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 #define MAX_USED_EXT_RATIO	99
-#endif
 #endif
 
 /* delay time = 50us, max delay time = 1s, sleep time = 50ms */
@@ -269,7 +267,7 @@ static void *hyperhold_init_plug(struct zram *zram,
 				struct schedule_para *sched)
 {
 	struct hyperhold_io io_para;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	io_para.zram = zram;
 #else
 	io_para.bdev = zram->bdev;
@@ -307,7 +305,7 @@ static void hyperhold_fill_entry(struct hyperhold_entry *io_entry,
 					struct hyperhold_buffer *io_buf,
 					void *private)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#ifdef CONFIG_RAMTURBO
 	io_entry->addr = hyperhold_get_sector(io_entry->ext_id);
 #else
 	io_entry->addr = io_entry->ext_id * EXTENT_SECTOR_SIZE;
@@ -700,12 +698,18 @@ void hyperhold_memcg_all_active_swapout(struct mem_cgroup *mcg)
 static int hyperhold_zswapd_permcg_reclaim(struct mem_cgroup *memcg,
 			void *data)
 {
+#ifdef CONFIG_HYPERHOLD_DYNAMIC_SPACE
+	enum hyperhold_reclaim_source source = RECLAIM_SOURCE_DEFAULT;
+	return hyperhold_permcg_reclaim(memcg, data, source);
+#else
 	enum hyperhold_reclaim_source source = RECLAIM_SOURCE_ZSWAPD; /* zswapd active reclaim */
+
 #ifdef CONFIG_RAMTURBO
 	u64 actual_reclaimed_sz;
 	return hyperhold_permcg_active_reclaim(memcg, data, &actual_reclaimed_sz, source);
 #else
 	return hyperhold_permcg_reclaim(memcg, data, source);
+#endif
 #endif
 }
 
@@ -762,7 +766,7 @@ unsigned long hyperhold_reclaim_in(unsigned long size)
 	 */
 	struct async_req *rq = NULL;
 	unsigned long out_size = 0;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	u64 used_exts_num = 0;
 	u64 max_exts_num = 0;
 
@@ -773,7 +777,7 @@ unsigned long hyperhold_reclaim_in(unsigned long size)
 		!hyperhold_crypto_enable())
 		return 0;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 	/* if eswap full, do not swap out */
 	used_exts_num = (u64) atomic64_read(&space_info->used_exts_num);
 	max_exts_num = (u64) atomic64_read(&space_info->max_ext_num);
@@ -910,7 +914,7 @@ static int hyperhold_do_batch_out(struct mem_cgroup *mcg,
 	struct schedule_para *sched = NULL;
 
 	if (unlikely(!mcg || !mcg->zram)) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+#if defined(CONFIG_RAMTURBO) && !defined(CONFIG_HYPERHOLD_DYNAMIC_SPACE)
 		if (mcg)
 			hh_print(HHLOG_ERR, "no zram in mcg! name=%s\n", mcg->name);
 		else

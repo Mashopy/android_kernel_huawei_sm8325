@@ -28,7 +28,7 @@
 #define IPV4_LEN 32
 #define SKB_LEN_MIN 5
 #define SKB_LEN_AVG 1000
-#define SKB_LEN_MAX 1500
+#define SKB_LEN_MAX 2000
 #define SKB_HEAD_MASK_8 8
 #define SKB_HEAD_MASK_16 16
 #define SKB_HEAD_MASK_24 24

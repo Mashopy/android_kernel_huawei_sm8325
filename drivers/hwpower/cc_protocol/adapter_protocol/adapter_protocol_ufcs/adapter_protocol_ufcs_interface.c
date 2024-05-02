@@ -31,6 +31,7 @@ static const struct adapter_protocol_device_data g_hwufcs_dev_data[] = {
 	{ PROTOCOL_DEVICE_ID_STM32G031, "stm32g031" },
 	{ PROTOCOL_DEVICE_ID_CPS2021, "cps2021" },
 	{ PROTOCOL_DEVICE_ID_SC8546, "sc8546" },
+	{ PROTOCOL_DEVICE_ID_HL7136, "hl7136" },
 };
 
 static int hwufcs_get_device_id(const char *str)
@@ -92,6 +93,21 @@ int hwufcs_detect_adapter(void)
 	return l_ops->detect_adapter(l_ops->dev_data);
 }
 
+int hwufcs_clear_rx_buff(void)
+{
+	struct hwufcs_ops *l_ops = hwufcs_get_ops();
+
+	if (!l_ops)
+		return -EPERM;
+
+	if (!l_ops->clear_rx_buff) {
+		hwlog_info("clear_rx_buff is null\n");
+		return 0;
+	}
+
+	hwlog_info("clear_rx_buff\n");
+	return l_ops->clear_rx_buff(l_ops->dev_data);
+}
 int hwufcs_soft_reset_master(void)
 {
 	struct hwufcs_ops *l_ops = hwufcs_get_ops();
@@ -200,8 +216,40 @@ int hwufcs_set_communicating_flag(bool flag)
 		return -EPERM;
 	}
 
-	hwlog_info("set_communicating_flag:%d\n", flag);
+	hwlog_info("set_communicating_flag=%d\n", flag);
 	return l_ops->set_communicating_flag(l_ops->dev_data, flag);
+}
+
+int hwufcs_config_baud_rate(int baud_rate)
+{
+	struct hwufcs_ops *l_ops = hwufcs_get_ops();
+
+	if (!l_ops)
+		return -EPERM;
+
+	if (!l_ops->config_baud_rate) {
+		hwlog_err("config_baud_rate is null\n");
+		return -EPERM;
+	}
+
+	hwlog_info("config_baud_rate=%d\n", baud_rate);
+	return l_ops->config_baud_rate(l_ops->dev_data, baud_rate);
+}
+
+int hwufcs_hard_reset_cable(void)
+{
+	struct hwufcs_ops *l_ops = hwufcs_get_ops();
+
+	if (!l_ops)
+		return -EPERM;
+
+	if (!l_ops->hard_reset_cable) {
+		hwlog_err("hard_reset_cable is null\n");
+		return -EPERM;
+	}
+
+	hwlog_info("hard_reset_cable\n");
+	return l_ops->hard_reset_cable(l_ops->dev_data);
 }
 
 bool hwufcs_need_check_ack(void)
@@ -227,4 +275,20 @@ int hwufcs_check_dev_id(void)
 
 	hwlog_info("get_protocol_register_state fail\n");
 	return -EPERM;
+}
+
+bool hwufcs_ignore_get_cable_info(void)
+{
+	struct hwufcs_ops *l_ops = hwufcs_get_ops();
+
+	if (!l_ops)
+		return false;
+
+	if (!l_ops->ignore_detect_cable_info) {
+		hwlog_info("ignore_detect_cable_info is null\n");
+		return false;
+	}
+
+	hwlog_info("ignore_detect_cable_info\n");
+	return l_ops->ignore_detect_cable_info(l_ops->dev_data);
 }

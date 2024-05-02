@@ -415,12 +415,12 @@ static void charger_otg_shutdown(struct platform_device *pdev)
 		return;
 
 	charger_otg_set_otg_enable(l_dev, false);
+	cancel_delayed_work(&l_dev->otg_work);
 
 	if (l_dev->mode == VBUS_CH_IN_OTG_MODE) {
 		/* wait cbl/regn fall down before system power off */
 		(void)power_msleep(DT_MSLEEP_300MS, 0, NULL);
 	}
-	cancel_delayed_work(&l_dev->otg_work);
 }
 
 static const struct of_device_id charger_otg_match_table[] = {

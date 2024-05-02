@@ -27,34 +27,44 @@
 #define HL7139_SCP_ACK_RETRY_CYCLE_1                   3
 #define HL7139_SCP_RESTART_TIME                        4
 #define HL7139_SCP_DATA_LEN                            8
-#define HL7139_SCP_RETRY_TIME                          3
+#define HL7139A_SCP_RETRY_TIME                         3
+#define HL7139_SCP_RETRY_TIME                          6
 #define HL7139_SCP_POLL_TIME                           100 /* 100ms */
 #define HL7139_SCP_DETECT_MAX_COUT                     20 /* scp detect max count */
 #define HL7139_SCP_NO_ERR                              0
 #define HL7139_SCP_IS_ERR                              1
 
+#define CRC_ERR_FREQ_NUM                               6
+#define SLV_NOREP_FREQ_NUM                             5
 #define HL7139_SCP_CMD_SBRRD                           0x0c
 #define HL7139_SCP_CMD_SBRWR                           0x0b
 #define HL7139_SCP_CMD_MBRRD                           0x1c
 #define HL7139_SCP_CMD_MBRWR                           0x1b
-
-/* fcp adapter vol value */
-#define HL7139_FCP_ADAPTER_MAX_VOL                     12000
-#define HL7139_FCP_ADAPTER_MIN_VOL                     5000
-#define HL7139_FCP_ADAPTER_RST_VOL                     5000
-#define HL7139_FCP_ADAPTER_VOL_CHECK_ERROR             500
-#define HL7139_FCP_ADAPTER_VOL_CHECK_POLLTIME          100
-#define HL7139_FCP_ADAPTER_VOL_CHECK_TIMEOUT           10
+#define HL7139_SCP_MASK2                               0x1f
+#define HL7139_SCP_MAX_FSW                             1080
+#define HL7139_SCP_BASE_FSW                            1000
+#define HL7139_SCP_FSW_920                             920
+#define HL7139_SCP_MIN_FSW                             880
+#define HL7139_SCP_BASE_FSW_STEP                       20
+/* SC hidden register; This frequency is not the sc frequency */
+#define HL7139_SCP_BASE_FSW_REG                        0xD8
+#define HL7139_SCP_BASE_FSW_MASK                       0xE0
+/* Non-linear distribution of communication frequency in this gear */
+#define HL7139_FSW_ESCAPE_POINT                        16
 
 /* FORCE_DPDM_CTRL reg=0x19 */
 #define HL7139_FORCE_DPDM_CTL_REG                      0x19
 #define HL7139_FORCE_DP_P6V                            0xC0
 #define HL7139_FORCE_DPDM_EXIT                         0
+#define HL7139_FORCE_PULL_DOWN_DP                      0xA0
 
 /* DP_MAN_CTL reg=0x1A */
 #define HL7139_DP_MAN_CTL_REG                          0x1A
 #define HL7139_MAN_MODE                                0x20
 #define HL7139_DP_MAN_EXIT                             0
+#define HL7139_DP_DM_HIGH                              0x03
+/* bit0:DM_STAT;bit1:DP_STAT */
+#define HL7139_DP_DM_STAT_MASK                         0x03
 
 /* SCP_CTL reg=0x1B */
 #define HL7139_SCP_CTL_REG                             0x1B
@@ -62,6 +72,8 @@
 #define HL7139_SCP_CTL_EN_SCP_SHIFT                    7
 #define HL7139_SCP_CTL_SCP_DET_EN_MASK                 BIT(6)
 #define HL7139_SCP_CTL_SCP_DET_EN_SHIFT                6
+#define HL7139_SCP_CTL_SCP_UI_SYNC_MASK                BIT(5)
+#define HL7139_SCP_CTL_SCP_UI_SYNC_SHIFT               5
 #define HL7139_SCP_CTL_EN_STIMER_MASK                  BIT(4)
 #define HL7139_SCP_CTL_EN_STIMER_SHIFT                 4
 #define HL7139_SCP_CTL_MSTR_RST_MASK                   BIT(3)

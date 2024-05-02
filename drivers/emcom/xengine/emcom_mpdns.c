@@ -269,9 +269,8 @@ bool emcom_mpdns_fill_v6_cache(const char *host, struct in6_addr *v6_addr, int c
 		(void)memset_s(entry, sizeof(struct emcom_mpdns_entry), 0, sizeof(struct emcom_mpdns_entry));
 
 		err = memcpy_s(entry->host, EMCOM_MAX_HOST_LEN, host, strlen(host));
-		if (err != EOK) {
+		if (err != EOK)
 			return true;
-		}
 		if (v6_addr == NULL)
 			return true;
 

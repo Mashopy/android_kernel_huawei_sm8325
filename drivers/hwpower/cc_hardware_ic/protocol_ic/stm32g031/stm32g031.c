@@ -89,8 +89,6 @@ static bool stm32g031_is_support_ufcs(struct stm32g031_device_info *di)
 
 void stm32g031_hard_reset(struct stm32g031_device_info *di)
 {
-	hwlog_info("hard reset\n");
-
 	/* reset pin pull low */
 	(void)gpio_direction_output(di->gpio_reset, 0);
 	power_usleep(DT_USLEEP_1MS);
@@ -98,6 +96,7 @@ void stm32g031_hard_reset(struct stm32g031_device_info *di)
 	/* reset pin pull high */
 	(void)gpio_direction_output(di->gpio_reset, 1);
 	power_usleep(DT_USLEEP_5MS);
+	hwlog_info("hard reset end\n");
 }
 
 static void stm32g031_set_low_power_mode(struct stm32g031_device_info *di)
@@ -137,9 +136,13 @@ static int stm32g031_notifier_call(struct notifier_block *nb,
 
 	switch (event) {
 	case POWER_NE_USB_DISCONNECT:
+		di->ufcs_isr[0] = 0;
+		di->ufcs_isr[1] = 0;
+		di->plugged_state = false;
 		stm32g031_set_low_power_mode(di);
 		break;
 	case POWER_NE_USB_CONNECT:
+		di->plugged_state = true;
 		stm32g031_exit_low_power_mode(di);
 		hwlog_info("current fw version=0x%x\n", di->fw_ver_id);
 		hwlog_info("current fw hw config=0x%x\n", di->param_dts.hw_config);
@@ -167,6 +170,10 @@ static void stm32g031_interrupt_work(struct work_struct *work)
 	stm32g031_read_byte(di, STM32G031_UFCS_ISR2_REG, &isr2_val);
 	di->ufcs_isr[0] |= isr1_val;
 	di->ufcs_isr[1] |= isr2_val;
+
+	if (isr1_val & STM32G031_UFCS_ISR1_HARD_RESET_MASK)
+		power_event_bnc_notify(POWER_ANT_DC_FAULT,
+			POWER_NE_DC_FAULT_AC_HARD_RESET, NULL);
 
 	if (!di->ufcs_communicating_flag &&
 		(isr1_val & STM32G031_UFCS_ISR1_DATA_READY_MASK))
@@ -305,7 +312,7 @@ static int stm32g031_probe(struct i2c_client *client,
 		goto fail_free_gpio;
 
 	if (stm32g031_irq_init(di, np))
-		goto fail_free_gpio;
+		goto fail_irq_init;
 
 	stm32g031_set_low_power_mode(di);
 
@@ -326,6 +333,8 @@ static int stm32g031_probe(struct i2c_client *client,
 
 	return 0;
 
+fail_irq_init:
+	power_event_bnc_unregister(POWER_BNT_CONNECT, &di->event_nb);
 fail_free_gpio:
 	gpio_free(di->gpio_enable);
 	gpio_free(di->gpio_reset);

@@ -142,6 +142,17 @@ int wlrx_pmode_get_pid_by_name(unsigned int drv_type, const char *mode_name)
 	return 0;
 }
 
+bool wlrx_pmode_in_dc_mode(unsigned int drv_type)
+{
+	struct wlrx_pmode_dev *di = wlrx_pmode_get_di(drv_type);
+
+	if (!di || !di->dts || !di->dts->pcfg ||
+		(di->curr_pid < 0) || (di->curr_pid >= di->dts->pcfg_level))
+		return false;
+
+	return strstr(di->dts->pcfg[di->curr_pid].name, "SC") != NULL;
+}
+
 static bool wlrx_pmode_quick_judge(unsigned int drv_type, struct wlrx_pmode *pcfg)
 {
 	struct wlprot_acc_cap *acc_cap = wlrx_acc_get_cap(drv_type);

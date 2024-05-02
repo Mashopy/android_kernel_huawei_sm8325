@@ -402,79 +402,6 @@ static int sc_get_rt_test_prot_type(void)
 	return di->prot_type;
 }
 
-static int sc_get_rt_test_time_by_mode(unsigned int *val, int mode)
-{
-	struct direct_charge_device *di = g_sc_di;
-
-	if (!power_cmdline_is_factory_mode())
-		return 0;
-
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -EPERM;
-	}
-
-	*val = di->rt_test_para[mode].rt_test_time;
-	return 0;
-}
-
-static int sc_get_rt_test_time(unsigned int *val)
-{
-	return sc_get_rt_test_time_by_mode(val, DC_NORMAL_MODE);
-}
-
-static int mainsc_get_rt_test_time(unsigned int *val)
-{
-	return sc_get_rt_test_time_by_mode(val, DC_CHAN1_MODE);
-}
-
-static int auxsc_get_rt_test_time(unsigned int *val)
-{
-	return sc_get_rt_test_time_by_mode(val, DC_CHAN2_MODE);
-}
-
-static int sc_get_rt_test_result_by_mode(unsigned int *val, int mode)
-{
-	int iin_thermal_th;
-	struct direct_charge_device *di = g_sc_di;
-
-	if (!power_cmdline_is_factory_mode())
-		return 0;
-
-	if (!di) {
-		hwlog_err("di is null\n");
-		return -EPERM;
-	}
-
-	iin_thermal_th = di->rt_test_para[mode].rt_curr_th + 500; /* margin is 500mA */
-	if (pd_dpm_get_cc_moisture_status() || di->bat_temp_err_flag ||
-		di->rt_test_para[mode].rt_test_result ||
-		(di->sysfs_enable_charger == 0) ||
-		((direct_charge_get_stage_status() == DC_STAGE_CHARGING) &&
-		(di->sysfs_iin_thermal < iin_thermal_th)) ||
-		(di->dc_stage == DC_STAGE_CHARGE_DONE))
-		*val = 0; /* 0: succ */
-	else
-		*val = 1; /* 1: fail */
-
-	return 0;
-}
-
-static int sc_get_rt_test_result(unsigned int *val)
-{
-	return sc_get_rt_test_result_by_mode(val, DC_NORMAL_MODE);
-}
-
-static int mainsc_get_rt_test_result(unsigned int *val)
-{
-	return sc_get_rt_test_result_by_mode(val, DC_CHAN1_MODE);
-}
-
-static int auxsc_get_rt_test_result(unsigned int *val)
-{
-	return sc_get_rt_test_result_by_mode(val, DC_CHAN2_MODE);
-}
-
 static int sc_get_hota_iin_limit(unsigned int *val)
 {
 	struct direct_charge_device *di = g_sc_di;
@@ -637,8 +564,6 @@ static struct power_if_ops sc_if_ops = {
 	.set_iin_thermal_all = sc_set_iin_thermal_all,
 	.set_ichg_ratio = sc_set_ichg_ratio,
 	.set_vterm_dec = sc_set_vterm_dec,
-	.get_rt_test_time = sc_get_rt_test_time,
-	.get_rt_test_result = sc_get_rt_test_result,
 	.get_rt_test_prot_type = sc_get_rt_test_prot_type,
 	.get_hota_iin_limit = sc_get_hota_iin_limit,
 	.get_startup_iin_limit = sc_get_startup_iin_limit,
@@ -652,8 +577,6 @@ static struct power_if_ops sc_if_ops = {
 static struct power_if_ops mainsc_if_ops = {
 	.set_enable_charger = mainsc_set_enable_charger,
 	.get_enable_charger = mainsc_get_enable_charger,
-	.get_rt_test_time = mainsc_get_rt_test_time,
-	.get_rt_test_result = mainsc_get_rt_test_result,
 	.get_rt_test_prot_type = sc_get_rt_test_prot_type,
 	.type_name = "mainsc",
 };
@@ -661,8 +584,6 @@ static struct power_if_ops mainsc_if_ops = {
 static struct power_if_ops auxsc_if_ops = {
 	.set_enable_charger = auxsc_set_enable_charger,
 	.get_enable_charger = auxsc_get_enable_charger,
-	.get_rt_test_time = auxsc_get_rt_test_time,
-	.get_rt_test_result = auxsc_get_rt_test_result,
 	.get_rt_test_prot_type = sc_get_rt_test_prot_type,
 	.type_name = "auxsc",
 };
@@ -785,6 +706,9 @@ static void sc_fault_work(struct work_struct *work)
 		strncat(buf, reg_info, strlen(reg_info));
 		power_dsm_report_dmd(POWER_DSM_DIRECT_CHARGE_SC,
 			POWER_DSM_DIRECT_CHARGE_SC_FAULT_AC_OVP, buf);
+		break;
+	case POWER_NE_DC_FAULT_AC_HARD_RESET:
+		hwlog_err("adapter hard reset\n");
 		break;
 	case POWER_NE_DC_FAULT_VBAT_OVP:
 		hwlog_err("vbat ovp happened\n");
@@ -937,7 +861,7 @@ static ssize_t sc_sysfs_show(struct device *dev,
 		len = snprintf(buf, PAGE_SIZE, "%d\n", di->adp_antifake_failed_cnt);
 		break;
 	case DC_SYSFS_CABLE_TYPE:
-		len = snprintf(buf, PAGE_SIZE, "%d\n", di->cable_type);
+		len = snprintf(buf, PAGE_SIZE, "%d\n", dc_get_cable_type_info(DC_CABLE_TYPE));
 		break;
 	case DC_SYSFS_MULTI_SC_CUR:
 		len = sc_get_multi_cur(buf, PAGE_SIZE);
@@ -1005,11 +929,7 @@ static ssize_t sc_sysfs_store(struct device *dev,
 			return -EINVAL;
 
 		hwlog_info("set resistance_threshold=%ld\n", val);
-
-		di->std_cable_full_path_res_max = val;
-		di->nonstd_cable_full_path_res_max = val;
-		di->ctc_cable_full_path_res_max = val;
-		di->ignore_full_path_res = true;
+		di->cable_info.ignore_full_path_res = true;
 		break;
 	case DC_SYSFS_SET_CHARGETYPE_PRIORITY:
 		if ((kstrtol(buf, POWER_BASE_DEC, &val) < 0) ||
@@ -1064,8 +984,6 @@ static inline void sc_sysfs_remove_group(struct device *dev)
 
 static void sc_init_parameters(struct direct_charge_device *di)
 {
-	int i;
-
 	di->sysfs_enable_charger = 1;
 	di->sysfs_mainsc_enable_charger = 1;
 	di->sysfs_auxsc_enable_charger = 1;
@@ -1081,12 +999,10 @@ static void sc_init_parameters(struct direct_charge_device *di)
 	di->dc_err_report_flag = FALSE;
 	di->bat_temp_err_flag = false;
 	di->sc_conv_ocp_count = 0;
-	di->ignore_full_path_res = false;
+	di->cable_info.ignore_full_path_res = false;
 	di->cur_mode = CHARGE_IC_MAIN;
 	di->tbat_id = BAT_TEMP_MIXED;
 	di->local_mode = SC_MODE;
-	for (i = 0; i < DC_MODE_TOTAL; i++)
-		di->rt_test_para[i].rt_test_result = false;
 	di->cc_safe = true;
 }
 
@@ -1144,6 +1060,7 @@ static int sc_probe(struct platform_device *pdev)
 
 	di->fault_nb.notifier_call = direct_charge_fault_notifier_call;
 	ret = power_event_anc_register(POWER_ANT_SC_FAULT, &di->fault_nb);
+	ret += power_event_anc_register(POWER_ANT_DC_FAULT, &di->fault_nb);
 	if (ret < 0)
 		goto fail_create_link;
 
@@ -1173,6 +1090,7 @@ static int sc_remove(struct platform_device *pdev)
 		return -ENODEV;
 
 	power_event_anc_unregister(POWER_ANT_SC_FAULT, &di->fault_nb);
+	power_event_anc_unregister(POWER_ANT_DC_FAULT, &di->fault_nb);
 	sc_sysfs_remove_group(di->dev);
 	power_wakeup_source_unregister(di->charging_lock);
 	devm_kfree(&pdev->dev, di);

@@ -207,6 +207,7 @@ obj-y                           += irda/
 obj-y                           += dp/
 obj-$(CONFIG_INTERCONNECT)	+= interconnect/
 obj-$(CONFIG_COUNTER)		+= counter/
+obj-$(CONFIG_ACCESS_TOKENID)    += accesstokenid/
 obj-$(CONFIG_HW_RECLAIM_ACCT) += reclaim_acct/
 obj-$(CONFIG_HW_PAGE_TRACKER)	+= hw_page_tracker/
 obj-$(CONFIG_HW_MEMORY_MONITOR)	+= mmonitor/
@@ -247,6 +248,13 @@ obj-$(CONFIG_HUAWEI_BT_FM) += hw_btfm/
 obj-$(CONFIG_HUAWEI_PERF_CTRL) += perf_ctrl/
 obj-$(CONFIG_HW_PERFHUB) += perfhub/
 obj-$(CONFIG_HW_RSMC) += rsmc/
+obj-$(CONFIG_HW_RSMC) += rsmc_x801/
+obj-$(CONFIG_HW_NETWORK_DCP) += network_dcp/
 obj-y += hw_soc/
-
 obj-$(CONFIG_HUAWEI_GLOBAL_TASK_MANAGER) += hwgtm/
+obj-y += huawei/
+obj-$(CONFIG_HW_SHUTDOWN_WDT) += shutdown_wdt/
+
+# camera power
+obj-$(CONFIG_CAMERA_POWER) += camera_power/
+obj-$(CONFIG_HUAWEI_STORAGE_ROFA) += storage_rofa/

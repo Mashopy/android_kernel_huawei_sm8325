@@ -330,6 +330,7 @@ static int xcollie_save_stack(struct task_struct *task, char *out, uint32_t len)
 {
 	struct stack_trace trace;
 	char *buf = NULL;
+	char *addr = NULL;
 	uintptr_t *entries = NULL;
 	size_t used = 0;
 	int tmp;
@@ -352,15 +353,24 @@ static int xcollie_save_stack(struct task_struct *task, char *out, uint32_t len)
 	buf = vzalloc(MAX_LOG_SIZE);
 	if (!buf)
 		goto err_entry;
+	addr = vzalloc(MAX_LOG_SIZE);
+	if (!addr)
+		goto err_buf;
 
 	ret = mutex_lock_killable(&task->signal->cred_guard_mutex);
 	if (ret)
-		goto err_buf;
+		goto err_addr;
 	save_stack_trace_tsk(task, &trace);
 	for (i = 0; i < trace.nr_entries; i++) {
+		tmp = snprintf_s(addr, MAX_LOG_SIZE, MAX_LOG_SIZE - 1, "%pB", (void *)entries[i]);
+		if (tmp < 0 || (addr[0] == '0' && addr[1] == 'x')) {
+			pr_err("%s %d: addr is unsafe, err = %d\n",
+				__func__, __LINE__, tmp);
+			continue;
+		}
 		tmp = snprintf_s(buf + used, MAX_LOG_SIZE - used,
-			MAX_LOG_SIZE - used - 1, "xcollie: #%02d: %pB\n",
-			i, (void *)entries[i]);
+			MAX_LOG_SIZE - used - 1, "xcollie: #%02d: %s\n",
+			i, addr);
 		if (tmp < 0) {
 			pr_err("%s %d: snprintf_s failed, err = %d\n",
 				__func__, __LINE__, tmp);
@@ -380,6 +390,8 @@ static int xcollie_save_stack(struct task_struct *task, char *out, uint32_t len)
 
 err_mutex:
 	mutex_unlock(&task->signal->cred_guard_mutex);
+err_addr:
+	vfree(addr);
 err_buf:
 	vfree(buf);
 err_entry:

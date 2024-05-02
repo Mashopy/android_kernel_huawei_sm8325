@@ -154,7 +154,7 @@ static int charger_loginfo_dump_content(char *buffer, int size, void *dev_data)
 		"  %-7d  %-5d  %-12s  %-6s"
 		"  %-7d  %-4d  %-6d  %-7d"
 		"  %-7d  %-4d  %-9d  %-8d"
-		"  %-11d  %-7d  %-4s",
+		"  %-11d  %-7d  %-6s",
 		d_data.online, d_data.type, d_data.usb_vol,
 		di->sysfs_data.iin_thl, d_data.ch_en, d_data.status, d_data.health,
 		d_data.bat_present, d_data.temp, d_data.real_temp, d_data.vol,
@@ -174,7 +174,7 @@ static int charger_loginfo_dump_head(char *buf, int size, void *dev_data)
 		"  iin_thl  ch_en  status        health"
 		"  present  temp  temp_r  vol"
 		"      cur      cap   real_soc   bat_fcc"
-		"   cycle_count  ibus     mode");
+		"   cycle_count  ibus     mode  ");
 	return 0;
 }
 

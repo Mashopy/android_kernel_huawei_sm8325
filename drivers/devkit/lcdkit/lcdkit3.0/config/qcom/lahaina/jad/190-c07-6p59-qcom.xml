@@ -262,7 +262,7 @@
 		<TeInervalTimeUs>16667</TeInervalTimeUs>
 		<!--checksum support-->
 		<PanelLogoChecksumSupport>0</PanelLogoChecksumSupport>
-		<PanelChecksumSupport>0</PanelChecksumSupport>
+		<PanelChecksumSupport>1</PanelChecksumSupport>
 		<ChecksumStressTestSupport>0</ChecksumStressTestSupport>
 		<ChecksumStressTestVdd>1280000</ChecksumStressTestVdd>
 		<ChecksumStressTestMipi>550</ChecksumStressTestMipi>

@@ -130,6 +130,8 @@ static struct hiview_hievent_payload *hiview_hievent_get_payload(struct hiview_h
 
 static void hiview_hievent_add_payload(struct hiview_hievent *event, struct hiview_hievent_payload *payload);
 
+static int hiview_get_arg_int_value(va_list *arg, const char *fmt, int index, int length, long long *val);
+
 static DEFINE_MUTEX(hisysevent_init_lock);
 
 static struct socket *hisysevent_sock;
@@ -299,6 +301,7 @@ struct hiview_hievent *inner_build_raw_event(int event_id, const char *fmt, va_l
 	int size;
 	char *long_param_keys[] = {"LONG1", "LONG2", "LONG3", "LONG4", "LONG5"};
 	char *string_param_keys[] = {"STR1", "STR2", "STR3", "STR4", "STR5"};
+	long long int_val = 0;
 
 	event = hiview_hievent_create(event_id);
 	if (!event)
@@ -315,15 +318,10 @@ struct hiview_hievent *inner_build_raw_event(int event_id, const char *fmt, va_l
 	for (index = 0; index < length - 1; index++) {
 		if (size >= MAX_RAW_PARAMS_SIZE)
 			break;
-		if (fmt[index] == '%' && (fmt[index + RAW_SIZE_OFFSET_1] == 'd' || fmt[index + RAW_SIZE_OFFSET_1] == 'c'
-						|| (index < length - RAW_SIZE_OFFSET_2 && fmt[index + RAW_SIZE_OFFSET_1] == 'l'
-						&& fmt[index + RAW_SIZE_OFFSET_2] == 'd')
-						|| (index < length - RAW_SIZE_OFFSET_3 && fmt[index + RAW_SIZE_OFFSET_1] == 'l'
-						&& fmt[index + RAW_SIZE_OFFSET_2] == 'l' && fmt[index + RAW_SIZE_OFFSET_3] == 'd'))) {
-			long long val = va_arg(arg, long long);
+		if (hiview_get_arg_int_value(&arg, fmt, index, length, &int_val)) {
 			if (index_long_params >= MAX_RAW_TYPE_SIZE)
 				continue;
-			hiview_hievent_put_integral(event, long_param_keys[index_long_params], val);
+			hiview_hievent_put_integral(event, long_param_keys[index_long_params], int_val);
 			index_long_params++;
 			size++;
 		} else if (fmt[index] == '%' && fmt[index + 1] == 's') {
@@ -833,23 +831,26 @@ int hiview_hisysevent_set_uid(struct hiview_hisysevent *event)
 	return 0;
 }
 
-int hiview_hisysevent_is_integer(const char *fmt, int index, int length)
+static int hiview_get_arg_int_value(va_list *arg, const char *fmt, int index, int length, long long *val)
 {
+	long long tmp_val = 0;
+
 	if (fmt[index + SYS_SIZE_OFFSET_1] == 'd' || fmt[index + SYS_SIZE_OFFSET_1] == 'c') {
-		return BOOL_TRUE_FLAG;
-	}
-
-	if (index < length - SYS_SIZE_OFFSET_2 && fmt[index + SYS_SIZE_OFFSET_1] == 'l' &&
+		/* value type：int、char */
+		tmp_val = va_arg(*arg, int);
+	} else if (index < length - SYS_SIZE_OFFSET_2 && fmt[index + SYS_SIZE_OFFSET_1] == 'l' &&
 		fmt[index + SYS_SIZE_OFFSET_2] == 'd') {
-		return BOOL_TRUE_FLAG;
-	}
-
-	if (index < length - SYS_SIZE_OFFSET_3 && fmt[index + SYS_SIZE_OFFSET_1] == 'l' &&
+		/* value type：long */
+		tmp_val = va_arg(*arg, long);
+	} else if (index < length - SYS_SIZE_OFFSET_3 && fmt[index + SYS_SIZE_OFFSET_1] == 'l' &&
 		fmt[index + SYS_SIZE_OFFSET_2] == 'l' && fmt[index + SYS_SIZE_OFFSET_3] == 'd') {
-		return BOOL_TRUE_FLAG;
+		/* value type：long long */
+		tmp_val = va_arg(*arg, long long);
+	} else {
+		return BOOL_FALSE_FLAG;
 	}
-
-	return BOOL_FALSE_FLAG;
+	*val = tmp_val;
+	return BOOL_TRUE_FLAG;
 }
 
 int hiview_hisysevent_set_payload(struct hiview_hisysevent *event, const char *fmt, va_list arg)
@@ -861,6 +862,7 @@ int hiview_hisysevent_set_payload(struct hiview_hisysevent *event, const char *f
 	int param_index = 0;
 	const int v_pos = 1;
 	const int kv_num = 2;
+	long long int_val = 0;
 
 	length = strlen(fmt) < MAX_HISYSEVENT_FORMAT_STRING_LEN ? strlen(fmt) : MAX_HISYSEVENT_FORMAT_STRING_LEN;
 	for (index = 0; index < length - 1; index++) {
@@ -877,10 +879,8 @@ int hiview_hisysevent_set_payload(struct hiview_hisysevent *event, const char *f
 				continue;
 			}
 
-			if (hiview_hisysevent_is_integer(fmt, index, length)) {
-				/* value type：int、char、long、long long */
-				long long val = va_arg(arg, long long);
-				hiview_hisysevent_put_integer(event, key, val);
+			if (hiview_get_arg_int_value(&arg, fmt, index, length, &int_val)) {
+				hiview_hisysevent_put_integer(event, key, int_val);
 			} else if (fmt[index + SYS_SIZE_OFFSET_1] == 's') {
 				/* value type：char* */
 				char *val = va_arg(arg, char*);

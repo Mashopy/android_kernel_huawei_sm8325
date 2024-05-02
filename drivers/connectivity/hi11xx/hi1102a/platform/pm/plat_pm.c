@@ -121,7 +121,7 @@ static int pf_suspend_notify(struct notifier_block *notify_block,
     ps_get_core_reference(&ps_core_d);
     switch (mode) {
         case PM_POST_SUSPEND:
-            ps_print_info("host resume , cnt %d!\n",
+            ps_print_info("host resume v2, cnt %d!\n",
                           atomic_read(&ps_core_d->sr_cnt));
             if (atomic_read(&ps_core_d->sr_cnt) > 0) {
                 up(&ps_core_d->sr_wake_sema);
@@ -132,7 +132,6 @@ static int pf_suspend_notify(struct notifier_block *notify_block,
             atomic_set(&ps_core_d->sr_cnt, 1);
             ret = down_trylock(&ps_core_d->sr_wake_sema);
             if (ret) {
-                atomic_set(&ps_core_d->sr_cnt, 0);
                 ps_print_err("get wakeup sem error %d\n", ret);
             }
             ps_print_info("host suspend now!\n");

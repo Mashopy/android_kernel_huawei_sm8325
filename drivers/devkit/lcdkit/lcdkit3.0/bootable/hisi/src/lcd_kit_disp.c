@@ -46,19 +46,19 @@ static int32_t poweric_cmd_detect(struct hisi_fb_data_type *hisifd)
 	int32_t ret;
 
 	ret = lcd_kit_dsi_cmds_rx(hisifd, &read_value, sizeof(uint8_t),
-		&disp_info->elvdd_detect.cmds);
+		&DISP_INFO->elvdd_detect.cmds);
 	if (ret != 0) {
 		LCD_KIT_ERR("mipi rx failed!\n");
 		return LCD_KIT_OK;
 	}
-	if ((read_value & disp_info->elvdd_detect.exp_value_mask) !=
-		disp_info->elvdd_detect.exp_value)
+	if ((read_value & DISP_INFO->elvdd_detect.exp_value_mask) !=
+		DISP_INFO->elvdd_detect.exp_value)
 		ret = LCD_KIT_FAIL;
 
 	LCD_KIT_INFO("read_value = 0x%x, exp_value = 0x%x, mask = 0x%x\n",
 		read_value,
-		disp_info->elvdd_detect.exp_value,
-		disp_info->elvdd_detect.exp_value_mask);
+		DISP_INFO->elvdd_detect.exp_value,
+		DISP_INFO->elvdd_detect.exp_value_mask);
 	return ret;
 }
 
@@ -73,14 +73,14 @@ static int32_t poweric_gpio_detect(void)
 		LCD_KIT_ERR("gpio_ops is null!\n");
 		return LCD_KIT_FAIL;
 	}
-	gpio_ops->set_direction_input(disp_info->elvdd_detect.detect_gpio);
-	gpio_value = gpio_ops->get_value(disp_info->elvdd_detect.detect_gpio);
-	if ((disp_info->elvdd_detect.detect_gpio_type == EXTEND_GPIO_TYPE) &&
-		(disp_info->elvdd_detect.exp_value > 0)) {
-		disp_info->elvdd_detect.exp_value = 1; /* gpio value(High level) */
+	gpio_ops->set_direction_input(DISP_INFO->elvdd_detect.detect_gpio);
+	gpio_value = gpio_ops->get_value(DISP_INFO->elvdd_detect.detect_gpio);
+	if ((DISP_INFO->elvdd_detect.detect_gpio_type == EXTEND_GPIO_TYPE) &&
+		(DISP_INFO->elvdd_detect.exp_value > 0)) {
+		DISP_INFO->elvdd_detect.exp_value = 1; /* gpio value(High level) */
 		LCD_KIT_INFO("set expect gpio_value to high level\n");
 	}
-	if (gpio_value != disp_info->elvdd_detect.exp_value)
+	if (gpio_value != DISP_INFO->elvdd_detect.exp_value)
 		ret = LCD_KIT_FAIL;
 	LCD_KIT_INFO("gpio_value = %d\n", gpio_value);
 	return ret;
@@ -92,7 +92,7 @@ static void lcd_kit_poweric_detect(struct hisi_fb_data_type *hisifd)
 	struct display_operators *display_type_ops = NULL;
 	static uint32_t retry_times;
 
-	if (!disp_info->elvdd_detect.support)
+	if (!DISP_INFO->elvdd_detect.support)
 		return;
 	if (retry_times >= RECOVERY_TIMES) {
 		LCD_KIT_WARNING("not need recovery, recovery num:%d\n",
@@ -105,12 +105,12 @@ static void lcd_kit_poweric_detect(struct hisi_fb_data_type *hisifd)
 		LCD_KIT_ERR("failed to get lcd type operator!\n");
 		return;
 	}
-	lcd_kit_delay(disp_info->elvdd_detect.delay, LCD_KIT_WAIT_MS);
-	if (disp_info->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
+	lcd_kit_delay(DISP_INFO->elvdd_detect.delay, LCD_KIT_WAIT_MS);
+	if (DISP_INFO->elvdd_detect.detect_type == ELVDD_MIPI_CHECK_MODE)
 		ret = poweric_cmd_detect(hisifd);
-	else if ((disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
-		(disp_info->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
+	else if ((DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_GPIO_CHECK_MODE_AP) ||
+		(DISP_INFO->elvdd_detect.detect_type == ELVDD_SH_MIPI_AP_GPIO_CHECK_MODE))
 		ret = poweric_gpio_detect();
 	if (ret) {
 		LCD_KIT_ERR("detect poweric abnomal, recovery lcd\n");
@@ -153,11 +153,11 @@ static int lcd_kit_panel_on(struct hisi_fb_panel_data *pdata,
 		lcd_kit_get_elvss_info(hisifd);
 		lcd_kit_panel_version_init(hisifd);
 		lcd_kit_aod_extend_cmds_init(hisifd);
-		lcd_kit_parse_sn_check(hisifd, disp_info->lcd_name);
+		lcd_kit_parse_sn_check(hisifd, DISP_INFO->lcd_name);
 		/* read project id */
 		if (lcd_kit_read_project_id(hisifd))
 			LCD_KIT_ERR("read project id error\n");
-		if (disp_info->brightness_color_uniform.support)
+		if (DISP_INFO->brightness_color_uniform.support)
 			lcd_kit_bright_rgbw_id_from_oeminfo(hisifd);
 		lcd_kit_check_otp(hisifd);
 		pinfo->lcd_init_step = LCD_INIT_MIPI_HS_SEND_SEQUENCE;
@@ -229,9 +229,9 @@ static int lcd_kit_set_backlight(struct hisi_fb_panel_data *pdata,
 		return LCD_KIT_FAIL;
 	}
 	/* quickly sleep */
-	if (disp_info->quickly_sleep_out.support) {
-		if (disp_info->quickly_sleep_out.interval > 0)
-			mdelay(disp_info->quickly_sleep_out.interval);
+	if (DISP_INFO->quickly_sleep_out.support) {
+		if (DISP_INFO->quickly_sleep_out.interval > 0)
+			mdelay(DISP_INFO->quickly_sleep_out.interval);
 	}
 	pinfo = hisifd->panel_info;
 	/* mapping bl_level from bl_max to 255 step */
@@ -309,14 +309,14 @@ static int lcd_kit_probe(struct hisi_fb_data_type *hisifd)
 #endif
 	/* common init */
 	if (common_ops->common_init)
-		common_ops->common_init(disp_info->lcd_name);
+		common_ops->common_init(DISP_INFO->lcd_name);
 	/* utils init */
 	lcd_kit_utils_init(pinfo);
 	/* elvdd gpio detect */
-	LCD_KIT_INFO("XML_bootable elvdd detect gpio = %d\n", disp_info->elvdd_detect.detect_gpio);
+	LCD_KIT_INFO("XML_bootable elvdd detect gpio = %d\n", DISP_INFO->elvdd_detect.detect_gpio);
 	if (g_elvdd_gpio)
-		disp_info->elvdd_detect.detect_gpio = g_elvdd_gpio;
-	LCD_KIT_INFO("use elvdd detect gpio %d\n", disp_info->elvdd_detect.detect_gpio);
+		DISP_INFO->elvdd_detect.detect_gpio = g_elvdd_gpio;
+	LCD_KIT_INFO("use elvdd detect gpio %d\n", DISP_INFO->elvdd_detect.detect_gpio);
 	/* panel init */
 	lcd_kit_panel_init();
 	/* power init */
@@ -436,20 +436,20 @@ static int lcd_kit_init(struct system_table *systable)
 	if (lcd_type_ops->get_lcd_type() == LCD_KIT) {
 		LCD_KIT_INFO("lcd type is LCD_KIT\n");
 		/* init lcd id */
-		disp_info->lcd_id = lcd_type_ops->get_lcd_id(&pin_num);
-		disp_info->product_id = lcd_type_ops->get_product_id();
-		disp_info->compatible = lcd_kit_get_compatible(disp_info->product_id, disp_info->lcd_id, pin_num);
-		disp_info->lcd_name = lcd_kit_get_lcd_name(disp_info->product_id, disp_info->lcd_id, pin_num);
+		DISP_INFO->lcd_id = lcd_type_ops->get_lcd_id(&pin_num);
+		DISP_INFO->product_id = lcd_type_ops->get_product_id();
+		DISP_INFO->compatible = lcd_kit_get_compatible(DISP_INFO->product_id, DISP_INFO->lcd_id, pin_num);
+		DISP_INFO->lcd_name = lcd_kit_get_lcd_name(DISP_INFO->product_id, DISP_INFO->lcd_id, pin_num);
 		add_status_disabled();
-		lcd_type_ops->set_lcd_panel_type(disp_info->compatible);
+		lcd_type_ops->set_lcd_panel_type(DISP_INFO->compatible);
 		lcd_type_ops->set_hisifd(&lcd_kit_hisifd);
 		get_power_config_by_str(lcd_type_ops);
 		/* adapt init */
 		lcd_kit_adapt_init();
-		LCD_KIT_INFO("disp_info->lcd_id = %d, disp_info->product_id = %d\n",
-			disp_info->lcd_id, disp_info->product_id);
-		LCD_KIT_DEBUG("disp_info->lcd_name = %s, disp_info->compatible = %s\n",
-			disp_info->lcd_name, disp_info->compatible);
+		LCD_KIT_INFO("DISP_INFO->lcd_id = %d, DISP_INFO->product_id = %d\n",
+			DISP_INFO->lcd_id, DISP_INFO->product_id);
+		LCD_KIT_DEBUG("DISP_INFO->lcd_name = %s, DISP_INFO->compatible = %s\n",
+			DISP_INFO->lcd_name, DISP_INFO->compatible);
 		/* elvdd gpio detect */
 		g_elvdd_gpio = lcd_type_ops->get_elvdd_detect_gpio();
 		LCD_KIT_INFO("DTS_bootable elvdd detect gpio = %d\n", g_elvdd_gpio);

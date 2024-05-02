@@ -40,6 +40,7 @@ static const char * const g_power_ui_ne_info[POWER_UI_NE_END] = {
 	[POWER_UI_NE_HEATING_STATUS] = "UI_HEATING_STATUS=",
 	[POWER_UI_NE_ICON_TYPE] = "UI_ICON_TYPE=",
 	[POWER_UI_NE_DEFAULT] = "DEFAULT=",
+	[POWER_UI_NE_INNER_MAX_POWER] = "INNER_MAX_POWER=",
 };
 
 static const char * const g_power_ui_op_user_table[] = {
@@ -112,6 +113,9 @@ void power_ui_event_notify(unsigned long event, const void *data)
 	case POWER_UI_NE_DEFAULT:
 		memset(&l_dev->info, 0, sizeof(l_dev->info));
 		return;
+	case POWER_UI_NE_INNER_MAX_POWER:
+		l_dev->info.inner_max_power = *(int *)data;
+		break;
 	default:
 		return;
 	}
@@ -143,6 +147,7 @@ static struct power_sysfs_attr_info power_ui_sysfs_field_tbl[] = {
 	power_sysfs_attr_rw(power_ui, 0660, POWER_UI_SYSFS_WATER_STATUS, water_status),
 	power_sysfs_attr_rw(power_ui, 0660, POWER_UI_SYSFS_HEATING_STATUS, heating_status),
 	power_sysfs_attr_rw(power_ui, 0660, POWER_UI_SYSFS_ICON_TYPE, icon_type),
+	power_sysfs_attr_ro(power_ui, 0440, POWER_UI_SYSFS_INNER_MAX_POWER, inner_max_power),
 };
 
 #define POWER_UI_SYSFS_ATTRS_SIZE  ARRAY_SIZE(power_ui_sysfs_field_tbl)
@@ -195,6 +200,9 @@ static ssize_t power_ui_sysfs_show(struct device *dev,
 	case POWER_UI_SYSFS_ICON_TYPE:
 		return scnprintf(buf, POWER_UI_RD_BUF_SIZE, "%d\n",
 			l_dev->info.icon_type);
+	case POWER_UI_SYSFS_INNER_MAX_POWER:
+		return scnprintf(buf, POWER_UI_RD_BUF_SIZE, "%d\n",
+			l_dev->info.inner_max_power);
 	default:
 		return 0;
 	}

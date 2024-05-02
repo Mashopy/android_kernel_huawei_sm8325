@@ -25,7 +25,9 @@
 #include <linux/rcupdate.h>
 #include "input-compat.h"
 #include "input-poller.h"
-
+#ifdef CONFIG_INPUT_BTKB_LED
+#include "btkbled/btkb_led.h"
+#endif
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@suse.cz>");
 MODULE_DESCRIPTION("Input core");
 MODULE_LICENSE("GPL");
@@ -36,7 +38,12 @@ static DEFINE_IDA(input_ida);
 
 static LIST_HEAD(input_dev_list);
 static LIST_HEAD(input_handler_list);
-
+#ifdef CONFIG_INPUT_BTKB_LED
+static void input_led_toggle(struct input_dev *dev, bool activate);
+struct btkb_led_ops led_ops = {
+	.led_toggle = input_led_toggle,
+};
+#endif
 /*
  * input_mutex protects access to both input_dev_list and input_handler_list.
  * This also causes input_[un]register_device and input_[un]register_handler
@@ -1668,14 +1675,45 @@ static int input_dev_uevent(struct device *device, struct kobj_uevent_env *env)
 		}							\
 	} while (0)
 
-static void input_dev_toggle(struct input_dev *dev, bool activate)
+#ifdef CONFIG_INPUT_BTKB_LED
+static void input_led_toggle(struct input_dev *dev, bool activate)
 {
 	if (!dev->event)
 		return;
 
 	INPUT_DO_TOGGLE(dev, LED, led, activate);
-	INPUT_DO_TOGGLE(dev, SND, snd, activate);
+}
 
+static void input_btkb_led_dev_toggle(struct input_dev *dev,
+	bool activate)
+{
+	struct btkb_led_dev *led_dev = input_get_led_dev();
+
+	if (!led_dev) {
+		INPUT_DO_TOGGLE(dev, LED, led, activate);
+		INPUT_DO_TOGGLE(dev, SND, snd, activate);
+	} else {
+		if (led_dev->btkb_led_notifier == 0) {
+			INPUT_DO_TOGGLE(dev, LED, led, activate);
+			INPUT_DO_TOGGLE(dev, SND, snd, activate);
+		} else {
+			INPUT_DO_TOGGLE(dev, SND, snd, activate);
+		}
+	}
+}
+#endif
+
+static void input_dev_toggle(struct input_dev *dev, bool activate)
+{
+	if (!dev->event)
+		return;
+
+#ifdef CONFIG_INPUT_BTKB_LED
+	input_btkb_led_dev_toggle(dev, activate);
+#else
+	INPUT_DO_TOGGLE(dev, LED, led, activate);
+	INPUT_DO_TOGGLE(dev, SND, snd, activate);
+#endif
 	if (activate && test_bit(EV_REP, dev->evbit)) {
 		dev->event(dev, EV_REP, REP_PERIOD, dev->rep[REP_PERIOD]);
 		dev->event(dev, EV_REP, REP_DELAY, dev->rep[REP_DELAY]);
@@ -2129,6 +2167,37 @@ void input_enable_softrepeat(struct input_dev *dev, int delay, int period)
 }
 EXPORT_SYMBOL(input_enable_softrepeat);
 
+#ifdef CONFIG_INPUT_BTKB_LED
+static void input_led_register_notifier(struct input_dev *dev)
+{
+	struct btkb_led_dev *led_dev = input_get_led_dev();
+
+	if (!led_dev) {
+		pr_err("led_dev is null, led register notifier fail\n");
+		return;
+	}
+	if (led_dev->btkb_led_notifier == 0) {
+		pr_err("do not support btkb led notifier, do not need register notifier\n");
+		return;
+	}
+	if (test_bit(EV_LED, dev->evbit)) {
+		dev->led_dev = kzalloc(sizeof(struct btkb_led_dev), GFP_KERNEL);
+		if (!dev->led_dev) {
+			pr_err("kzalloc input led dev fail\n");
+			return;
+		}
+		dev->led_dev->btkb_led_notifier_client =
+			led_dev->btkb_led_notifier_client;
+		dev->led_dev->led_ops = &led_ops;
+		if (btkb_led_register(dev->led_dev, dev) != 0) {
+			pr_err("btkb_led_register fail\n");
+			kfree(dev->led_dev);
+			dev->led_dev = NULL;
+		}
+	}
+}
+#endif
+
 /**
  * input_register_device - register device with input core
  * @dev: device to be registered
@@ -2239,6 +2308,9 @@ int input_register_device(struct input_dev *dev)
 			__func__, dev_name(&dev->dev));
 		devres_add(dev->dev.parent, devres);
 	}
+#ifdef CONFIG_INPUT_BTKB_LED
+	input_led_register_notifier(dev);
+#endif
 	return 0;
 
 err_device_del:
@@ -2252,6 +2324,32 @@ err_devres_free:
 }
 EXPORT_SYMBOL(input_register_device);
 
+#ifdef CONFIG_INPUT_BTKB_LED
+static void input_led_unregister_notifier(struct input_dev *dev)
+{
+	struct btkb_led_dev *led_dev = input_get_led_dev();
+
+	if (!led_dev) {
+		pr_err("led_dev is null, led unregister notifier fail\n");
+		return;
+	}
+	if (led_dev->btkb_led_notifier == 0) {
+		pr_err("do not support btkb led notifier, do not need unregister led notifier\n");
+		return;
+	}
+	if (!dev->led_dev) {
+		pr_err("dev->led_dev is null, do not need unregister notifier\n");
+		return;
+	}
+	if (test_bit(EV_LED, dev->evbit)) {
+		if (btkb_led_unregister(dev->led_dev) != 0)
+			pr_err("btkb_led_unregister fail\n");
+		kfree(dev->led_dev);
+		dev->led_dev = NULL;
+	}
+}
+#endif
+
 /**
  * input_unregister_device - unregister previously registered device
  * @dev: device to be unregistered
@@ -2261,6 +2359,9 @@ EXPORT_SYMBOL(input_register_device);
  */
 void input_unregister_device(struct input_dev *dev)
 {
+#ifdef CONFIG_INPUT_BTKB_LED
+	input_led_unregister_notifier(dev);
+#endif
 	if (dev->devres_managed) {
 		WARN_ON(devres_destroy(dev->dev.parent,
 					devm_input_device_unregister,

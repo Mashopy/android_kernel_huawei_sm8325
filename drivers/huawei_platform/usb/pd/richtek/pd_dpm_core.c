@@ -15,15 +15,16 @@
  */
 
 #include <linux/delay.h>
-
 #include <huawei_platform/usb/pd/richtek/tcpci.h>
 #include <huawei_platform/usb/pd/richtek/pd_policy_engine.h>
 #include <huawei_platform/usb/pd/richtek/pd_dpm_core.h>
 #include <huawei_platform/usb/pd/richtek/rt1711h.h>
+#include <huawei_platform/usb/pd/richtek/tcpci_event.h>
 #include "pd_dpm_prv.h"
 #include <huawei_platform/usb/hw_pd_dev.h>
 
 static int g_optional_max_power;
+bool g_pd_negotiate_flag = false;
 
 typedef struct __pd_device_policy_manager {
 	uint8_t temp;
@@ -157,8 +158,13 @@ int pd_dpm_send_source_caps(pd_port_t *pd_port)
 	}
 
 	src_cap1->nr = src_cap0->nr;
-	for (i = 0; i < src_cap0->nr; i++)
+	for (i = 0; i < src_cap0->nr; i++) {
 		src_cap1->pdos[i] = pd_reset_pdo_power(src_cap0->pdos[i], cable_curr);
+		if (get_only_charger_stg() && !get_role_swap_flag()) {
+			src_cap1->pdos[i] &= ~DPM_FLAGS_CHECK_UFP_ID;
+			PD_ERR("src_cap1->pdos[%d]=%d\n", i, src_cap1->pdos[i]);
+		}
+	}
 
 	return pd_send_data_msg(pd_port, TCPC_TX_SOP, PD_DATA_SOURCE_CAP, src_cap1->nr, src_cap1->pdos);
 }
@@ -638,6 +644,10 @@ void pd_dpm_src_evaluate_request(pd_port_t *pd_port, pd_event_t *pd_event)
 	}
 
 	if (accept_request) {
+		if (get_only_charger_stg()) {
+			PD_ERR("set g_pd_negotiate_flag\n");
+			g_pd_negotiate_flag = true;
+		}
 		pd_port->local_selected_cap = rdo_pos;
 		pd_port->request_i_op = op_curr;
 		pd_port->request_i_max = max_curr;
@@ -1298,11 +1308,16 @@ void pd_dpm_dr_inform_source_cap(pd_port_t *pd_port, pd_event_t *pd_event)
 void pd_dpm_drs_evaluate_swap(pd_port_t *pd_port, uint8_t role)
 {
 	/* Check it later */
+	if (get_only_charger_stg() && !get_dummy_pullout_flag())
+		return;
 	pd_put_dpm_ack_event(pd_port);
 }
 
 void pd_dpm_drs_change_role(pd_port_t *pd_port, uint8_t role)
 {
+	if (get_only_charger_stg() && !get_dummy_pullout_flag())
+		return;
+
 	pd_set_data_role(pd_port, role);
 
 	pd_port->dpm_ack_immediately = true;
@@ -1392,10 +1407,26 @@ void pd_dpm_prs_change_role(pd_port_t *pd_port, uint8_t role)
 	pd_put_dpm_ack_event(pd_port);
 }
 
+bool get_pd_negotiate_flag()
+{
+	return g_pd_negotiate_flag;
+}
+
+void set_pd_negotiate_flag(bool flag)
+{
+	g_pd_negotiate_flag = flag;
+}
+
 /* DRP : Vconn Swap */
 void pd_dpm_vcs_evaluate_swap(pd_port_t *pd_port)
 {
 	bool accept = true;
+
+	if (get_only_charger_stg() && !get_role_swap_flag()) {
+		PD_ERR("%s not support\n", __func__);
+		pd_put_dpm_event(pd_port, PD_DPM_NOT_SUPPORT);
+		return;
+	}
 
 	dpm_response_request(pd_port, accept);
 }

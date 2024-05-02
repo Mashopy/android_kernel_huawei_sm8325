@@ -32,6 +32,9 @@
 #ifdef CONFIG_HUAWEI_SDCARD_DSM
 #include <linux/mmc/dsm_sdcard.h>
 #endif
+#ifdef CONFIG_DISK_MAGO
+#include <linux/disk_mago/mago_mmc_host.h>
+#endif
 
 #define cls_dev_to_mmc_host(d)	container_of(d, struct mmc_host, class_dev)
 
@@ -504,6 +507,10 @@ struct mmc_host *mmc_alloc_host(int extra, struct device *dev)
 	/* scanning will be enabled when we're ready */
 	host->rescan_disable = 1;
 
+#ifdef CONFIG_DISK_MAGO
+	host->mago_latency = NULL;
+#endif
+
 	alias_id = of_alias_get_id(dev->of_node, "sdhc");
 	if (alias_id >= 0) {
 		min_idx = alias_id;
@@ -592,7 +599,10 @@ static ssize_t enable_store(struct device *dev,
 
 	if (!host || !host->card || kstrtoul(buf, 0, &value))
 		return -EINVAL;
-
+#ifdef CONFIG_DISK_MAGO
+	else
+		return count;
+#endif
 	mmc_get_card(host->card, NULL);
 
 	if (!value) {
@@ -748,6 +758,10 @@ int mmc_add_host(struct mmc_host *host)
 	host->clk_scaling.skip_clk_scale_freq_update = false;
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+	mago_mmc_host_init(host);
+#endif
+
 #ifdef CONFIG_DEBUG_FS
 	mmc_add_host_debugfs(host);
 #endif
@@ -786,6 +800,10 @@ void mmc_remove_host(struct mmc_host *host)
 	if (!(host->pm_flags & MMC_PM_IGNORE_PM_NOTIFY))
 		mmc_unregister_pm_notifier(host);
 	mmc_stop_host(host);
+
+#ifdef CONFIG_DISK_MAGO
+	mago_mmc_host_exit(host);
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 	mmc_remove_host_debugfs(host);
