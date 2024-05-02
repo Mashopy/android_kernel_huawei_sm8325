@@ -349,3 +349,11 @@ err_kfree:
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL_GPL(fscrypt_get_symlink);
+
+#ifdef CONFIG_F2FS_FS_DEDUP
+int __fscrypt_prepare_encrypt_info(struct inode *inode)
+{
+	return fscrypt_require_key(inode);
+}
+EXPORT_SYMBOL_GPL(__fscrypt_prepare_encrypt_info);
+#endif

@@ -99,6 +99,10 @@
 #include "internal.h"
 #include "fd.h"
 
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+#include <linux/kswapd_protect_dcache.h>
+#endif
+
 #include "../../lib/kstrtox.h"
 
 #ifdef CONFIG_HYPERHOLD_CORE
@@ -165,6 +169,9 @@ struct pid_entry {
 	NOD(NAME, (S_IFREG|(MODE)),			\
 		NULL, &proc_pid_attr_operations,	\
 		{ .lsm = LSM })
+#define MAX_TIMER_SLACK_DATA_LEN 25
+#define PID_TAG "PID:"
+#define PID_TAG_LENGTH 4
 
 /*
  * Count the number of hardlinks for the pid_entry table, excluding the .
@@ -2707,6 +2714,36 @@ static const struct file_operations proc_timers_operations = {
 };
 #endif
 
+static ssize_t update_process_timerslack_ns(struct task_struct *p,
+	const char *buf)
+{
+	u64 slack_ns;
+	int ret;
+	struct task_struct *leader = NULL;
+
+	if (!strstr(buf, PID_TAG) || p->group_leader != p)
+		return -1;
+
+	/* timer_slack is Decimal */
+	ret = kstrtoull(buf + PID_TAG_LENGTH, 10, &slack_ns);
+	if (ret)
+		return ret;
+
+	leader = p;
+	rcu_read_lock();
+	do {
+		task_lock(p);
+		if (slack_ns == 0)
+			p->timer_slack_ns = p->default_timer_slack_ns;
+		else
+			p->timer_slack_ns = slack_ns;
+		task_unlock(p);
+	} while_each_thread(leader, p);
+	rcu_read_unlock();
+	put_task_struct(leader);
+	return 0;
+}
+
 static ssize_t timerslack_ns_write(struct file *file, const char __user *buf,
 					size_t count, loff_t *offset)
 {
@@ -2714,9 +2751,14 @@ static ssize_t timerslack_ns_write(struct file *file, const char __user *buf,
 	struct task_struct *p;
 	u64 slack_ns;
 	int err;
+	char temp[MAX_TIMER_SLACK_DATA_LEN];
 
-	err = kstrtoull_from_user(buf, count, 10, &slack_ns);
-	if (err < 0)
+	if (count >= MAX_TIMER_SLACK_DATA_LEN)
+		return -1;
+
+	err = copy_from_user(&temp, buf, count);
+	temp[count] = '\0';
+	if (err != 0)
 		return err;
 
 	p = get_proc_task(inode);
@@ -2739,6 +2781,13 @@ static ssize_t timerslack_ns_write(struct file *file, const char __user *buf,
 		}
 	}
 
+	if (!update_process_timerslack_ns(p, temp))
+		return count;
+
+	/* timer_slack is Decimal */
+	err = kstrtoull(temp, 10, &slack_ns);
+	if (err)
+		return err;
 	task_lock(p);
 	if (slack_ns == 0)
 		p->timer_slack_ns = p->default_timer_slack_ns;
@@ -2799,12 +2848,19 @@ static const struct file_operations proc_pid_set_timerslack_ns_operations = {
 	.release	= single_release,
 };
 
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+static bool is_revise_tgid_tid(const struct pid_entry *p);
+#endif
+
 static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	struct task_struct *task, const void *ptr)
 {
 	const struct pid_entry *p = ptr;
 	struct inode *inode;
 	struct proc_inode *ei;
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	struct dentry *res;
+#endif
 
 	inode = proc_pid_make_inode(dentry->d_sb, task, p->mode);
 	if (!inode)
@@ -2820,6 +2876,13 @@ static struct dentry *proc_pident_instantiate(struct dentry *dentry,
 	ei->op = p->op;
 	pid_update_inode(dentry, task, inode);
 	d_set_d_op(dentry, &pid_dentry_operations);
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	res = d_splice_alias(inode, dentry);
+	if (likely(!res))
+		if (is_revise_tgid_tid(p))
+			kswapd_protect_dcache(dentry);
+	return res;
+#endif
 	return d_splice_alias(inode, dentry);
 }
 
@@ -3502,6 +3565,15 @@ static int proc_stack_depth(struct seq_file *m, struct pid_namespace *ns,
 }
 #endif /* CONFIG_STACKLEAK_METRICS */
 
+#ifdef CONFIG_ACCESS_TOKENID
+static int proc_token_operations(struct seq_file *m, struct pid_namespace *ns,
+				 struct pid *pid, struct task_struct *task)
+{
+	seq_printf(m, "%#llx %#llx\n", task->token, task->ftoken);
+	return 0;
+}
+#endif /* CONFIG_ACCESS_TOKENID */
+
 /*
  * Thread groups
  */
@@ -3546,6 +3618,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 	REG("cmdline",    S_IRUGO, proc_pid_cmdline_ops),
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
+#ifdef CONFIG_DFX_MEMCHECK
+	ONE("rss",        S_IRUGO, proc_tgid_rss),
+#endif
 	ONE("statm",      S_IRUGO, proc_pid_statm),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
 #ifdef CONFIG_NUMA
@@ -3647,6 +3722,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_PROC_PID_ARCH_STATUS
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
+#endif
+#ifdef CONFIG_ACCESS_TOKENID
+	ONE("tokenid", S_IRUSR, proc_token_operations),
 #endif
 #ifdef CONFIG_HW_RTG_FRAME
 	REG("rtg", S_IRUGO|S_IWUSR, proc_rtg_operations),
@@ -4048,6 +4126,9 @@ static const struct pid_entry tid_base_stuff[] = {
 #ifdef CONFIG_PROC_PID_ARCH_STATUS
 	ONE("arch_status", S_IRUGO, proc_pid_arch_status),
 #endif
+#ifdef CONFIG_ACCESS_TOKENID
+	ONE("tokenid", S_IRUSR, proc_token_operations),
+#endif
 #ifdef CONFIG_CPU_FREQ_TIMES
 	ONE("time_in_state", 0444, proc_time_in_state_show),
 	ONE("time_in_state_total", 0444, proc_time_in_state_total_show),
@@ -4059,6 +4140,13 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("vip_prio", S_IRUSR|S_IWUSR, proc_vip_prio_operations),
 #endif
 };
+
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+static bool is_revise_tgid_tid(const struct pid_entry *p)
+{
+	return (p >= tid_base_stuff && p <= tid_base_stuff + ARRAY_SIZE(tid_base_stuff)) || (p >= tgid_base_stuff && p <= tgid_base_stuff + ARRAY_SIZE(tgid_base_stuff));
+}
+#endif
 
 static int proc_tid_base_readdir(struct file *file, struct dir_context *ctx)
 {
@@ -4089,6 +4177,9 @@ static struct dentry *proc_task_instantiate(struct dentry *dentry,
 	struct task_struct *task, const void *ptr)
 {
 	struct inode *inode;
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	struct dentry *res;
+#endif
 	inode = proc_pid_make_inode(dentry->d_sb, task, S_IFDIR | S_IRUGO | S_IXUGO);
 	if (!inode)
 		return ERR_PTR(-ENOENT);
@@ -4101,6 +4192,12 @@ static struct dentry *proc_task_instantiate(struct dentry *dentry,
 	pid_update_inode(dentry, task, inode);
 
 	d_set_d_op(dentry, &pid_dentry_operations);
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	res = d_splice_alias(inode, dentry);
+	if (likely(!res))
+		kswapd_protect_dcache(dentry);
+	return res;
+#endif
 	return d_splice_alias(inode, dentry);
 }
 

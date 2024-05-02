@@ -235,7 +235,7 @@ static int hmdfs_get_inode_by_name(struct hmdfs_peer *con, const char *filename,
 }
 
 static const char *datasl_str[] = {
-	"s0", "s1", "s2", "s3", "s4"
+	"S0", "S1", "S2", "S3", "S4"
 };
 
 static int parse_data_sec_level(const char *sl_value, size_t sl_value_len)
@@ -1652,7 +1652,8 @@ out:
 
 static void _gen_dir_dents_info(struct getdents_callback_real *gc)
 {
-	struct dir_entry_info *di = NULL, *tmp = NULL;
+	struct dir_entry_info *di = NULL;
+	struct dir_entry_info *tmp = NULL;
 
 	list_for_each_entry_safe(di, tmp, &gc->dir_ents, list) {
 		_do_create_dentry(gc, di);

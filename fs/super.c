@@ -40,6 +40,14 @@
 #include <uapi/linux/mount.h>
 #include "internal.h"
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+#include <chipset_common/reclaim_acct/reclaim_acct.h>
+#endif
+
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+#include <linux/kswapd_protect_dcache.h>
+#endif
+
 static int thaw_super_locked(struct super_block *sb);
 
 static LIST_HEAD(super_blocks);
@@ -115,6 +123,13 @@ static unsigned long super_cache_scan(struct shrinker *shrink,
 	return freed;
 }
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+bool is_super_cache_scan(void *scan_objects)
+{
+	return scan_objects == super_cache_scan;
+}
+#endif
+
 static unsigned long super_cache_count(struct shrinker *shrink,
 				       struct shrink_control *sc)
 {
@@ -150,7 +165,11 @@ static unsigned long super_cache_count(struct shrinker *shrink,
 	if (!total_objects)
 		return SHRINK_EMPTY;
 
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	total_objects = vfs_scan_count(sb, shrink, total_objects);
+#else
 	total_objects = vfs_pressure_ratio(total_objects);
+#endif
 	return total_objects;
 }
 

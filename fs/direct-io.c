@@ -108,6 +108,9 @@ struct dio_submit {
 	unsigned cur_page_len;		/* Nr of bytes at cur_page_offset */
 	sector_t cur_page_block;	/* Where it starts */
 	loff_t cur_page_fs_offset;	/* Offset in file */
+#ifdef CONFIG_DISK_MAGO
+	struct block_device *cur_bdev; /* cur_page's bdev */
+#endif
 
 	struct iov_iter *iter;
 	/*
@@ -445,10 +448,19 @@ dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
 	 */
 	bio = bio_alloc(GFP_KERNEL, nr_vecs);
 
+#ifdef CONFIG_DISK_MAGO
+	/*
+	 * The block key is associated with the device in diskmago, we set
+	 * device before setting bio crypto context here.
+	 */
+	bio_set_dev(bio, bdev);
+#endif
 	fscrypt_set_bio_crypt_ctx(bio, inode,
 				  sdio->cur_page_fs_offset >> inode->i_blkbits,
 				  GFP_KERNEL);
+#ifndef CONFIG_DISK_MAGO
 	bio_set_dev(bio, bdev);
+#endif
 	bio->bi_iter.bi_sector = first_sector;
 	bio_set_op_attrs(bio, dio->op, dio->op_flags);
 	if (dio->is_async)
@@ -766,7 +778,12 @@ static inline int dio_new_bio(struct dio *dio, struct dio_submit *sdio,
 	sector = start_sector << (sdio->blkbits - 9);
 	nr_pages = min(sdio->pages_in_io, BIO_MAX_PAGES);
 	BUG_ON(nr_pages <= 0);
+#ifdef CONFIG_DISK_MAGO
+	BUG_ON(sdio->cur_bdev == NULL);
+	dio_bio_alloc(dio, sdio, sdio->cur_bdev, sector, nr_pages);
+#else
 	dio_bio_alloc(dio, sdio, map_bh->b_bdev, sector, nr_pages);
+#endif
 	sdio->boundary = 0;
 out:
 	return ret;
@@ -783,6 +800,14 @@ static inline int dio_bio_add_page(struct dio_submit *sdio)
 {
 	int ret;
 
+#ifdef CONFIG_DISK_MAGO
+	/*
+	 * May be not used.
+	 */
+	if (sdio->cur_bdev->bd_disk != sdio->bio->bi_disk ||
+			sdio->bio->bi_partno != sdio->cur_bdev->bd_partno)
+		return 1;
+#endif
 	ret = bio_add_page(sdio->bio, sdio->cur_page,
 			sdio->cur_page_len, sdio->cur_page_offset);
 	if (ret == sdio->cur_page_len) {
@@ -843,6 +868,11 @@ static inline int dio_send_cur_page(struct dio *dio, struct dio_submit *sdio,
 		 */
 		if (sdio->final_block_in_bio != sdio->cur_page_block ||
 		    cur_offset != bio_next_offset ||
+#ifdef CONFIG_DISK_MAGO
+			(sdio->cur_bdev &&
+			 (sdio->cur_bdev->bd_disk != sdio->bio->bi_disk ||
+			  sdio->bio->bi_partno != sdio->cur_bdev->bd_partno)) ||
+#endif
 		    !fscrypt_mergeable_bio(sdio->bio, dio->inode,
 					   cur_offset >> dio->inode->i_blkbits))
 			dio_bio_submit(dio, sdio);
@@ -902,6 +932,9 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 	 * Can we just grow the current page's presence in the dio?
 	 */
 	if (sdio->cur_page == page &&
+#ifdef CONFIG_DISK_MAGO
+		sdio->cur_bdev == map_bh->b_bdev &&
+#endif
 	    sdio->cur_page_offset + sdio->cur_page_len == offset &&
 	    sdio->cur_page_block +
 	    (sdio->cur_page_len >> sdio->blkbits) == blocknr) {
@@ -916,6 +949,9 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 		ret = dio_send_cur_page(dio, sdio, map_bh);
 		put_page(sdio->cur_page);
 		sdio->cur_page = NULL;
+#ifdef CONFIG_DISK_MAGO
+		sdio->cur_bdev = NULL;
+#endif
 		if (ret)
 			return ret;
 	}
@@ -926,6 +962,9 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 	sdio->cur_page_len = len;
 	sdio->cur_page_block = blocknr;
 	sdio->cur_page_fs_offset = sdio->block_in_file << sdio->blkbits;
+#ifdef CONFIG_DISK_MAGO
+	sdio->cur_bdev = map_bh->b_bdev;
+#endif
 out:
 	/*
 	 * If boundary then we want to schedule the IO now to
@@ -937,6 +976,9 @@ out:
 			dio_bio_submit(dio, sdio);
 		put_page(sdio->cur_page);
 		sdio->cur_page = NULL;
+#ifdef CONFIG_DISK_MAGO
+		sdio->cur_bdev = NULL;
+#endif
 	}
 	return ret;
 }
@@ -1395,6 +1437,9 @@ do_blockdev_direct_IO(struct kiocb *iocb, struct inode *inode,
 			retval = ret2;
 		put_page(sdio.cur_page);
 		sdio.cur_page = NULL;
+#ifdef CONFIG_DISK_MAGO
+		sdio.cur_bdev = NULL;
+#endif
 	}
 	if (sdio.bio)
 		dio_bio_submit(dio, &sdio);

@@ -50,6 +50,9 @@ enum {
 #ifdef CONFIG_F2FS_GRADING_SSR
 	F2FS_HOT_COLD_PARAMS,
 #endif
+#ifdef CONFIG_DISK_MAGO
+	DEV_INFO,	/* struct f2fs_dev_info */
+#endif
 };
 
 struct f2fs_attr {
@@ -94,6 +97,10 @@ static unsigned char *__struct_ptr(struct f2fs_sb_info *sbi, int struct_type)
 		return (unsigned char *)&sbi->cprc_info;
 	else if (struct_type == ATGC_INFO)
 		return (unsigned char *)&sbi->am;
+#endif
+#ifdef CONFIG_DISK_MAGO
+	else if (struct_type == DEV_INFO)
+		return (unsigned char *)sbi->devs;
 #endif
 	return NULL;
 }
@@ -235,6 +242,11 @@ static ssize_t features_show(struct f2fs_attr *a,
 				len ? ", " : "", "hw_dedup");
 #endif
 #endif
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_sb_has_disk_mago(sbi))
+		len += scnprintf(buf + len, PAGE_SIZE - len, "%s%s",
+					len ? ", " : "", "disk_mago");
+#endif
 	len += scnprintf(buf + len, PAGE_SIZE - len, "%s%s",
 				len ? ", " : "", "pin_file");
 	len += scnprintf(buf + len, PAGE_SIZE - len, "\n");
@@ -320,6 +332,72 @@ static ssize_t main_blkaddr_show(struct f2fs_attr *a,
 			(unsigned long long)MAIN_BLKADDR(sbi));
 }
 
+#ifdef CONFIG_DISK_MAGO
+char *dm_flag_names[DM_DEF_MAP] = {
+	[DM_DEF_NONE]	= "none",
+	[DM_DEF_RTP]	= "rtp",
+	[DM_DEF_RLP]	= "rlp",
+	[DM_DEF_WP]	= "wp",
+	[DM_DEF_NP]	= "np",
+	[DM_DEF_SP]	= "sp",
+};
+
+static int f2fs_set_dm_extension_list(struct f2fs_sb_info *sbi,
+					const char *name, unsigned int flag)
+{
+	char (*extlist)[F2FS_EXTENSION_LEN] = sbi->dm_ext->dm_extension_list;
+	unsigned char *flags = sbi->dm_ext->dm_flag;
+	unsigned char ext_count = sbi->dm_ext->ext_count;
+	int i = 0;
+
+	while (i < ext_count && strcmp(name, extlist[i]))
+		i++;
+
+	/* not found */
+	if (i == ext_count) {
+		if (ext_count == F2FS_MAX_EXTENSION)
+			return -EINVAL;
+		memcpy(extlist[i], name, strlen(name));
+		sbi->dm_ext->ext_count++;
+		flags[i] = flag;
+		return 0;
+	}
+
+	if (flags[i] != flag)
+		flags[i] = flag;
+	return 0;
+}
+
+static int f2fs_clear_dm_extension_list(struct f2fs_sb_info *sbi,
+				const char *name, unsigned int flag)
+{
+	char (*extlist)[F2FS_EXTENSION_LEN] = sbi->dm_ext->dm_extension_list;
+	unsigned char *flags = sbi->dm_ext->dm_flag;
+	unsigned char ext_count = sbi->dm_ext->ext_count;
+	int i = 0;
+
+	while (i < ext_count && strcmp(name, extlist[i]))
+		i++;
+
+	/* not found */
+	if (i == ext_count)
+		return -EINVAL;
+	if (flags[i] != flag)
+		return -EINVAL;
+
+	memcpy(extlist[i], extlist[i + 1],
+			F2FS_EXTENSION_LEN * (ext_count - i - 1));
+	memset(extlist[ext_count - 1], 0, F2FS_EXTENSION_LEN);
+
+	memcpy(flags + i, flags + i + 1,
+			F2FS_EXTENSION_LEN * (ext_count - i - 1));
+
+	flags[ext_count - 1] = 0;
+	sbi->dm_ext->ext_count-- ;
+	return 0;
+}
+#endif
+
 static ssize_t f2fs_sbi_show(struct f2fs_attr *a, struct f2fs_sb_info *sbi, char *buf)
 {
 	unsigned char *ptr = NULL;
@@ -328,6 +406,26 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a, struct f2fs_sb_info *sbi, char
 	ptr = __struct_ptr(sbi, a->struct_type);
 	if (!ptr)
 		return -EINVAL;
+
+#ifdef CONFIG_DISK_MAGO
+	if (!strcmp(a->attr.name, "multi_dev_info")) {
+		int len = 0;
+
+		if (sbi->s_ndevs != 2)
+			return -EINVAL;
+		len += scnprintf(buf, PAGE_SIZE, "%d %d %d %d %d %d %d %d\n",
+				 FDEV(0).bw_read,
+				 FDEV(0).bw_write,
+				 FDEV(0).bw_random_read,
+				 FDEV(0).bw_random_write,
+				 FDEV(1).bw_read,
+				 FDEV(1).bw_write,
+				 FDEV(1).bw_random_read,
+				 FDEV(1).bw_random_write);
+
+		return len;
+	}
+#endif
 
 	if (!strcmp(a->attr.name, "extension_list")) {
 		__u8 (*extlist)[F2FS_EXTENSION_LEN] =
@@ -349,6 +447,29 @@ static ssize_t f2fs_sbi_show(struct f2fs_attr *a, struct f2fs_sb_info *sbi, char
 								extlist[i]);
 		return len;
 	}
+
+#ifdef CONFIG_DISK_MAGO
+	if (!strcmp(a->attr.name, "dm_extension_list")) {
+		char (*extlist)[F2FS_EXTENSION_LEN];
+		unsigned char flag;
+		int len = 0, i;
+
+		if (!f2fs_support_disk_mago(sbi))
+			return -EPERM;
+
+		extlist = sbi->dm_ext->dm_extension_list;
+
+		for (i = 0; i < sbi->dm_ext->ext_count; i++) {
+			flag = sbi->dm_ext->dm_flag[i];
+
+			len += scnprintf(buf + len, PAGE_SIZE - len, "%s ",
+								extlist[i]);
+			len += scnprintf(buf + len, PAGE_SIZE - len, "%s\n",
+								dm_flag_names[flag]);
+		}
+		return len;
+	}
+#endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
 	if (!strcmp(a->attr.name, "ckpt_thread_ioprio")) {
@@ -407,6 +528,27 @@ static ssize_t __sbi_store(struct f2fs_attr *a,
 	if (!ptr)
 		return -EINVAL;
 
+#ifdef CONFIG_DISK_MAGO
+	if (!strcmp(a->attr.name, "multi_dev_info")) {
+		if (sbi->s_ndevs != 2)
+			return -EINVAL;
+		if (sscanf(buf, "%d %d %d %d %d %d %d %d",
+			   &FDEV(0).bw_read,
+			   &FDEV(0).bw_write,
+			   &FDEV(0).bw_random_read,
+			   &FDEV(0).bw_random_write,
+			   &FDEV(1).bw_read,
+			   &FDEV(1).bw_write,
+			   &FDEV(1).bw_random_read,
+			   &FDEV(1).bw_random_write) != 8)
+			return -EINVAL;
+
+		f2fs_update_static_performance(sbi);
+
+		return count;
+	}
+#endif
+
 	if (!strcmp(a->attr.name, "extension_list")) {
 		const char *name = strim((char *)buf);
 		bool set = true, hot;
@@ -441,6 +583,52 @@ out:
 		up_write(&sbi->sb_lock);
 		return ret ? ret : count;
 	}
+
+#ifdef CONFIG_DISK_MAGO
+	if (!strcmp(a->attr.name, "dm_extension_list")) {
+		const char *name = strim((char *)buf);
+		bool set = true;
+		unsigned int flag = DM_DEF_NONE;
+
+		if (!f2fs_support_disk_mago(sbi))
+			return -EPERM;
+
+		if (!strncmp(name, "[rtp]", 5)) {
+			flag = DM_DEF_RTP;
+			name += 5;
+		} else if (!strncmp(name, "[rlp]", 5)) {
+			flag = DM_DEF_RLP;
+			name += 5;
+		} else if (!strncmp(name, "[wp]", 4)) {
+			flag = DM_DEF_WP;
+			name += 4;
+		} else if (!strncmp(name, "[np]", 4)) {
+			flag = DM_DEF_NP;
+			name += 4;
+		} else if (!strncmp(name, "[sp]", 4)) {
+			flag = DM_DEF_SP;
+			name += 4;
+		} else {
+			return -EINVAL;
+		}
+
+		if (*name == '!') {
+			name++;
+			set = false;
+		}
+
+		if (strlen(name) >= F2FS_EXTENSION_LEN)
+			return -EINVAL;
+
+		down_write(&sbi->sb_lock);
+		if (set)
+			ret = f2fs_set_dm_extension_list(sbi, name, flag);
+		else
+			ret = f2fs_clear_dm_extension_list(sbi, name, flag);
+		up_write(&sbi->sb_lock);
+		return ret ? ret : count;
+	}
+#endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
 	if (!strcmp(a->attr.name, "ckpt_thread_ioprio")) {
@@ -858,6 +1046,9 @@ F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, max_io_bytes, max_io_bytes);
 #endif
 F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, gc_pin_file_thresh, gc_pin_file_threshold);
 F2FS_RW_ATTR(F2FS_SBI, f2fs_super_block, extension_list, extension_list);
+#ifdef CONFIG_DISK_MAGO
+F2FS_RW_ATTR(F2FS_SBI, dm_file_extension, dm_extension_list, dm_extension_list);
+#endif
 #ifdef CONFIG_F2FS_GRADING_SSR
 F2FS_RW_ATTR(F2FS_HOT_COLD_PARAMS, f2fs_hot_cold_params, hc_hot_data_lower_limit, hot_data_lower_limit);
 F2FS_RW_ATTR(F2FS_HOT_COLD_PARAMS, f2fs_hot_cold_params, hc_hot_data_waterline, hot_data_waterline);
@@ -938,6 +1129,9 @@ F2FS_FEATURE_RO_ATTR(pin_file);
 #ifdef CONFIG_F2FS_FS_DEDUP
 F2FS_FEATURE_RO_ATTR(hw_dedup);
 #endif
+#ifdef CONFIG_DISK_MAGO
+F2FS_FEATURE_RO_ATTR(disk_mago);
+#endif
 
 /* For ATGC */
 F2FS_RW_ATTR(ATGC_INFO, atgc_management, atgc_candidate_ratio, candidate_ratio);
@@ -969,6 +1163,15 @@ F2FS_FEATURE_RO_ATTR(verity, FEAT_VERITY);
 F2FS_FEATURE_RO_ATTR(sb_checksum, FEAT_SB_CHECKSUM);
 F2FS_FEATURE_RO_ATTR(casefold, FEAT_CASEFOLD);
 #endif /* CONFIG_F2FS_FS_DISK_TURBO */
+
+#ifdef CONFIG_DISK_MAGO
+/* For multi devices info */
+F2FS_RW_ATTR(DEV_INFO, f2fs_dev_info, multi_dev_info, bw_read);
+F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, prediction_always_static, prediction_always_static);
+F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, split_unit, split_unit);
+F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, force_dev, force_dev);
+F2FS_RW_ATTR(F2FS_SBI, f2fs_sb_info, writeback_dirty_ratio, writeback_dirty_ratio);
+#endif
 
 #define ATTR_LIST(name) (&f2fs_attr_##name.attr)
 static struct attribute *f2fs_attrs[] = {
@@ -1010,6 +1213,9 @@ static struct attribute *f2fs_attrs[] = {
 #endif
 	ATTR_LIST(gc_pin_file_thresh),
 	ATTR_LIST(extension_list),
+#ifdef CONFIG_DISK_MAGO
+	ATTR_LIST(dm_extension_list),
+#endif
 #ifdef CONFIG_F2FS_FAULT_INJECTION
 	ATTR_LIST(inject_rate),
 	ATTR_LIST(inject_type),
@@ -1065,6 +1271,13 @@ static struct attribute *f2fs_attrs[] = {
 	ATTR_LIST(hc_warm_node_waterline),
 	ATTR_LIST(hc_enable),
 #endif
+#ifdef CONFIG_DISK_MAGO
+	ATTR_LIST(multi_dev_info),
+	ATTR_LIST(prediction_always_static),
+	ATTR_LIST(split_unit),
+	ATTR_LIST(force_dev),
+	ATTR_LIST(writeback_dirty_ratio),
+#endif
 	NULL,
 };
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
@@ -1108,6 +1321,9 @@ static struct attribute *f2fs_feat_attrs[] = {
 #ifdef CONFIG_F2FS_FS_DEDUP
 	ATTR_LIST(hw_dedup),
 #endif
+#ifdef CONFIG_DISK_MAGO
+	ATTR_LIST(disk_mago),
+#endif
 #else
 	ATTR_LIST(casefold),
 #endif
@@ -1139,6 +1355,9 @@ F2FS_SB_FEATURE_RO_ATTR(sb_checksum, SB_CHKSUM);
 F2FS_SB_FEATURE_RO_ATTR(casefold, CASEFOLD);
 F2FS_SB_FEATURE_RO_ATTR(compression, COMPRESSION);
 F2FS_SB_FEATURE_RO_ATTR(readonly, RO);
+#ifdef CONFIG_DISK_MAGO
+F2FS_SB_FEATURE_RO_ATTR(disk_mago, DISK_MAGO);
+#endif
 
 static struct attribute *f2fs_sb_feat_attrs[] = {
 	ATTR_LIST(sb_encryption),
@@ -1155,6 +1374,9 @@ static struct attribute *f2fs_sb_feat_attrs[] = {
 	ATTR_LIST(sb_casefold),
 	ATTR_LIST(sb_compression),
 	ATTR_LIST(sb_readonly),
+#ifdef CONFIG_DISK_MAGO
+	ATTR_LIST(sb_disk_mago),
+#endif
 	NULL,
 };
 ATTRIBUTE_GROUPS(f2fs_sb_feat);
@@ -2077,6 +2299,141 @@ static ssize_t f2fs_bd_turbo_info_write(struct file *file,
 }
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+static void update_dm_bd_stat(struct f2fs_sb_info *sbi, struct seq_file *seq)
+{
+	int i, j;
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);
+	unsigned long gc_call_tot = 0;
+
+	/*
+	 * each colum indicates:
+	 * the 1st line
+	 * base_dev_gc_call_count, base_dev_background_gc_call_count,
+	 * ext_dev_gc_call_count, ext_dev_background_gc_call_count,
+	 * base_dev_gc_data_segments, base_dev_background_gc_data_segments,
+	 * ext_dev_gc_data_segments, ext_dev_background_gc_data_segments,
+	 * base_dev_gc_node_segments, base_dev_background_gc_node_segments,
+	 * ext_dev_gc_node_segments, ext_dev_background_gc_node_segments,
+	 * base_dev_gc_data_blocks, base_dev_background_gc_data_blocks,
+	 * ext_dev_gc_data_blocks, ext_dev_background_gc_data_blocks,
+	 * base_dev_gc_node_blocks, base_dev_background_gc_node_blocks,
+	 * ext_dev_gc_node_blocks, ext_dev_background_gc_node_blocks,
+	 * maximum_dirty_pages_before_do_gc,
+	 * minimum_dirty_pages_after_do_gc,
+	 * average_dirty_pages_during_do_gc,
+	 */
+	for (i = 0; i < NR_DM_GC_STEP; i++)
+		for (j = 0; j < DM_DEV_MAX; j++) {
+			seq_printf(seq, "%u ", bd->dm_gc_step[i][j]);
+			seq_printf(seq, "%u ", bd->dm_bg_gc_step[i][j]);
+			if (i == DM_GC_CALL_NUMS) {
+				gc_call_tot += (bd->dm_gc_step[i][j] +
+					bd->dm_bg_gc_step[i][j]);
+			}
+		}
+	seq_printf(seq, "%lu %lu ", bd->dm_gc_dirty_pages_max,
+				   bd->dm_gc_dirty_pages_min);
+	if (gc_call_tot)
+		seq_printf(seq, "%lu ", bd->dm_gc_dirty_pages_tot / gc_call_tot);
+	else
+		seq_printf(seq, "%lu ", 0);
+	seq_printf(seq, "\n");
+
+	/* each colum indicates:
+	 * the 2nd line:
+	 * writeback_dirty_pages_for_reclaim:
+	 *   0_to_8_pages, 8_to_128_pages, 128_to_512_pages, great_512_pages
+	 * writeback_dirty_pages_for_front_ground_sync:
+	 *   0_to_8_pages, 8_to_128_pages, 128_to_512_pages, great_512_pages
+	 * writeback_dirty_pages_for_sync_all:
+	 *   0_to_8_pages, 8_to_128_pages, 128_to_512_pages, great_512_pages
+	 * writeback_dirty_pages_for_normal:
+	 *   0_to_8_pages, 8_to_128_pages, 128_to_512_pages, great_512_pages
+	 * static_radio_writeback_split, dynamic_radio_writeback_split_nums
+	 * reserver for WB and space allocate: F2FS_DM_BD_RESERVE_WB_AND_ALOCATE_NUMS
+	 */
+	for (i = 0; i < NR_DM_WB_REASONS; i++)
+		for (j = 0; j < NR_DM_WB_PAGES_BUCKET; j++)
+			seq_printf(seq, "%u ", bd->dm_wb_pages[i][j]);
+	for (i = 0; i < NR_DM_RADIO; i++)
+		seq_printf(seq, "%u ", bd->dm_wb_radio[i]);
+
+	for (i = 0; i < F2FS_DM_BD_RESERVE_WB_AND_ALOCATE_NUMS; i++)
+		seq_printf(seq, "%u ", 0);
+	seq_printf(seq, "\n");
+
+	/* each colum indicates:
+	 * the 3rd line:
+	 * base_dev_free_segment, base_dev_user_blocks, base_dev_user_valid_blocks
+	 * ext_dev_free_segment, ext_dev_user_blocks, ext_dev_user_valid_blocks
+	 */
+	for (i = 0; i < sbi->s_ndevs; i++)
+		seq_printf(seq, "%u %u %u ", FDEV(i).free_segs,
+					     FDEV(i).user_block_count,
+					     FDEV(i).written_valid_blocks);
+	seq_printf(seq, "\n");
+}
+
+static int f2fs_bd_diskmago_info_show(struct seq_file *seq, void *p)
+{
+	struct super_block *sb = seq->private;
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+
+	if (!f2fs_support_disk_mago(sbi))
+		return -ENOTSUPP;
+
+	bd_mutex_lock(&sbi->bd_mutex);
+	update_dm_bd_stat(sbi, seq);
+	bd_mutex_unlock(&sbi->bd_mutex);
+
+	return 0;
+}
+
+static ssize_t f2fs_bd_diskmago_info_write(struct file *file,
+	const char __user *buf,
+	size_t length, loff_t *ppos)
+{
+	int i, j;
+	struct seq_file *seq = file->private_data;
+	struct super_block *sb = seq->private;
+	struct f2fs_sb_info *sbi = F2FS_SB(sb);
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);
+	char buffer[F2FS_DM_BD_RESET_MAX_LEN] = {0};
+
+	if (!f2fs_support_disk_mago(sbi))
+		return -ENOTSUPP;
+
+	if (!buf || length > (F2FS_DM_BD_RESET_MAX_LEN - 1) || length <= 0)
+		return -EINVAL;
+
+	if (copy_from_user(&buffer, buf, length))
+		return -EFAULT;
+
+	if (buffer[0] != '0')
+		return -EINVAL;
+
+	bd_mutex_lock(&sbi->bd_mutex);
+	for (i = 0; i < NR_DM_GC_STEP; i++)
+		for (j = 0; j < DM_DEV_MAX; j++) {
+			bd->dm_gc_step[i][j] = 0;
+			bd->dm_bg_gc_step[i][j] = 0;
+		}
+	bd->dm_gc_dirty_pages_max = 0;
+	bd->dm_gc_dirty_pages_min = 0;
+	bd->dm_gc_dirty_pages_tot = 0;
+	for (i = 0; i < NR_DM_WB_REASONS; i++)
+		for (j = 0; j < NR_DM_WB_PAGES_BUCKET; j++)
+			bd->dm_wb_pages[i][j] = 0;
+	for (i = 0; i < NR_DM_RADIO; i++)
+		bd->dm_wb_radio[i] = 0;
+
+	bd_mutex_unlock(&sbi->bd_mutex);
+
+	return length;
+}
+#endif /* CONFIG_DISK_MAGO */
+
 F2FS_BD_PROC_DEF(bd_base_info);
 F2FS_BD_PROC_DEF(bd_discard_info);
 F2FS_BD_PROC_DEF(bd_gc_info);
@@ -2087,6 +2444,9 @@ F2FS_BD_PROC_DEF(bd_encrypt_info);
 #ifdef CONFIG_F2FS_TURBO_ZONE
 F2FS_BD_PROC_DEF(bd_turbo_info);
 #endif
+#ifdef CONFIG_DISK_MAGO
+F2FS_BD_PROC_DEF(bd_diskmago_info);
+#endif /* CONFIG_DISK_MAGO */
 
 static void f2fs_build_bd_stat(struct f2fs_sb_info *sbi)
 {
@@ -2111,6 +2471,10 @@ static void f2fs_build_bd_stat(struct f2fs_sb_info *sbi)
 	proc_create_data("bd_turbo_info", S_IRUGO | S_IWUGO, sbi->s_proc,
 		&f2fs_bd_turbo_info_fops, sb);
 #endif
+#ifdef CONFIG_DISK_MAGO
+	proc_create_data("bd_diskmago_info", S_IRUGO | S_IWUGO, sbi->s_proc,
+		&f2fs_bd_diskmago_info_fops, sb);
+#endif /* CONFIG_DISK_MAGO */
 #else
 	proc_create_single_data("bd_base_info", S_IRUGO | S_IWUGO, sbi->s_proc,
 		f2fs_bd_base_info_show, sb);
@@ -2130,6 +2494,10 @@ static void f2fs_build_bd_stat(struct f2fs_sb_info *sbi)
 	proc_create_single_data("bd_turbo_info", S_IRUGO | S_IWUGO, sbi->s_proc,
 		f2fs_bd_turbo_info_show, sb);
 #endif
+#ifdef CONFIG_DISK_MAGO
+	proc_create_single_data("bd_diskmago_info", S_IRUGO | S_IWUGO, sbi->s_proc,
+		f2fs_bd_diskmago_info_show, sb);
+#endif /* CONFIG_DISK_MAGO */
 #endif
 }
 
@@ -2145,6 +2513,9 @@ static void f2fs_unregister_bd_stat(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_TURBO_ZONE
 	remove_proc_entry("bd_turbo_info", sbi->s_proc);
 #endif
+#ifdef CONFIG_DISK_MAGO
+	remove_proc_entry("bd_diskmago_info", sbi->s_proc);
+#endif /* CONFIG_DISK_MAGO */
 }
 
 void f2fs_destroy_bd_info(struct f2fs_sb_info *sbi)

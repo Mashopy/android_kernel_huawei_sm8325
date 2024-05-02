@@ -399,6 +399,42 @@ static int init_inner_inode(struct inode *inode)
 }
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+static void get_disk_mago_flags_info(struct inode *inode)
+{
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	unsigned int flags = F2FS_I(inode)->i_flags;
+
+	if (flags & F2FS_DM_NONE)
+		set_bit(FI_DM_NONE, fi->flags);
+	if (flags & F2FS_DM_RTP)
+		set_bit(FI_DM_RTP, fi->flags);
+	if (flags & F2FS_DM_RLP)
+		set_bit(FI_DM_RLP, fi->flags);
+	if (flags & F2FS_DM_WP)
+		set_bit(FI_DM_WP, fi->flags);
+	if (flags & F2FS_DM_NP)
+		set_bit(FI_DM_NP, fi->flags);
+}
+
+static void set_disk_mago_flags_info(struct inode *inode)
+{
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	fi->i_flags &= ~F2FS_DM_MASK;
+	if (is_inode_flag_set(inode, FI_DM_NONE))
+		fi->i_flags |= F2FS_DM_NONE;
+	if (is_inode_flag_set(inode, FI_DM_RTP))
+		fi->i_flags |= F2FS_DM_RTP;
+	if (is_inode_flag_set(inode, FI_DM_RLP))
+		fi->i_flags |= F2FS_DM_RLP;
+	if (is_inode_flag_set(inode, FI_DM_WP))
+		fi->i_flags |= F2FS_DM_WP;
+	if (is_inode_flag_set(inode, FI_DM_NP))
+		fi->i_flags |= F2FS_DM_NP;
+}
+#endif
+
 static int do_read_inode(struct inode *inode)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
@@ -543,6 +579,10 @@ static int do_read_inode(struct inode *inode)
 		get_dedup_flags_info(inode, ri);
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi))
+		get_disk_mago_flags_info(inode);
+#endif
 	F2FS_I(inode)->i_disk_time[0] = inode->i_atime;
 	F2FS_I(inode)->i_disk_time[1] = inode->i_ctime;
 	F2FS_I(inode)->i_disk_time[2] = inode->i_mtime;
@@ -693,6 +733,10 @@ void f2fs_update_inode(struct inode *inode, struct page *node_page)
 	}
 	set_raw_inline(inode, ri);
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(F2FS_I_SB(inode)))
+		set_disk_mago_flags_info(inode);
+#endif
 	ri->i_atime = cpu_to_le64(inode->i_atime.tv_sec);
 	ri->i_ctime = cpu_to_le64(inode->i_ctime.tv_sec);
 	ri->i_mtime = cpu_to_le64(inode->i_mtime.tv_sec);

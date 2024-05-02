@@ -161,6 +161,14 @@ static struct inode *f2fs_new_inode(struct inode *dir, umode_t mode)
 
 	f2fs_set_inode_flags(inode);
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		if (S_ISREG(inode->i_mode))
+			set_inode_flag(inode, FI_DM_NONE);
+		else
+			set_inode_flag(inode, FI_DM_RLP);
+	}
+#endif
 	trace_f2fs_new_inode(inode, 0);
 	return inode;
 
@@ -722,6 +730,68 @@ static bool is_log_file(const char *filename, umode_t i_mode)
 #endif
 }
 
+#ifdef CONFIG_DISK_MAGO
+static void set_default_dmflag(struct inode *inode, const unsigned char *name)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	char (*extlist)[F2FS_EXTENSION_LEN] = sbi->dm_ext->dm_extension_list;
+	unsigned char ext_count = sbi->dm_ext->ext_count;
+	unsigned char *dm_flag = sbi->dm_ext->dm_flag;
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	int i;
+
+	if (!is_inode_flag_set(inode, FI_DM_NONE))
+		return;
+
+	for (i = 0; i < ext_count; i++) {
+		if (is_extension_exist(name, extlist[i], true))
+			break;
+	}
+
+	if (i == ext_count)
+		fi->dm_def_flag = DM_DEF_NONE;
+	else
+		fi->dm_def_flag = dm_flag[i];
+}
+
+static void set_dm_dev_hint(struct inode *inode)
+{
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+
+	if (!S_ISREG(inode->i_mode)) {
+		fi->dev_hint = DM_FAST_ONLY;
+		return;
+	}
+
+	/* perfer to storage in emmc */
+	if (is_inode_flag_set(inode, FI_DM_NP) ||
+		fi->dm_def_flag == DM_DEF_NP) {
+		fi->dev_hint = DM_SLOW_ONLY;
+		return;
+	}
+
+	/* perfer to storage in ufs */
+	if (is_inode_flag_set(inode, FI_DM_RLP) ||
+		fi->dm_def_flag == DM_DEF_RLP ||
+		fi->dm_def_flag == DM_DEF_SP) {
+		fi->dev_hint = DM_FAST_ONLY;
+		return;
+	}
+
+	/* need split */
+	if (is_inode_flag_set(inode, FI_DM_RTP) ||
+	    is_inode_flag_set(inode, FI_DM_WP) ||
+		fi->dm_def_flag == DM_DEF_RTP ||
+		fi->dm_def_flag == DM_DEF_WP) {
+		fi->dev_hint = DM_BOTH;
+		return;
+	}
+
+	/* it may be system crictal file, perfer fast device */
+	fi->dev_hint = DM_FAST_ONLY;
+}
+#endif
+
 static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 						bool excl)
 {
@@ -749,6 +819,13 @@ static int f2fs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		set_file_temperature(sbi, inode, dentry->d_name.name);
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
 	set_compress_inode(sbi, inode, dentry->d_name.name);
+#endif
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		set_inode_flag(inode, FI_DM_NONE);
+		set_default_dmflag(inode, dentry->d_name.name);
+		set_dm_dev_hint(inode);
+	}
 #endif
 	inode->i_op = &f2fs_file_inode_operations;
 	inode->i_fop = &f2fs_file_operations;
@@ -976,6 +1053,12 @@ static struct dentry *f2fs_lookup(struct inode *dir, struct dentry *dentry,
 		goto out;
 	}
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		set_default_dmflag(inode, dentry->d_name.name);
+		set_dm_dev_hint(inode);
+	}
+#endif
 	if ((dir->i_ino == root_ino) && f2fs_has_inline_dots(dir)) {
 		err = __recover_dot_dentries(dir, root_ino);
 		if (err)

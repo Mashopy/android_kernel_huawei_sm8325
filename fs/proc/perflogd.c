@@ -12,12 +12,14 @@
 #include <linux/irqnr.h>
 #include <linux/sched/cputime.h>
 #include <linux/tick.h>
+#include <linux/uaccess.h>
 #include "securec.h"
 
 #define DMIPS_NUM 16
-#define KERNEL_PID_MAX 200
 #define MIN_CPUTIME_UID 1000
 #define MIN_CPUTIME 2000
+#define INIT_PID 1
+#define KTHREADD_PID 2
 
 char dmips_value_buffer[DMIPS_NUM];
 
@@ -31,7 +33,9 @@ static int show_perflogd(struct seq_file *p, void *v)
 	rcu_read_lock();
 	task = &init_task;
 	for_each_process(task) {
-		if (task->pid < KERNEL_PID_MAX)
+		if (task->tgid == INIT_PID || task->tgid == KTHREADD_PID)
+			continue;
+		if (task->real_parent && task->real_parent->tgid == KTHREADD_PID && !strstr(task->comm, "swapd"))
 			continue;
 		proc_cputime_total = get_proc_cpu_load(task, dmips_value_buffer, DMIPS_NUM);
 		if (proc_cputime_total > 0) {

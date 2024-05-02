@@ -632,6 +632,24 @@ int proc_tgid_stat(struct seq_file *m, struct pid_namespace *ns,
 	return do_task_stat(m, ns, pid, task, 1);
 }
 
+#ifdef CONFIG_DFX_MEMCHECK
+int proc_tgid_rss(struct seq_file *m, struct pid_namespace *ns,
+			struct pid *pid, struct task_struct *task)
+{
+	struct mm_struct *mm = NULL;
+	unsigned long long size = 0;
+
+	mm = get_task_mm(task);
+	if (mm)
+		size = get_mm_rss(mm) + get_mm_counter(mm, MM_SWAPENTS);
+	seq_put_decimal_ull(m, NULL, size * PAGE_SIZE);
+	seq_putc(m, '\n');
+	if (mm)
+		mmput(mm);
+	return 0;
+}
+#endif
+
 int proc_pid_statm(struct seq_file *m, struct pid_namespace *ns,
 			struct pid *pid, struct task_struct *task)
 {

@@ -790,7 +790,6 @@ int hmdfs_send_statfs(struct hmdfs_peer *con, const char *path,
 	strncpy(req->path, path, path_len);
 
 	ret = hmdfs_sendmessage_request(con, &sm);
-
 	if (ret == -ETIME)
 		ret = -EIO;
 	if (!ret && (sm.out_len == 0 || !sm.out_buf))

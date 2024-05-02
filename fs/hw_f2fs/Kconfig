@@ -213,3 +213,10 @@ config F2FS_FS_DEDUP
 	default n
 	help
 	  Enable the file dedup function.
+
+config DISK_MAGO
+	bool "disk mago feature for multiple disks"
+	depends on HW_F2FS_FS
+	default n
+	help
+	  enable disk mago feature

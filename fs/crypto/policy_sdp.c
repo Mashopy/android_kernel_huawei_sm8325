@@ -218,7 +218,7 @@ int f2fs_fscrypt_ioctl_set_sdp_policy(struct file *filp,
 	}
 
 	inode_lock(inode);
-	down_write(&inode->i_sdp_sem);
+	mutex_lock(&inode->i_sdp_mutex);
 
 	res = f2fs_inode_get_sdp_encrypt_flags(inode, NULL, &flag);
 	if (res != 0) {
@@ -242,7 +242,7 @@ int f2fs_fscrypt_ioctl_set_sdp_policy(struct file *filp,
 		res = -EINVAL;
 	}
 err:
-	up_write(&inode->i_sdp_sem);
+	mutex_unlock(&inode->i_sdp_mutex);
 	inode_unlock(inode);
 	mnt_drop_write_file(filp);
 	return res;
@@ -395,7 +395,7 @@ int f2fs_sdp_crypt_inherit(struct inode *parent, struct inode *child,
 		}
 	}
 
-	down_write(&child->i_sdp_sem);
+	mutex_lock(&child->i_sdp_mutex);
 	res = parent->i_sb->s_cop->set_sdp_context(child, &sdp_ctx,
 		sizeof(sdp_ctx), fs_data);
 	if (res != 0)
@@ -412,7 +412,7 @@ int f2fs_sdp_crypt_inherit(struct inode *parent, struct inode *child,
 	if (res != 0)
 		pr_err("%s failed, res:%d\n", __func__, res);
 out:
-	up_write(&child->i_sdp_sem);
+	mutex_unlock(&child->i_sdp_mutex);
 	return res;
 }
 

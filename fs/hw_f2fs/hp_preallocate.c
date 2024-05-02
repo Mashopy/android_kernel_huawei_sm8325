@@ -74,7 +74,12 @@ int f2fs_curseg_set(struct f2fs_sb_info *sbi, int type, unsigned int segno,
 	sum_footer = &(curseg->sum_blk->footer);
 	memset(sum_footer, 0, sizeof(struct summary_footer));
 	SET_SUM_TYPE(sum_footer, SUM_TYPE_DATA);
-	__set_sit_entry_type(sbi, type, curseg->segno, 1);
+	/*
+	 * Here, if we set sentry->type as 'CURSEG_COLD_DATA_PINNED',
+	 * it will cause out-of-bounds access for the dirty_i->dirty_segmap[t]
+	 * in locate_dirty_segment().
+	 */
+	__set_sit_entry_type(sbi, CURSEG_COLD_DATA, curseg->segno, 1);
 
 	mutex_unlock(&curseg->curseg_mutex);
 

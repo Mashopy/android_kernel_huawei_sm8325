@@ -20,6 +20,9 @@
 #ifdef CONFIG_FSCK_BOOST
 #include <linux/fsck_boost.h>
 #endif
+#ifdef CONFIG_DISK_MAGO
+#include <linux/blk_mago.h>
+#endif
 
 #include "f2fs.h"
 #include "node.h"
@@ -1426,6 +1429,10 @@ void f2fs_wait_on_all_pages(struct f2fs_sb_info *sbi, int type)
 	DEFINE_WAIT(wait);
 	int ret;
 	unsigned long count = 0;
+#ifdef CONFIG_DISK_MAGO
+	struct block_dev_dyn_info dinfo;
+	int i;
+#endif
 
 	for (;;) {
 		if (!get_pages(sbi, type))
@@ -1455,6 +1462,19 @@ void f2fs_wait_on_all_pages(struct f2fs_sb_info *sbi, int type)
 			         __func__, type, get_pages(sbi, type));
 			f2fs_warn(sbi, "%s read io in flight %d, write io in flight %d",
 			         __func__, inflight[0], inflight[1]);
+#ifdef CONFIG_DISK_MAGO
+			if (f2fs_support_disk_mago(sbi)) {
+				for (i = 0; i < sbi->s_ndevs; i++) {
+					ret = block_get_inflight_info(FDEV(i).bdev, &dinfo);
+					if (ret) {
+						f2fs_err(sbi, "%s device[%d]: get inflight info failed", __func__, i);
+						continue;
+					}
+					f2fs_warn(sbi, "%s device[%d]: inflight_in_queue %u, inflight_in_disk %u",
+							__func__, i, dinfo.inflight_in_queue, dinfo.inflight_in_disk);
+				}
+			}
+#endif
 		}
 #endif
 	}
@@ -1783,7 +1803,7 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	 * invalidate intermediate page cache borrowed from meta inode which are
 	 * used for migration of encrypted, verity or compressed inode's blocks.
 	 */
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	if (f2fs_sb_has_encrypt(sbi) || f2fs_sb_has_verity(sbi) ||
 		f2fs_sb_has_compression(sbi))
 #else
@@ -2078,7 +2098,9 @@ static void __checkpoint_and_complete_reqs(struct f2fs_sb_info *sbi)
 	struct llist_node *dispatch_list;
 	u64 sum_diff = 0, diff, count = 0;
 	int ret;
-
+#ifdef CONFIG_DISK_MAGO
+	struct migrate_control *mgt_ctl = &sbi->mgt_info;
+#endif
 	dispatch_list = llist_del_all(&cprc->issue_list);
 	if (!dispatch_list)
 		return;
@@ -2098,6 +2120,13 @@ static void __checkpoint_and_complete_reqs(struct f2fs_sb_info *sbi)
 	atomic_sub(count, &cprc->queued_ckpt);
 	atomic_add(count, &cprc->total_ckpt);
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		smp_mb__after_atomic();
+		if (waitqueue_active(&mgt_ctl->mgt_wait_queue))
+			wake_up_all(&mgt_ctl->mgt_wait_queue);
+	}
+#endif
 	spin_lock(&cprc->stat_lock);
 	cprc->cur_time = (unsigned int)div64_u64(sum_diff, count);
 	if (cprc->peak_time < cprc->cur_time)

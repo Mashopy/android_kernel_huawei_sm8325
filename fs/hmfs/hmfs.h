@@ -971,7 +971,7 @@ struct f2fs_inode_info {
 	unsigned long flags;		/* use to pass per-file flags */
 	struct rw_semaphore i_sem;	/* protect fi info */
 #ifdef HMFS_FS_SDP_ENCRYPTION
-	struct rw_semaphore i_sdp_sem;	/* protect sdp */
+	struct mutex i_sdp_mutex;	/* protect sdp */
 #endif
 	atomic_t dirty_pages;		/* # of dirty pages */
 	f2fs_hash_t chash;		/* hash value of given file name */

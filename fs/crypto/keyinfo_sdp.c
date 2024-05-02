@@ -536,7 +536,7 @@ get_sdp_encryption_info:
 	if (!S_ISREG(inode->i_mode))
 		return 0;
 
-	down_write(&inode->i_sdp_sem);
+	mutex_lock(&inode->i_sdp_mutex);
 	res = inode->i_sb->s_cop->get_sdp_encrypt_flags(inode,
 		fs_data, &sdpflag);
 	if (res != 0) {
@@ -554,7 +554,7 @@ get_sdp_encryption_info:
 				__func__, inode->i_ino, res);
 	}
 unlock:
-	up_write(&inode->i_sdp_sem);
+	mutex_unlock(&inode->i_sdp_mutex);
 	return res;
 }
 

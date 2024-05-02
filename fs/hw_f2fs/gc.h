@@ -32,6 +32,18 @@
 #define LIMIT_INVALID_BLOCK	40 /* percentage over total user space */
 #define LIMIT_FREE_BLOCK	40 /* percentage over invalid + free space */
 
+#ifdef CONFIG_DISK_MAGO
+#define UFS_MIGRATION_LIMIT 	70	/* ufs used space more than 70% will trigger data migration */
+#define EMMC_MIGRATION_LIMIT	95	/* emmc used space more than 85% will trigger data migration */
+#define MIGRATION_CRITICAL_THRESHOLD 	5	/* avoid repeated data migration between two devices in extreme scenarios */
+#define UFS_RECEIVE_LIMIT	(UFS_MIGRATION_LIMIT - MIGRATION_CRITICAL_THRESHOLD)	/* receive data migrated limit*/
+#define EMMC_RECEIVE_LIMIT	(EMMC_MIGRATION_LIMIT - MIGRATION_CRITICAL_THRESHOLD)	/* receive data migrated limit*/
+#endif
+
+#ifdef CONFIG_DISK_MAGO
+#define FILE_CONTINUOUS_MIGRATION_BLK	512
+#endif
+
 #define DEF_GC_FAILED_PINNED_FILES	2048
 
 /* Search max. number of dirty segments to select a victim segment */
@@ -136,3 +148,82 @@ static inline bool has_enough_invalid_blocks(struct f2fs_sb_info *sbi)
 		return true;
 	return false;
 }
+
+#ifdef CONFIG_DISK_MAGO
+enum {
+	FAIL_GC = 0,
+	SKIP_GC,
+	URGENT_GC,
+	NORMAL_GC,
+};
+
+static inline block_t dev_free_user_blocks(struct f2fs_sb_info *sbi,
+			unsigned int dev)
+{
+	unsigned int free_segs, op_segs;
+
+	if (dev >= DM_DEV_MAX || !f2fs_support_disk_mago(sbi)) {
+		free_segs = free_segments(sbi);
+		op_segs = overprovision_segments(sbi);
+	} else {
+		free_segs = FDEV(dev).free_segs;
+		op_segs = FDEV(dev).overprovision_segments;
+	}
+
+	if (free_segs < op_segs)
+		return 0;
+
+	return (free_segs - op_segs) << sbi->log_blocks_per_seg;
+}
+
+static inline block_t dev_limit_invalid_user_blocks(struct f2fs_sb_info *sbi,
+			unsigned int dev)
+{
+	if (dev >= DM_DEV_MAX || !f2fs_support_disk_mago(sbi))
+		return (long)(sbi->user_block_count * LIMIT_INVALID_BLOCK) / 100;
+	else
+		return (long)(FDEV(dev).user_block_count * LIMIT_INVALID_BLOCK) / 100;
+}
+
+static inline block_t dev_limit_free_user_blocks(struct f2fs_sb_info *sbi,
+			unsigned int dev)
+{
+	block_t reclaimable_user_blocks;
+
+	if (dev >= DM_DEV_MAX || !f2fs_support_disk_mago(sbi))
+		reclaimable_user_blocks = sbi->user_block_count -
+							written_block_count(sbi);
+	else if (FDEV(dev).user_block_count > FDEV(dev).written_valid_blocks)
+		reclaimable_user_blocks = FDEV(dev).user_block_count -
+							FDEV(dev).written_valid_blocks;
+	else
+		reclaimable_user_blocks = 0;
+
+	return (long)(reclaimable_user_blocks * LIMIT_FREE_BLOCK) / 100;
+}
+
+static inline bool dev_has_enough_invalid_blocks(struct f2fs_sb_info *sbi,
+			unsigned int dev)
+{
+	block_t invalid_user_blocks;
+
+	if (dev >= DM_DEV_MAX || !f2fs_support_disk_mago(sbi))
+		invalid_user_blocks = sbi->user_block_count -
+					written_block_count(sbi);
+	else if (FDEV(dev).user_block_count > FDEV(dev).written_valid_blocks)
+		invalid_user_blocks = FDEV(dev).user_block_count -
+					FDEV(dev).written_valid_blocks;
+	else
+		invalid_user_blocks = 0;
+
+	if (invalid_user_blocks > dev_limit_invalid_user_blocks(sbi, dev) &&
+			dev_free_user_blocks(sbi, dev) < dev_limit_free_user_blocks(sbi, dev))
+		return true;
+	/*
+	 * Background GC is triggered with the following conditions.
+	 * 1. There are a number of invalid blocks.
+	 * 2. There is not enough free space.
+	 */
+	return false;
+}
+#endif

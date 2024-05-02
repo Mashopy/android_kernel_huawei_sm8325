@@ -188,7 +188,6 @@ static ssize_t package_details_appid_store(struct config_item *item,
 		return ret;
 
 	ret = insert_packagelist_entry(&to_package_details(item)->name, tmp);
-
 	if (ret)
 		return ret;
 

@@ -83,25 +83,27 @@ static int hs_parse_crypto_data(struct connection *conn_impl, __u8 ops,
 static void hs_fill_case_sense_data(struct connection *conn_impl, __u8 ops,
 				    void *data, __u32 len)
 {
-	struct case_sense_body *body = (struct case_sense_body *)data;
+	struct case_sense_body *body = NULL;
 
 	if (len < sizeof(struct case_sense_body)) {
 		hmdfs_err("case sensitive len %u is err", len);
 		return;
 	}
+	body = (struct case_sense_body *)data;
 	body->case_sensitive = conn_impl->node->sbi->s_case_sensitive ? 1 : 0;
 }
 
 static int hs_parse_case_sense_data(struct connection *conn_impl, __u8 ops,
 				     void *data, __u32 len)
 {
-	struct case_sense_body *body = (struct case_sense_body *)data;
+	struct case_sense_body *body = NULL;
 	__u8 sensitive = conn_impl->node->sbi->s_case_sensitive ? 1 : 0;
 
 	if (len < sizeof(struct case_sense_body)) {
 		hmdfs_info("case sensitive len %u is err", len);
 		return -1;
 	}
+	body = (struct case_sense_body *)data;
 	if (body->case_sensitive != sensitive) {
 		hmdfs_err("case sensitive inconsistent, server: %u,client: %u, ops: %u",
 			  body->case_sensitive, sensitive, ops);
@@ -113,12 +115,12 @@ static int hs_parse_case_sense_data(struct connection *conn_impl, __u8 ops,
 static void hs_fill_feature_data(struct connection *conn_impl, __u8 ops,
 				 void *data, __u32 len)
 {
-	struct feature_body *body = (struct feature_body *)data;
-
+	struct feature_body *body = NULL;
 	if (len < sizeof(struct feature_body)) {
 		hmdfs_err("feature len %u is err", len);
 		return;
 	}
+	body = (struct feature_body *)data;
 	body->features = cpu_to_le64(conn_impl->node->sbi->s_features);
 	body->reserved = cpu_to_le64(0);
 }
@@ -126,13 +128,13 @@ static void hs_fill_feature_data(struct connection *conn_impl, __u8 ops,
 static int hs_parse_feature_data(struct connection *conn_impl, __u8 ops,
 				 void *data, __u32 len)
 {
-	struct feature_body *body = (struct feature_body *)data;
+	struct feature_body *body = NULL;
 
 	if (len < sizeof(struct feature_body)) {
 		hmdfs_err("feature len %u is err", len);
 		return -1;
 	}
-
+	body = (struct feature_body *)data;
 	conn_impl->node->features = le64_to_cpu(body->features);
 	return 0;
 }

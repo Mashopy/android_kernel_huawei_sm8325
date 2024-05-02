@@ -148,6 +148,14 @@ int f2fs_convert_inline_page(struct dnode_of_data *dn, struct page *page)
 	};
 	struct node_info ni;
 	int dirty, err;
+#ifdef CONFIG_DISK_MAGO
+	struct f2fs_dm_info dinfo;
+
+	if (f2fs_support_disk_mago(fio.sbi)) {
+		dinfo.hint = DM_FAST_ONLY;
+		fio.dm_dev = f2fs_get_dm_target_device(fio.sbi, page, NODE, &dinfo);
+	}
+#endif
 
 	if (!f2fs_exist_data(dn->inode))
 		goto clear_out;
@@ -180,7 +188,6 @@ int f2fs_convert_inline_page(struct dnode_of_data *dn, struct page *page)
 
 	/* clear dirty state */
 	dirty = clear_page_dirty_for_io(page);
-
 	/* write data page to try to make data consistent */
 	set_page_writeback(page);
 	ClearPageError(page);

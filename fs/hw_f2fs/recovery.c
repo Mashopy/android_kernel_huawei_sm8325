@@ -478,8 +478,24 @@ static int check_index_in_prev_nodes(struct f2fs_sb_info *sbi,
 		return 0;
 
 	/* Get the previous summary */
+#ifdef CONFIG_DISK_MAGO
+	for (i = CURSEG_HOT_DATA; i <= CURSEG_EXT_COLD_DATA; i++) {
+#else
 	for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_DATA; i++) {
+#endif
 		struct curseg_info *curseg = CURSEG_I(sbi, i);
+
+#ifdef CONFIG_DISK_MAGO
+		if (!f2fs_support_disk_mago(sbi) && IS_EXT_SEG(i))
+			continue;
+		/*
+		 * The type layout determines that traverse from CURSEG_HOT_DATA to
+		 * CURSEG_EXT_COLD_DATA will include CURSEG_HOT_NODE..CURSEG_COLD_NODE,
+		 * so we need to skip them.
+		 */
+		if (!IS_DATASEG(i))
+			continue;
+#endif
 		if (curseg->segno == segno) {
 			sum = curseg->sum_blk->entries[blkoff];
 			goto got_it;
@@ -721,6 +737,30 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_DISK_MAGO
+static void f2fs_recover_reset_dm_curseg(struct f2fs_sb_info *sbi)
+{
+	int i;
+
+	if (!f2fs_support_disk_mago(sbi)) {
+		f2fs_allocate_new_segments(sbi);
+		return;
+	}
+
+	/* Likely f2fs_allocate_new_segments */
+	for (i = CURSEG_HOT_DATA; i <= CURSEG_COLD_DATA; i++)
+		f2fs_init_dm_curseg(sbi, i);
+
+	/*
+	 * When the base device has not enough space, recovery data
+	 * will write to extension device. Thus, try to init extension
+	 * curseg before that.
+	 */
+	for (i = CURSEG_EXT_HOT_DATA; i <= CURSEG_EXT_COLD_DATA; i++)
+		f2fs_init_dm_curseg(sbi, i);
+}
+#endif
+
 static int recover_data(struct f2fs_sb_info *sbi, struct list_head *inode_list,
 		struct list_head *tmp_inode_list, struct list_head *dir_list)
 {
@@ -789,7 +829,11 @@ next:
 	}
 	if (!err)
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+		f2fs_recover_reset_dm_curseg(sbi);
+#else
 		f2fs_allocate_new_segments(sbi);
+#endif /* CONFIG_DISK_MAGO */
 #else
 		f2fs_allocate_new_segments(sbi, NO_CHECK_TYPE);
 #endif

@@ -195,17 +195,6 @@ struct fscrypt_info {
 	/* The key in a form prepared for actual encryption/decryption */
 	struct fscrypt_prepared_key	ci_key;
 
-	/* True if the key should be freed when this fscrypt_info is freed */
-	bool ci_owns_key;
-
-#ifdef CONFIG_FS_ENCRYPTION_INLINE_CRYPT
-	/*
-	 * True if this inode will use inline encryption (blk-crypto) instead of
-	 * the traditional filesystem-layer encryption.
-	 */
-	bool ci_inlinecrypt;
-#endif
-
 	/*
 	 * Encryption mode used for this inode.  It corresponds to either the
 	 * contents or filenames encryption mode, depending on the inode type.
@@ -248,9 +237,20 @@ struct fscrypt_info {
 	/* This inode's nonce, copied from the fscrypt_context */
 	u8 ci_nonce[FS_KEY_DERIVATION_NONCE_SIZE];
 
+	/* True if the key should be freed when this fscrypt_info is freed */
+	bool ci_owns_key;
+
+#ifdef CONFIG_FS_ENCRYPTION_INLINE_CRYPT
+	/*
+	 * True if this inode will use inline encryption (blk-crypto) instead of
+	 * the traditional filesystem-layer encryption.
+	 */
+	bool ci_inlinecrypt;
+#endif
+
 	/* Hashed inode number.  Only set for IV_INO_LBLK_32 */
-	u32 ci_hashed_ino;
 	u8 ci_hw_enc_flag;
+	u32 ci_hashed_ino;
 };
 
 typedef enum {

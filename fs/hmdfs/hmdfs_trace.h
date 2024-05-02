@@ -330,7 +330,6 @@ TRACE_EVENT(hmdfs_statfs,
 );
 
 
-
 TRACE_EVENT(hmdfs_balance_dirty_pages_ratelimited,
 
 	TP_PROTO(struct hmdfs_sb_info *sbi,

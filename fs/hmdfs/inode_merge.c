@@ -135,7 +135,6 @@ static void hmdfs_fill_merge_inode(struct inode *inode,
 		inode->i_fop = &hmdfs_dir_fops_merge;
 		set_nlink(inode, get_num_comrades(child_dentry) + 2);
 	}
-
 }
 
 static struct inode *fill_inode_merge(struct super_block *sb,
@@ -1172,11 +1171,15 @@ int do_rename_merge(struct inode *old_dir, struct dentry *old_dentry,
 	int ret = 0;
 	struct hmdfs_sb_info *sbi = (old_dir->i_sb)->s_fs_info;
 	struct hmdfs_dentry_info_merge *dim = hmdfs_dm(old_dentry);
-	struct hmdfs_dentry_comrade *comrade = NULL, *new_comrade = NULL;
+	struct hmdfs_dentry_comrade *comrade = NULL;
+	struct hmdfs_dentry_comrade *new_comrade = NULL;
 	struct path lo_p_new = { .mnt = NULL, .dentry = NULL };
-	struct inode *lo_i_old_dir = NULL, *lo_i_new_dir = NULL;
-	struct dentry *lo_d_old_dir = NULL, *lo_d_old = NULL,
-		      *lo_d_new_dir = NULL, *lo_d_new = NULL;
+	struct inode *lo_i_old_dir = NULL;
+	struct inode *lo_i_new_dir = NULL;
+	struct dentry *lo_d_old_dir = NULL;
+	struct dentry *lo_d_old = NULL;
+	struct dentry *lo_d_new_dir = NULL;
+	struct dentry *lo_d_new = NULL;
 	struct dentry *d_new_dir = NULL;
 	char *path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
 	char *abs_path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -1304,7 +1307,6 @@ int hmdfs_rename_merge(struct inode *old_dir, struct dentry *old_dentry,
 	trace_hmdfs_rename_merge(old_dir, old_dentry, new_dir, new_dentry,
 				 flags);
 	ret = do_rename_merge(old_dir, old_dentry, new_dir, new_dentry, flags);
-
 	if (ret != 0)
 		d_drop(new_dentry);
 

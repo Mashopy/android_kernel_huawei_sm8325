@@ -1121,7 +1121,7 @@ static struct inode *f2fs_alloc_inode(struct super_block *sb)
 	atomic_set(&fi->dirty_pages, 0);
 	init_rwsem(&fi->i_sem);
 #ifdef HMFS_FS_SDP_ENCRYPTION
-	init_rwsem(&fi->i_sdp_sem);
+	mutex_init(&fi->i_sdp_mutex);
 #endif
 	fi->has_wb = false;
 	fi->fsync_atomic = false;

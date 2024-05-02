@@ -247,9 +247,6 @@ void hmdfs_put_super(struct super_block *sb)
 	struct hmdfs_sb_info *sbi = hmdfs_sb(sb);
 	struct super_block *lower_sb = sbi->lower_sb;
 
-	hmdfs_info("local_dst is %s, local_src is %s", sbi->local_dst,
-		   sbi->local_src);
-
 	hmdfs_fault_inject_fini(&sbi->fault_inject);
 	hmdfs_cfn_destroy(sbi);
 	hmdfs_unregister_sysfs(sbi);
@@ -399,7 +396,9 @@ static int hmdfs_sync_fs(struct super_block *sb, int wait)
 	struct hmdfs_peer *con = NULL;
 	struct hmdfs_sb_info *sbi = hmdfs_sb(sb);
 	int syncfs_timeout = get_cmd_timeout(sbi, F_SYNCFS);
-	struct syncfs_item item, *entry = NULL, *tmp = NULL;
+	struct syncfs_item item;
+	struct syncfs_item *entry = NULL;
+	struct syncfs_item *tmp = NULL;
 
 	if (!wait)
 		return 0;

@@ -1268,6 +1268,14 @@ static int f2fs_write_compressed_pages(struct compress_ctx *cc,
 	for (i = 0; i < cc->cluster_size; i++)
 		cic->rpages[i] = cc->rpages[i];
 
+#ifdef CONFIG_DISK_MAGO
+	/*
+	 * compressed file is not very sensitive to performance,
+	 * so it will be preferentially stored on slow device.
+	 */
+	if (f2fs_support_disk_mago(sbi))
+		fio.dm_dev = DM_EXT_DEV;
+#endif
 	for (i = 0; i < cc->cluster_size; i++, dn.ofs_in_node++) {
 		block_t blkaddr;
 
@@ -1411,6 +1419,12 @@ static int f2fs_write_raw_pages(struct compress_ctx *cc,
 	if (compr_blocks < 0)
 		return compr_blocks;
 
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+	/* block CP (node page flush) for compressed cluster */
+	if (compr_blocks)
+		f2fs_lock_op(F2FS_M_SB(mapping));
+#endif
+
 	for (i = 0; i < cc->cluster_size; i++) {
 		if (!cc->rpages[i])
 			continue;
@@ -1429,6 +1443,19 @@ continue_unlock:
 		if (!clear_page_dirty_for_io(cc->rpages[i]))
 			goto continue_unlock;
 
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+		if (compr_blocks)
+			wbc->for_free_mem = 0;
+#endif
+#ifdef CONFIG_DISK_MAGO
+		/*
+		 * compressed file is not very sensitive to performance,
+		 * so it will be preferentially stored on slow device
+		 * even if not compressed.
+		 */
+		if (f2fs_support_disk_mago(F2FS_M_SB(mapping)))
+			_submitted = DM_EXT_DEV;
+#endif
 		ret = f2fs_write_single_data_page(cc->rpages[i], &_submitted,
 						NULL, NULL, wbc, io_type,
 						compr_blocks, false);
@@ -1442,19 +1469,38 @@ continue_unlock:
 				 * avoid deadlock caused by cluster update race
 				 * from foreground operation.
 				 */
-				if (IS_NOQUOTA(cc->inode))
+				if (IS_NOQUOTA(cc->inode)) {
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+					if (compr_blocks)
+						f2fs_unlock_op(F2FS_M_SB(mapping));
+#endif
 					return 0;
+				}
 				ret = 0;
 				cond_resched();
 				congestion_wait(BLK_RW_ASYNC,
 						DEFAULT_IO_TIMEOUT);
 				goto retry_write;
 			}
+
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+			if (compr_blocks) {
+				f2fs_unlock_op(F2FS_M_SB(mapping));
+				f2fs_err(F2FS_M_SB(mapping), "ino:%u, err:%d", cc->inode->i_ino, ret);
+				f2fs_bug_on(F2FS_M_SB(mapping), 1);
+			}
+#endif
+
 			return ret;
 		}
 
 		*submitted += _submitted;
 	}
+
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+	if (compr_blocks)
+		f2fs_unlock_op(F2FS_M_SB(mapping));
+#endif
 
 	f2fs_balance_fs(F2FS_M_SB(mapping), true);
 

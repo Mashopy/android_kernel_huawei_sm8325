@@ -23,9 +23,22 @@
 #define GET_L2R_SEGNO(free_i, segno)	((segno) - (free_i)->start_segno)
 #define GET_R2L_SEGNO(free_i, segno)	((segno) + (free_i)->start_segno)
 
+#if defined(CONFIG_DISK_MAGO) && defined(CONFIG_F2FS_FS_DISK_TURBO)
+#define IS_DATASEG(t)   \
+    (((t) >= CURSEG_HOT_DATA && (t) <= CURSEG_COLD_DATA) || \
+    ((t) >= CURSEG_EXT_HOT_DATA && (t) <= CURSEG_EXT_COLD_DATA))
+#else
 #define IS_DATASEG(t)	((t) <= CURSEG_COLD_DATA)
+#endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define IS_EXT_SEG(t)   \
+    ((t) >= CURSEG_EXT_HOT_DATA && (t) <= CURSEG_EXT_COLD_DATA)
+#define IS_BASE_SEG(t) \
+    ((t) >= CURSEG_HOT_DATA && (t) <= CURSEG_COLD_DATA)
+#endif /* CONFIG_DISK_MAGO */
+
 #define IS_NODESEG(t)	((t) >= CURSEG_HOT_NODE && (t) <= CURSEG_COLD_NODE)
 static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 						unsigned short seg_type)
@@ -36,12 +49,90 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 #define IS_NODESEG(t)	((t) >= CURSEG_HOT_NODE)
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+static inline bool is_dm_ext_segno(struct f2fs_sb_info *sbi,
+						unsigned int segno)
+{
+	if (!f2fs_support_disk_mago(sbi))
+		return false;
+
+	return (segno >= FDEV(DM_EXT_DEV).start_segno) &&
+				(segno <= FDEV(DM_EXT_DEV).end_segno);
+}
+
+static inline bool is_dm_base_segno(struct f2fs_sb_info *sbi,
+						unsigned int segno)
+{
+	if (!f2fs_support_disk_mago(sbi))
+		return true;
+
+	return (segno >= FDEV(DM_BASE_DEV).start_segno) &&
+				(segno <= FDEV(DM_BASE_DEV).end_segno);
+}
+
+static inline bool f2fs_dm_segno_from_diff_dev(struct f2fs_sb_info *sbi,
+		unsigned int segno1, unsigned int segno2)
+{
+	if (!f2fs_support_disk_mago(sbi))
+		return false;
+
+	if (is_dm_base_segno(sbi, segno1) && is_dm_ext_segno(sbi, segno2))
+		return true;
+
+	if (is_dm_ext_segno(sbi, segno1) && is_dm_base_segno(sbi, segno2))
+		return true;
+
+	return false;
+}
+
+static inline unsigned short f2fs_dm_map_ext_type(unsigned int type)
+{
+	if (!IS_BASE_SEG(type))
+		return type;
+
+	return type - CURSEG_HOT_DATA + CURSEG_EXT_HOT_DATA;
+}
+
+static inline unsigned int f2fs_dm_map_basic_type(unsigned int type)
+{
+	if (!IS_EXT_SEG(type))
+		return type;
+
+	return type - CURSEG_EXT_HOT_DATA + CURSEG_HOT_DATA;
+}
+unsigned int get_device_main_seg(struct f2fs_sb_info *sbi, int dev);
+#endif
+
+#ifdef CONFIG_DISK_MAGO
+#define IS_HOT(t)	((t) == CURSEG_HOT_NODE || (t) == CURSEG_HOT_DATA ||	\
+		(t) == CURSEG_EXT_HOT_DATA)
+#define IS_WARM(t)	((t) == CURSEG_WARM_NODE || (t) == CURSEG_WARM_DATA ||	\
+		(t) == CURSEG_EXT_WARM_DATA)
+#define IS_COLD(t)	((t) == CURSEG_COLD_NODE || (t) == CURSEG_COLD_DATA ||	\
+		(t) == CURSEG_EXT_COLD_DATA)
+#else
 #define IS_HOT(t)	((t) == CURSEG_HOT_NODE || (t) == CURSEG_HOT_DATA)
 #define IS_WARM(t)	((t) == CURSEG_WARM_NODE || (t) == CURSEG_WARM_DATA)
 #define IS_COLD(t)	((t) == CURSEG_COLD_NODE || (t) == CURSEG_COLD_DATA)
+#endif
 
 #ifdef CONFIG_F2FS_TURBO_ZONE
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define IS_CURSEG(sbi, seg)						\
+	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_HOT_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_WARM_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_COLD_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno))
+#else /* CONFIG_DISK_MAGO */
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
@@ -52,7 +143,8 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno))
-#else
+#endif /* CONFIG_DISK_MAGO */
+#else /* CONFIG_F2FS_FS_DISK_TURBO */
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
@@ -61,9 +153,24 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno))
-#endif
-#else
+#endif /* CONFIG_F2FS_FS_DISK_TURBO */
+
+#else /* CONFIG_F2FS_TURBO_ZONE */
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define IS_CURSEG(sbi, seg)						\
+	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_HOT_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_WARM_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_EXT_COLD_DATA)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno) ||	\
+	 ((seg) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno))
+#else /* CONFIG_DISK_MAGO */
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||	\
@@ -73,7 +180,9 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno) ||	\
 	 ((seg) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno))
-#else
+#endif /* CONFIG_DISK_MAGO */
+
+#else /* CONFIG_F2FS_FS_DISK_TURBO */
 #define IS_CURSEG(sbi, seg)						\
 	(((seg) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno) ||    \
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno) ||   \
@@ -81,11 +190,38 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	 ((seg) == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno) ||    \
 	 ((seg) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno) ||   \
 	 ((seg) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno))
-#endif
-#endif
+#endif /* CONFIG_F2FS_FS_DISK_TURBO */
+#endif /* CONFIG_F2FS_TURBO_ZONE */
 
 #ifdef CONFIG_F2FS_TURBO_ZONE
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define IS_CURSEC(sbi, secno)						\
+	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_HOT_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_WARM_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_COLD_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno /	\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno /	\
+	  (sbi)->segs_per_sec) ||	\
+	  ((secno) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno /		\
+	   (sbi)->segs_per_sec))
+#else /* CONFIG_DISK_MAGO */
 #define IS_CURSEC(sbi, secno)						\
 	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
 	  (sbi)->segs_per_sec) ||	\
@@ -105,7 +241,8 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	  (sbi)->segs_per_sec) ||	\
 	  ((secno) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno /		\
 	   (sbi)->segs_per_sec))
-#else
+#endif /* CONFIG_DISK_MAGO */
+#else /* CONFIG_F2FS_FS_DISK_TURBO */
 #define IS_CURSEC(sbi, secno)						\
 	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
 	  (sbi)->segs_per_sec) ||	\
@@ -121,9 +258,35 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	  (sbi)->segs_per_sec) ||	\
 	  ((secno) == CURSEG_I(sbi, CURSEG_TURBO_DATA)->segno /		\
 	   (sbi)->segs_per_sec))
-#endif
-#else
+#endif /* CONFIG_F2FS_FS_DISK_TURBO */
+
+#else /* CONFIG_F2FS_TURBO_ZONE */
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define IS_CURSEC(sbi, secno)						\
+	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_WARM_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_HOT_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_WARM_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_NODE)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_HOT_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_WARM_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_EXT_COLD_DATA)->segno /		\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_COLD_DATA_PINNED)->segno /	\
+	  (sbi)->segs_per_sec) ||	\
+	 ((secno) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno /	\
+	  (sbi)->segs_per_sec))
+#else /* CONFIG_DISK_MAGO */
 #define IS_CURSEC(sbi, secno)						\
 	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
 	  (sbi)->segs_per_sec) ||	\
@@ -141,6 +304,7 @@ static inline void sanity_check_seg_type(struct f2fs_sb_info *sbi,
 	  (sbi)->segs_per_sec) ||	\
 	 ((secno) == CURSEG_I(sbi, CURSEG_ALL_DATA_ATGC)->segno /	\
 	  (sbi)->segs_per_sec))
+#endif /* CONFIG_DISK_MAGO */
 #else
 #define IS_CURSEC(sbi, secno)						\
 	(((secno) == CURSEG_I(sbi, CURSEG_HOT_DATA)->segno /		\
@@ -502,6 +666,38 @@ void write_sum_page(struct f2fs_sb_info *sbi,
 /*
  * inline functions
  */
+#ifdef CONFIG_DISK_MAGO
+static inline void inc_free_segs_in_dev(struct f2fs_sb_info *sbi,
+				unsigned int segno)
+{
+	int i;
+
+	if (!f2fs_support_disk_mago(sbi))
+		return;
+
+	for (i = 0; i < DM_DEV_MAX; i++) {
+		if (segno >= FDEV(i).start_segno && segno <= FDEV(i).end_segno) {
+			FDEV(i).free_segs++;
+		}
+	}
+}
+
+static inline void dec_free_segs_in_dev(struct f2fs_sb_info *sbi,
+				unsigned int segno)
+{
+	int i;
+
+	if (!f2fs_support_disk_mago(sbi))
+		return;
+
+	for (i = 0; i < DM_DEV_MAX; i++) {
+		if (segno >= FDEV(i).start_segno && segno <= FDEV(i).end_segno) {
+			FDEV(i).free_segs--;
+		}
+	}
+}
+#endif
+
 #ifdef CONFIG_F2FS_TURBO_ZONE
 static inline bool is_tz_existed(struct f2fs_sb_info *sbi)
 {
@@ -723,6 +919,9 @@ static inline void __set_free(struct f2fs_sb_info *sbi, unsigned int segno)
 	spin_lock(&free_i->segmap_lock);
 	clear_bit(segno, free_i->free_segmap);
 	free_i->free_segments++;
+#ifdef CONFIG_DISK_MAGO
+	inc_free_segs_in_dev(sbi, segno);
+#endif
 #ifdef CONFIG_F2FS_TURBO_ZONE
 	inc_free_segs_in_tz(sbi, segno);
 #endif
@@ -744,6 +943,9 @@ static inline void __set_inuse(struct f2fs_sb_info *sbi,
 
 	set_bit(segno, free_i->free_segmap);
 	free_i->free_segments--;
+#ifdef CONFIG_DISK_MAGO
+	dec_free_segs_in_dev(sbi, segno);
+#endif
 #ifdef CONFIG_F2FS_TURBO_ZONE
 	dec_free_segs_in_tz(sbi, segno);
 #endif
@@ -767,6 +969,9 @@ static inline void __set_test_and_free(struct f2fs_sb_info *sbi,
 	spin_lock(&free_i->segmap_lock);
 	if (test_and_clear_bit(segno, free_i->free_segmap)) {
 		free_i->free_segments++;
+#ifdef CONFIG_DISK_MAGO
+		inc_free_segs_in_dev(sbi, segno);
+#endif
 #ifdef CONFIG_F2FS_TURBO_ZONE
 		inc_free_segs_in_tz(sbi, segno);
 #endif
@@ -796,6 +1001,9 @@ static inline void __set_test_and_inuse(struct f2fs_sb_info *sbi,
 	spin_lock(&free_i->segmap_lock);
 	if (!test_and_set_bit(segno, free_i->free_segmap)) {
 		free_i->free_segments--;
+#ifdef CONFIG_DISK_MAGO
+		dec_free_segs_in_dev(sbi, segno);
+#endif
 #ifdef CONFIG_F2FS_TURBO_ZONE
 		dec_free_segs_in_tz(sbi, segno);
 #endif
@@ -827,6 +1035,19 @@ static inline unsigned int free_segments(struct f2fs_sb_info *sbi)
 {
 	return FREE_I(sbi)->free_segments;
 }
+
+#ifdef CONFIG_DISK_MAGO
+static inline unsigned int dev_free_segments(struct f2fs_sb_info *sbi,
+			int dev)
+{
+	if (!f2fs_support_disk_mago(sbi) || dev >= DM_DEV_MAX) {
+		f2fs_err(sbi, "Get free_segments dev %d is invalid.", dev);
+		return 0;
+	}
+
+	return FDEV(dev).free_segs;
+}
+#endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
 static inline unsigned int reserved_segments(struct f2fs_sb_info *sbi)
@@ -902,6 +1123,16 @@ static inline bool has_curseg_enough_space(struct f2fs_sb_info *sbi)
 			get_seg_entry(sbi, segno)->ckpt_valid_blocks;
 	if (dent_blocks > left_blocks)
 		return false;
+
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		segno = CURSEG_I(sbi, CURSEG_EXT_HOT_DATA)->segno;
+		left_blocks = f2fs_usable_blks_in_seg(sbi, segno) -
+				get_seg_entry(sbi, segno)->ckpt_valid_blocks;
+		if (dent_blocks > left_blocks)
+			return false;
+	}
+#endif
 	return true;
 }
 
@@ -925,6 +1156,7 @@ static inline bool has_not_enough_free_secs(struct f2fs_sb_info *sbi,
 				== reserved_sections(sbi) + needed &&
 			has_curseg_enough_space(sbi))
 		return false;
+
 	return (free_sections(sbi) - unavailabe_secs + freed) <=
 		(node_secs + 2 * dent_secs + imeta_secs +
 		reserved_sections(sbi) + needed);

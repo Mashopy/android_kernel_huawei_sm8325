@@ -148,7 +148,6 @@ static int hmdfs_name_match(struct dir_context *ctx, const char *name,
 	struct hmdfs_name_data *buf =
 		container_of(ctx, struct hmdfs_name_data, ctx);
 	struct qstr candidate = QSTR_INIT(name, namelen);
-
 	if (qstr_case_eq(buf->to_find, &candidate)) {
 		memcpy(buf->name, name, namelen);
 		buf->name[namelen] = 0;
@@ -172,7 +171,6 @@ static int __lookup_nosensitive(struct path *lower_parent_path,
 		.name = __getname(),
 		.found = false,
 	};
-
 	if (!buffer.name) {
 		err = -ENOMEM;
 		goto out;
@@ -205,7 +203,9 @@ struct dentry *hmdfs_lookup_local(struct inode *parent_inode,
 	const char *d_name = child_dentry->d_name.name;
 	int err = 0;
 	struct path lower_path, lower_parent_path;
-	struct dentry *lower_dentry = NULL, *parent_dentry = NULL, *ret = NULL;
+	struct dentry *lower_dentry = NULL;
+	struct dentry *parent_dentry = NULL;
+	struct dentry *ret = NULL;
 	struct hmdfs_dentry_info *gdi = NULL;
 	struct inode *child_inode = NULL;
 	struct hmdfs_sb_info *sbi = hmdfs_sb(child_dentry->d_sb);
@@ -408,7 +408,8 @@ int hmdfs_create_local_dentry(struct inode *dir, struct dentry *dentry,
 	kuid_t tmp_uid;
 #ifdef CONFIG_HMDFS_ANDROID
 	const struct cred *saved_cred = NULL;
-	struct fs_struct *saved_fs = NULL, *copied_fs = NULL;
+	struct fs_struct *saved_fs = NULL;
+	struct fs_struct *copied_fs = NULL;
 	__u16 child_perm;
 #endif
 
@@ -851,7 +852,8 @@ int hmdfs_symlink_local(struct inode *dir, struct dentry *dentry,
 #endif
 #ifdef CONFIG_HMDFS_ANDROID
 	const struct cred *saved_cred = NULL;
-	struct fs_struct *saved_fs = NULL, *copied_fs = NULL;
+	struct fs_struct *saved_fs = NULL;
+	struct fs_struct *copied_fs = NULL;
 	__u16 child_perm;
 #endif
 
@@ -1043,7 +1045,6 @@ int hmdfs_permission(struct inode *inode, int mask)
 		mode >>= 3;
 	} else if (is_pkg_auth(hii->perm)) {
 		kuid_t appid = get_appid_from_uid(cur_uid);
-
 		if (uid_eq(appid, inode->i_uid))
 			return 0;
 	} else if (is_system_auth(hii->perm)) {

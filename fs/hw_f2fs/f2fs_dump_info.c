@@ -228,6 +228,24 @@ void f2fs_print_sbi_info(struct f2fs_sb_info *sbi)
 	f2fs_err(sbi, "block_count[SSR]: %d\n", sbi->block_count[1]);
 #endif
 
+#ifdef CONFIG_DISK_MAGO
+	if (f2fs_support_disk_mago(sbi)) {
+		f2fs_err(sbi, "free_segs: device[BASE]: %u device[EXT]: %u\n",
+			FDEV(DM_BASE_DEV).free_segs, FDEV(DM_EXT_DEV).free_segs);
+		f2fs_err(sbi, "resv_segs: device[BASE]: %u device[EXT]: %u\n",
+			FDEV(DM_BASE_DEV).reserved_segments,
+			FDEV(DM_EXT_DEV).reserved_segments);
+		f2fs_err(sbi, "op_segs: device[BASE]: %u device[EXT]: %u\n",
+			FDEV(DM_BASE_DEV).overprovision_segments,
+			FDEV(DM_EXT_DEV).overprovision_segments);
+		f2fs_err(sbi, "user_block_count: device[BASE]: %u device[EXT]: %u\n",
+			FDEV(DM_BASE_DEV).user_block_count,
+			FDEV(DM_EXT_DEV).user_block_count);
+		f2fs_err(sbi, "written_valid_blocks: device[BASE]: %u device[EXT]: %u\n",
+			FDEV(DM_BASE_DEV).written_valid_blocks,
+			FDEV(DM_EXT_DEV).written_valid_blocks);
+	}
+#endif
 	f2fs_err(sbi, "\n\n");
 }
 

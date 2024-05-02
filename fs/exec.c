@@ -1320,6 +1320,9 @@ int flush_old_exec(struct linux_binprm * bprm)
 	 * undergoing exec(2).
 	 */
 	do_close_on_exec(current->files);
+#ifdef CONFIG_DFX_BINDER
+	current->binder_pid = -ESRCH;
+#endif
 	return 0;
 
 out:

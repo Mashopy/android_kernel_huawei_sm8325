@@ -131,7 +131,11 @@ void process_reclaim_result_write(
 	}
 	if (task->proc_reclaimed_result) {
 		task->proc_reclaimed_result->elapsed_centisecs64 =
+#ifdef CONFIG_ARM
+			div64_s64(elapsed, NSEC_PER_USEC);
+#else
 			elapsed / NSEC_PER_USEC;
+#endif
 		task->proc_reclaimed_result->nr_writedblock = nr_writedblock;
 		task->proc_reclaimed_result->nr_reclaimed = nr_reclaimed;
 	}

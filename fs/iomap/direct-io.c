@@ -185,9 +185,18 @@ iomap_dio_zero(struct iomap_dio *dio, struct iomap *iomap, loff_t pos,
 	struct bio *bio;
 
 	bio = bio_alloc(GFP_KERNEL, 1);
+#ifdef CONFIG_DISK_MAGO
+	/*
+	 * The block key is associated with the device in diskmago, we set
+	 * device before setting bio crypto context here.
+	 */
+	bio_set_dev(bio, iomap->bdev);
+#endif
 	fscrypt_set_bio_crypt_ctx(bio, inode, pos >> inode->i_blkbits,
 				  GFP_KERNEL);
+#ifndef CONFIG_DISK_MAGO
 	bio_set_dev(bio, iomap->bdev);
+#endif
 	bio->bi_iter.bi_sector = iomap_sector(iomap, pos);
 	bio->bi_private = dio;
 	bio->bi_end_io = iomap_dio_bio_end_io;
@@ -265,9 +274,18 @@ iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 		}
 
 		bio = bio_alloc(GFP_KERNEL, nr_pages);
+#ifdef CONFIG_DISK_MAGO
+		/*
+		 * The block key is associated with the device in diskmago, we set
+		 * device before setting bio crypto context here.
+		 */
+		bio_set_dev(bio, iomap->bdev);
+#endif
 		fscrypt_set_bio_crypt_ctx(bio, inode, pos >> inode->i_blkbits,
 					  GFP_KERNEL);
+#ifndef CONFIG_DISK_MAGO
 		bio_set_dev(bio, iomap->bdev);
+#endif
 		bio->bi_iter.bi_sector = iomap_sector(iomap, pos);
 		bio->bi_write_hint = dio->iocb->ki_hint;
 		bio->bi_ioprio = dio->iocb->ki_ioprio;

@@ -182,7 +182,7 @@ int inode_init_always(struct super_block *sb, struct inode *inode)
 	init_rwsem(&inode->i_rwsem);
 	lockdep_set_class(&inode->i_rwsem, &sb->s_type->i_mutex_key);
 #ifdef CONFIG_SDP_ENCRYPTION
-	init_rwsem(&inode->i_sdp_sem);
+	mutex_init(&inode->i_sdp_mutex);
 #endif
 	atomic_set(&inode->i_dio_count, 0);
 

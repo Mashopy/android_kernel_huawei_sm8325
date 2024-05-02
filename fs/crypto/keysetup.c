@@ -293,6 +293,54 @@ unlock:
 	return 0;
 }
 
+#ifdef CONFIG_DISK_MAGO
+/*
+ * It is similar to fscrypt_setup_iv_ino_lblk_32_key() here but we
+ * don't need call setup_per_mode_enc_key() to generate ci key again
+ * in diskmago, it have been generated in 'IV_INO_LBLK_64' stream.
+ * We only need to init 'ci_hashed_ino'.
+ */
+static int fscrypt_setup_inode_hash_key(struct fscrypt_info *ci,
+					struct fscrypt_master_key *mk)
+{
+	int err = 0;
+	struct super_block *sb = ci->ci_inode->i_sb;
+
+	if (!sb || !sb->s_cop || !sb->s_cop->get_num_devices)
+		return err;
+
+	if (sb->s_cop->get_num_devices(sb) < 2)
+		return err;
+
+	/* Derive a hash_ino for emmc blk cryto dun that need it. */
+	if (!smp_load_acquire(&mk->mk_ino_hash_key_initialized)) {
+		mutex_lock(&fscrypt_mode_key_setup_mutex);
+		if (mk->mk_ino_hash_key_initialized)
+			goto unlock;
+
+		err = fscrypt_hkdf_expand(&mk->mk_secret.hkdf,
+					  HKDF_CONTEXT_INODE_HASH_KEY, NULL, 0,
+					  (u8 *)&mk->mk_ino_hash_key,
+					  sizeof(mk->mk_ino_hash_key));
+		if (err)
+			goto unlock;
+		/* pairs with smp_load_acquire() above */
+		smp_store_release(&mk->mk_ino_hash_key_initialized, true);
+unlock:
+		mutex_unlock(&fscrypt_mode_key_setup_mutex);
+		if (err) {
+			fscrypt_err(ci->ci_inode,
+				    "fscrypt_hkdf_expand for mk ino hash key failed");
+			return err;
+		}
+	}
+
+	ci->ci_hashed_ino = (u32)siphash_1u64(ci->ci_inode->i_ino,
+				      &mk->mk_ino_hash_key);
+	return err;
+}
+#endif
+
 static int fscrypt_setup_v2_file_key(struct fscrypt_info *ci,
 				     struct fscrypt_master_key *mk)
 {
@@ -328,6 +376,13 @@ static int fscrypt_setup_v2_file_key(struct fscrypt_info *ci,
 		err = setup_per_mode_enc_key(ci, mk, mk->mk_iv_ino_lblk_64_keys,
 					     HKDF_CONTEXT_IV_INO_LBLK_64_KEY,
 					     true);
+
+#ifdef CONFIG_DISK_MAGO
+		if (err)
+			return err;
+
+		err = fscrypt_setup_inode_hash_key(ci, mk);
+#endif
 	} else if (ci->ci_policy.v2.flags &
 		   FSCRYPT_POLICY_FLAG_IV_INO_LBLK_32) {
 		err = fscrypt_setup_iv_ino_lblk_32_key(ci, mk);

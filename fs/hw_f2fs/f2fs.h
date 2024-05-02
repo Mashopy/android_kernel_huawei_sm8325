@@ -227,9 +227,9 @@ extern const char *f2fs_fault_name[FAULT_MAX];
 
 #ifdef CONFIG_F2FS_TURBO_ZONE_V2
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
-#define F2FS_MOUNT_HW_TURBOZONE_V2	0x00000080
-#else
 #define F2FS_MOUNT_TURBOZONE_V2		0x80000000
+#else
+#define F2FS_MOUNT_HW_TURBOZONE_V2	0x00000080
 #endif
 #endif
 
@@ -312,6 +312,9 @@ struct f2fs_mount_info {
 struct gc_loop_info {
 	unsigned long count;
 	unsigned int segno;
+#ifdef CONFIG_DISK_MAGO
+	unsigned long encypted_count;
+#endif
 	bool check;
 	unsigned long *segmap;
 };
@@ -330,6 +333,9 @@ struct gc_loop_info {
 #define f2fs_gc_loop_debug(sbi)
 #endif
 #define F2FS_GC_LOOP_MAX 10000 /* must be equal or larger than F2FS_GC_LOOP_MOD */
+#ifdef CONFIG_DISK_MAGO
+#define F2FS_GC_ENCRYPTED_LOOP_MAX 50
+#endif
 #define init_f2fs_gc_loop(sbi) \
 	do {    \
 		(sbi)->gc_loop.check = false;   \
@@ -355,6 +361,10 @@ struct gc_loop_info {
 #define F2FS_FEATURE_COMPRESSION	0x2000
 #define F2FS_FEATURE_RO			0x4000
 #define F2FS_FEATURE_DEDUP		0x8000
+#endif
+
+#ifdef CONFIG_DISK_MAGO
+#define F2FS_FEATURE_DISK_MAGO		0x10000
 #endif
 
 #define __F2FS_HAS_FEATURE(raw_super, mask)				\
@@ -808,6 +818,17 @@ static inline bool __has_cursum_space(struct f2fs_journal *journal,
 #define F2FS_IOC_HW_GETFLAGS		_IOR(F2FS_IOCTL_MAGIC, 70, __u32)
 #define F2FS_IOC_HW_SETFLAGS		_IOR(F2FS_IOCTL_MAGIC, 71, __u32)
 
+#ifdef CONFIG_DISK_MAGO
+#define F2FS_MAGO_IOC_BASE 72
+#define F2FS_IOC_SET_FILE_TAG _IOW(F2FS_IOCTL_MAGIC,   \
+				F2FS_MAGO_IOC_BASE + 0, struct f2fs_set_file_tag)
+#define F2FS_IOC_SET_MIRROR _IOW(F2FS_IOCTL_MAGIC,   \
+				F2FS_MAGO_IOC_BASE + 1, struct f2fs_set_mirror)
+/* For disk-mago mirror space */
+#define F2FS_IOC_GET_MIRROR_SPACE	_IOR(F2FS_IOCTL_MAGIC, F2FS_MAGO_IOC_BASE + 2, __u32)
+#define F2FS_IOC_SET_MIRROR_SPACE	_IOW(F2FS_IOCTL_MAGIC, F2FS_MAGO_IOC_BASE + 3, __u32)
+#endif
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0))
 /*
  * should be same as XFS_IOC_GOINGDOWN.
@@ -919,6 +940,25 @@ struct f2fs_clone_info {
 struct f2fs_modify_check_info {
 	int flag;	/* data/meta */
 	int mode;	/* set/get/clear */
+};
+
+#define F2FS_KBYTE_SHIFT	10
+#endif
+
+#ifdef CONFIG_DISK_MAGO
+struct f2fs_set_file_tag {
+	u32 file_label;
+	u32 sync;
+	u32 migrated;
+};
+
+struct migrate_control {
+	wait_queue_head_t mgt_wait_queue;
+};
+
+struct f2fs_set_mirror {
+	u32 flags;
+	bool sync;
 };
 #endif
 
@@ -1225,6 +1265,13 @@ enum {
 	FI_TZ_KEY_FILE,		/* indicate key file only be in turbozone */
 	FI_TZ_AGING_FILE,	/* indicate aging file can be in turbozone */
 #endif
+#ifdef CONFIG_DISK_MAGO
+	FI_DM_NONE,		/* not identify priority */
+	FI_DM_RTP,		/* read throughput priority */
+	FI_DM_RLP,		/* read latency priority */
+	FI_DM_WP,		/* write priority */
+	FI_DM_NP,		/* do not care read or write performance */
+#endif
 #ifdef CONFIG_F2FS_FS_DEDUP
 	/* use for dedup */
 	FI_DEDUPED,
@@ -1298,7 +1345,7 @@ struct f2fs_inode_info {
 	struct timespec64 i_disk_time[4];	/* inode disk times */
 #endif
 
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 	/* for file compress */
 	atomic_t i_compr_blocks;			/* # of compressed blocks */
 	unsigned char i_compress_algorithm;	/* algorithm type */
@@ -1308,17 +1355,21 @@ struct f2fs_inode_info {
 	unsigned int i_cluster_size;		/* cluster size */
 #endif
 
-	unsigned int skip_count;
 #ifdef CONFIG_MAS_ORDER_PRESERVE
 	struct delayed_work fsync_work;
 	unsigned char i_fsync_flag;
 	wait_queue_head_t fsync_wq;
 #endif
+	unsigned int skip_count;
 #ifdef CONFIG_F2FS_FS_DEDUP
-	struct inode *inner_inode;
 	atomic_t inflight_read_io;
+	struct inode *inner_inode;
 	wait_queue_head_t dedup_wq;
 	unsigned long long dedup_cp_ver;
+#endif
+#ifdef CONFIG_DISK_MAGO
+	unsigned int dm_def_flag; /* disk mago default read/write priority flag */
+	unsigned int dev_hint; /* device flag for inode */
 #endif
 };
 
@@ -1503,7 +1554,11 @@ static inline void set_new_dnode(struct dnode_of_data *dn, struct inode *inode,
 #endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
+#ifdef CONFIG_DISK_MAGO
+#define NR_CURSEG_INMEM_TYPE	(5) /* 2 + 3(ext data) */
+#else
 #define NR_CURSEG_INMEM_TYPE	(2)
+#endif
 #define NR_CURSEG_RO_TYPE	(2)
 #define NR_CURSEG_PERSIST_TYPE	(NR_CURSEG_DATA_TYPE + NR_CURSEG_NODE_TYPE)
 #define NR_CURSEG_TYPE		(NR_CURSEG_INMEM_TYPE + NR_CURSEG_PERSIST_TYPE)
@@ -1521,7 +1576,15 @@ enum {
 	CURSEG_COLD_NODE,	/* indirect node blocks */
 #ifdef CONFIG_F2FS_FS_DISK_TURBO
 	NR_PERSISTENT_LOG,	/* number of persistent log */
+#ifdef CONFIG_DISK_MAGO
+	CURSEG_EXT_HOT_DATA = NR_PERSISTENT_LOG,
+	CURSEG_EXT_WARM_DATA,	/* extent device data blocks */
+	CURSEG_EXT_COLD_DATA,	/* extent device multimedia or GCed data blocks */
+	NR_EXTENSION_LOG,
+	CURSEG_COLD_DATA_PINNED = NR_EXTENSION_LOG,
+#else
 	CURSEG_COLD_DATA_PINNED = NR_PERSISTENT_LOG,
+#endif
 				/* pinned file that needs consecutive block address */
 	CURSEG_ALL_DATA_ATGC,	/* SSR alloctor in hot/warm/cold data area */
 #endif
@@ -1754,6 +1817,9 @@ struct f2fs_io_info {
 	sector_t *last_block;		/* last block number in bio */
 	unsigned char version;		/* version of the node */
 	int mem_control;                /* use less memory, even failed */
+#ifdef CONFIG_DISK_MAGO
+	unsigned int dm_dev;	/* target device for io */
+#endif
 };
 
 struct bio_entry {
@@ -1792,6 +1858,29 @@ struct f2fs_dev_info {
 	unsigned int total_segments;
 	block_t start_blk;
 	block_t end_blk;
+#ifdef CONFIG_DISK_MAGO
+	unsigned int start_segno;
+	unsigned int end_segno;
+	unsigned int bw_read;
+	unsigned int bw_write;
+	unsigned int bw_random_read;
+	unsigned int bw_random_write;
+	unsigned int lat_read;
+	unsigned int lat_write;
+	unsigned int lat_randomread;
+	unsigned int lat_randomwrite;
+	unsigned int sched_tags;
+	unsigned int hw_tags;
+	unsigned long total_times;
+	unsigned long expired_times;
+	unsigned int adjustment[4];
+	unsigned int free_segs;
+	unsigned int reserved_segments;
+	unsigned int overprovision_segments;
+	block_t user_block_count;
+	block_t written_valid_blocks;
+	block_t block_count;
+#endif
 #ifdef CONFIG_BLK_DEV_ZONED
 	unsigned int nr_blkz;		/* Total number of zones */
 	unsigned long *blkz_seq;	/* Bitmap indicating sequential zones */
@@ -1970,7 +2059,7 @@ enum fsync_mode {
 	FSYNC_MODE_NOBARRIER,	/* fsync behaves nobarrier based on posix */
 };
 
-#ifdef CONFIG_F2FS_FS_DISK_TURBO
+#if (defined CONFIG_F2FS_FS_DISK_TURBO) || (defined CONFIG_DISK_MAGO)
 enum {
 	COMPR_MODE_FS,		/*
 				 * automatically compress compression
@@ -1993,6 +2082,7 @@ static inline void f2fs_clear_bit(unsigned int nr, char *addr);
  *
  * Layout A: lowest bit should be 1
  * | bit0 = 1 | bit1 | bit2 | ... | bit MAX | private data .... |
+ * for normal:
  * bit 0	PAGE_PRIVATE_NOT_POINTER
  * bit 1	PAGE_PRIVATE_ATOMIC_WRITE
  * bit 2	PAGE_PRIVATE_DUMMY_WRITE
@@ -2000,6 +2090,18 @@ static inline void f2fs_clear_bit(unsigned int nr, char *addr);
  * bit 4	PAGE_PRIVATE_INLINE_INODE
  * bit 5	PAGE_PRIVATE_REF_RESOURCE
  * bit 6-	f2fs private data
+ *
+ * for disk mago:
+ * bit 0	PAGE_PRIVATE_NOT_POINTER
+ * bit 1	PAGE_PRIVATE_ATOMIC_WRITE
+ * bit 2	PAGE_PRIVATE_DUMMY_WRITE
+ * bit 3	PAGE_PRIVATE_ONGOING_MIGRATION
+ * bit 4	PAGE_PRIVATE_INLINE_INODE
+ * bit 5	PAGE_PRIVATE_REF_RESOURCE
+ * bit 6	PAGE_PRIVATE_DM_BASE_WRITE
+ * bit 7	PAGE_PRIVATE_DM_EXT_WRITE
+ * bit 8	PAGE_PRIVATE_DM_MIRROR_WRITE
+ * bit 9-	f2fs private data
  *
  * Layout B: lowest bit should be 0
  * page.private is a wrapped pointer.
@@ -2011,6 +2113,11 @@ enum {
 	PAGE_PRIVATE_ONGOING_MIGRATION,		/* data page which is on-going migrating */
 	PAGE_PRIVATE_INLINE_INODE,		/* inode page contains inline data */
 	PAGE_PRIVATE_REF_RESOURCE,		/* dirty page has referenced resources */
+#ifdef CONFIG_DISK_MAGO
+	PAGE_PRIVATE_DM_BASE_WRITE,		/* data page which is on-going migrating to ufs */
+	PAGE_PRIVATE_DM_EXT_WRITE,		/* data page which is on-going migrating to emmc */
+	PAGE_PRIVATE_DM_MIRROR_WRITE,	/* data page which is on-going migrating to mirror */
+#endif
 	PAGE_PRIVATE_MAX
 };
 
@@ -2053,18 +2160,33 @@ PAGE_PRIVATE_GET_FUNC(inline, INLINE_INODE);
 PAGE_PRIVATE_GET_FUNC(gcing, ONGOING_MIGRATION);
 PAGE_PRIVATE_GET_FUNC(atomic, ATOMIC_WRITE);
 PAGE_PRIVATE_GET_FUNC(dummy, DUMMY_WRITE);
+#ifdef CONFIG_DISK_MAGO
+PAGE_PRIVATE_GET_FUNC(dm_base_dev, DM_BASE_WRITE);
+PAGE_PRIVATE_GET_FUNC(dm_ext_dev, DM_EXT_WRITE);
+PAGE_PRIVATE_GET_FUNC(dm_mirror_dev, DM_MIRROR_WRITE);
+#endif
 
 PAGE_PRIVATE_SET_FUNC(reference, REF_RESOURCE);
 PAGE_PRIVATE_SET_FUNC(inline, INLINE_INODE);
 PAGE_PRIVATE_SET_FUNC(gcing, ONGOING_MIGRATION);
 PAGE_PRIVATE_SET_FUNC(atomic, ATOMIC_WRITE);
 PAGE_PRIVATE_SET_FUNC(dummy, DUMMY_WRITE);
+#ifdef CONFIG_DISK_MAGO
+PAGE_PRIVATE_SET_FUNC(dm_base_dev, DM_BASE_WRITE);
+PAGE_PRIVATE_SET_FUNC(dm_ext_dev, DM_EXT_WRITE);
+PAGE_PRIVATE_SET_FUNC(dm_mirror_dev, DM_MIRROR_WRITE);
+#endif
 
 PAGE_PRIVATE_CLEAR_FUNC(reference, REF_RESOURCE);
 PAGE_PRIVATE_CLEAR_FUNC(inline, INLINE_INODE);
 PAGE_PRIVATE_CLEAR_FUNC(gcing, ONGOING_MIGRATION);
 PAGE_PRIVATE_CLEAR_FUNC(atomic, ATOMIC_WRITE);
 PAGE_PRIVATE_CLEAR_FUNC(dummy, DUMMY_WRITE);
+#ifdef CONFIG_DISK_MAGO
+PAGE_PRIVATE_CLEAR_FUNC(dm_base_dev, DM_BASE_WRITE);
+PAGE_PRIVATE_CLEAR_FUNC(dm_ext_dev, DM_EXT_WRITE);
+PAGE_PRIVATE_CLEAR_FUNC(dm_mirror_dev, DM_MIRROR_WRITE);
+#endif
 
 static inline unsigned long get_page_private_data(struct page *page)
 {
@@ -2277,6 +2399,115 @@ struct decompress_io_ctx {
 #define MAX_COMPRESS_LOG_SIZE		8
 #define MAX_COMPRESS_WINDOW_SIZE(log_size)	((PAGE_SIZE) << (log_size))
 #endif /* CONFIG_F2FS_FS_DISK_TURBO */
+
+#ifdef CONFIG_DISK_MAGO
+struct dm_file_extension {
+	unsigned char ext_count;
+	char dm_extension_list[F2FS_MAX_EXTENSION][F2FS_EXTENSION_LEN];
+	unsigned char dm_flag[F2FS_MAX_EXTENSION];
+};
+
+enum {
+	DM_DEF_NONE,
+	DM_DEF_RTP,
+	DM_DEF_RLP,
+	DM_DEF_WP,
+	DM_DEF_NP,
+	DM_DEF_SP,
+	DM_DEF_MAP,
+};
+
+enum {
+	DM_FAST_ONLY,	/* only issue to disk mago fast device */
+	DM_SLOW_ONLY,	/* only issue to disk mago slow device */
+	DM_BOTH,	/* bot device */
+};
+
+enum {
+	DM_BASE_DEV,	/* disk mago basic device */
+	DM_EXT_DEV,	/* disk mago extent device */
+	DM_DEV_MAX,
+	DM_BOTH_DEV,
+};
+
+enum {
+	DM_GC_CALL_NUMS = 0,
+	DM_GC_DATA_SEGS,
+	DM_GC_NODE_SEGS,
+	DM_GC_DATA_BLKS,
+	DM_GC_NODE_BLKS,
+	NR_DM_GC_STEP,
+};
+
+enum {
+	DM_WB_PAGES_0_TO_8 = 0,
+	DM_WB_PAGES_8_TO_128,
+	DM_WB_PAGES_128_TO_512,
+	DM_WB_PAGES_GREAT_512,
+	NR_DM_WB_PAGES_BUCKET,
+};
+
+enum {
+	DM_WB_FOR_RECAIM = 0,
+	DM_WB_FOR_SYNC_FG,
+	DM_WB_FOR_SYNC_ALL,
+	DM_WB_FOR_NORMAL,
+	NR_DM_WB_REASONS,
+};
+
+enum {
+	DM_RADIO_STATIC = 0,
+	DM_RADIO_DYNAMIC,
+	NR_DM_RADIO,
+};
+
+#define F2FS_DM_BD_RESET_MAX_LEN (3)
+#define F2FS_DM_BD_RESERVE_WB_AND_ALOCATE_NUMS (12)
+
+#define DISK_LIFETIME_DIFF_MAX	(30)
+#define DISK_STORAGE_DIFF_MAX	(30)
+
+// default split parameter
+#define DISK_FAST_PRECENTAGE	(3)
+#define DISK_SLOW_PRECENTAGE	(1)
+#define TOTAL_PRECETAGE		(DISK_FAST_PRECENTAGE + DISK_SLOW_PRECENTAGE)
+
+#define DISK_SPILT_PAGE_UNIT_8		(8) // 8 * 4k = 32kb
+#define SPILT_DIRTY_PAGES_8		(8)
+
+#define DISK_SPILT_PAGE_UNIT_256	(256) // 256 * 4k = 1M
+#define SPILT_DIRTY_PAGES_256		(256)
+
+struct f2fs_dm_bd_wb {
+	unsigned int wb_type;
+	unsigned int wb_dirty_pages;
+	unsigned int wb_radio[NR_DM_RADIO];
+};
+
+struct f2fs_dm_info {
+	bool control;
+	bool split;	/* update dm_dev_hint each round */
+	unsigned int hint;
+	bool dynamic;
+	unsigned int dev;
+	unsigned int radio[2];	/* fast : slow */
+	unsigned int submitted[2];
+	unsigned int unit;	/* split unit npages */
+	struct f2fs_dm_bd_wb dm_bd_wb; /* big data for write-back */
+};
+
+#define DM_SPLIT_WATERLINE	512	/* 2MB */
+#define DM_LOW_UNIT		8	/* 32KB */
+#define DM_HIGH_UNIT		256	/* 1MB */
+#define DM_LIMIT_WB_BLOCK	15	 /* percentage over total user space */
+#define DM_LIMIT_WB_SEG		10	 /* percentage over total user space */
+
+#define DM_DIO_SPLIT_WATERLINE	16384	/* 64MB */
+
+/* Storage terminal */
+#define DM_TERMINAL_FREE_SEGS	512000	/* 2G */
+#define DM_WAKE_GC_BLOCKS	1280000	/* 5G */
+#endif
 
 struct f2fs_sb_info {
 	struct super_block *sb;			/* pointer to VFS super block */
@@ -2566,6 +2797,18 @@ struct f2fs_sb_info {
 #ifdef CONFIG_F2FS_TURBO_ZONE_V2
 	struct f2fs_turbo_info turbo_info;	/* for tz 2.0 + */
 #endif
+#ifdef CONFIG_DISK_MAGO
+	struct dm_file_extension *dm_ext;
+	unsigned int mirror_space;
+	unsigned int gc_dev;
+	unsigned int gc_migrate_tag;
+	unsigned int prediction_always_static;
+	unsigned int split_unit;
+	unsigned int force_dev;
+	unsigned int writeback_dirty_ratio;
+	unsigned int static_ratio[2];
+	struct migrate_control mgt_info;
+#endif
 };
 
 struct f2fs_private_dio {
@@ -2616,6 +2859,16 @@ static inline bool f2fs_is_multi_device(struct f2fs_sb_info *sbi)
 {
 	return sbi->s_ndevs > 1;
 }
+
+#ifdef CONFIG_DISK_MAGO
+static inline bool f2fs_support_disk_mago(struct f2fs_sb_info *sbi)
+{
+	return (sbi->s_ndevs == DM_DEV_MAX) &&
+		F2FS_HAS_FEATURE(sbi, F2FS_FEATURE_DISK_MAGO);
+}
+
+bool f2fs_dev_has_enough_space(struct f2fs_sb_info *sbi, int dev);
+#endif
 
 /* For write statistics. Suppose sector size is 512 bytes,
  * and the return value is in kbytes. s is of struct f2fs_sb_info.
@@ -3790,6 +4043,15 @@ static inline void f2fs_change_bit(unsigned int nr, char *addr)
 /* End compression flags --- maybe not all used */
 #define F2FS_INDEX_FL			0x00001000 /* hash-indexed directory */
 #define F2FS_DIRSYNC_FL			0x00010000 /* dirsync behaviour (directories only) */
+#ifdef CONFIG_DISK_MAGO
+#define F2FS_DM_NONE			0x00080000
+#define F2FS_DM_RTP			0x00100000
+#define F2FS_DM_RLP			0x00200000
+#define F2FS_DM_WP			0x00400000
+#define F2FS_DM_NP			0x00800000
+#define F2FS_DM_MASK			(F2FS_DM_NONE | F2FS_DM_RTP | F2FS_DM_RLP | \
+								F2FS_DM_WP | F2FS_DM_NP)
+#endif
 #ifdef CONFIG_F2FS_TURBO_ZONE
 #define F2FS_TZ_KEY_FL			0x01000000 /* Key file in Turbo Zone */
 #endif
@@ -4090,7 +4352,7 @@ static inline int f2fs_has_inline_xattr(struct inode *inode)
 	return is_inode_flag_set(inode, FI_INLINE_XATTR);
 }
 
-#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
 static inline int f2fs_compressed_file(struct inode *inode)
 {
 	return S_ISREG(inode->i_mode) &&
@@ -4816,6 +5078,15 @@ int sanity_check_ckpt(struct f2fs_sb_info *sbi);
 int f2fs_set_bio_ctx(struct inode *inode, struct bio *bio);
 int f2fs_set_bio_ctx_fio(struct f2fs_io_info *fio, struct bio *bio);
 #endif
+#ifdef CONFIG_DISK_MAGO
+void f2fs_get_dyn_performance(struct f2fs_sb_info *sbi, bool read,
+			     unsigned int size,
+			     unsigned int ratio[2]);
+void f2fs_get_static_performance(struct f2fs_sb_info *sbi, bool read,
+				unsigned int ratio[2]);
+void f2fs_update_static_performance(struct f2fs_sb_info *sbi);
+
+#endif
 
 /*
  * hash.c
@@ -4935,6 +5206,10 @@ void f2fs_allocate_segment_for_resize(struct f2fs_sb_info *sbi, int type,
 					unsigned int start, unsigned int end);
 void f2fs_allocate_new_section(struct f2fs_sb_info *sbi, int type, bool force);
 void f2fs_allocate_new_segments(struct f2fs_sb_info *sbi);
+#ifdef CONFIG_DISK_MAGO
+void f2fs_init_dm_curseg(struct f2fs_sb_info *sbi, int type);
+bool f2fs_dm_should_change_curseg(struct f2fs_sb_info *sbi , int type);
+#endif
 #else
 void allocate_segment_for_resize(struct f2fs_sb_info *sbi, int type,
 					unsigned int start, unsigned int end);
@@ -4989,6 +5264,9 @@ void f2fs_write_node_summaries(struct f2fs_sb_info *sbi, block_t start_blk);
 #ifdef CONFIG_F2FS_JOURNAL_APPEND
 void write_append_journal(struct f2fs_sb_info *sbi, block_t start_blk);
 int get_max_reclaimable_segments(struct f2fs_sb_info *sbi);
+#ifdef CONFIG_DISK_MAGO
+int get_dev_max_reclaimable_segments(struct f2fs_sb_info *sbi, unsigned int dev);
+#endif
 #endif
 int f2fs_lookup_journal_in_cursum(struct f2fs_journal *journal, int type,
 			unsigned int val, int alloc);
@@ -5141,6 +5419,11 @@ int f2fs_init_post_read_processing(void);
 void f2fs_destroy_post_read_processing(void);
 bool __do_map_lock(struct f2fs_sb_info *sbi, int flag, bool lock, bool lock2);
 #endif
+#ifdef CONFIG_DISK_MAGO
+unsigned int f2fs_get_dm_target_device(struct f2fs_sb_info *sbi,
+						struct page *page, unsigned int type,
+						struct f2fs_dm_info *dinfo);
+#endif
 /*
  * gc.c
  */
@@ -5170,6 +5453,12 @@ int f2fs_migrate_file(struct inode *inode, bool turbo, bool sync);
 #endif
 #ifdef CONFIG_F2FS_TURBO_ZONE_V2
 int f2fs_migrate_file_v2(struct inode *inode, bool turbo, bool sync);
+#endif
+#ifdef CONFIG_DISK_MAGO
+void f2fs_set_dev_tag_for_page(struct f2fs_sb_info *sbi, struct page *page);
+int f2fs_set_file_lable(struct inode *inode, int file_lable);
+int f2fs_migrate_dm_file(struct inode *inode, struct f2fs_set_file_tag *tag,
+			 			unsigned long start_time);
 #endif
 
 /*
@@ -5494,6 +5783,15 @@ struct f2fs_bigdata_info {
 	unsigned long tz_f2fs_trigger_return_time;
 	unsigned long tz_ioctl_trigger_return_time;
 #endif
+#ifdef CONFIG_DISK_MAGO
+	unsigned int dm_gc_step[NR_DM_GC_STEP][DM_DEV_MAX];
+	unsigned int dm_bg_gc_step[NR_DM_GC_STEP][DM_DEV_MAX];
+	unsigned long dm_gc_dirty_pages_max;
+	unsigned long dm_gc_dirty_pages_min;
+	unsigned long dm_gc_dirty_pages_tot;
+	unsigned int dm_wb_pages[NR_DM_WB_REASONS][NR_DM_WB_PAGES_BUCKET];
+	unsigned int dm_wb_radio[NR_DM_RADIO];
+#endif
 };
 
 static inline struct f2fs_bigdata_info *F2FS_BD_STAT(struct f2fs_sb_info *sbi)
@@ -5531,6 +5829,96 @@ static inline struct f2fs_bigdata_info *F2FS_BD_STAT(struct f2fs_sb_info *sbi)
 	}							\
 } while (0)
 
+#ifdef CONFIG_DISK_MAGO
+#define inc_bd_double_array_val(sbi, member, i, j, val) do {	\
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);	\
+	if (bd) 						\
+		bd->member[(i)][(j)] += (val);			\
+} while (0)
+
+#define min_bd_val(sbi, member, val) do {			\
+	struct f2fs_bigdata_info *bd = F2FS_BD_STAT(sbi);	\
+	if (bd) {						\
+		if (bd->member > (val))				\
+			bd->member = (val);			\
+	}							\
+} while (0)
+
+static inline void dm_bd_inc_gc_val(struct f2fs_sb_info *sbi,
+		unsigned int step_type, unsigned int is_bg,
+		bool is_seg, bool is_data, unsigned int count)
+{
+	if (!f2fs_support_disk_mago(sbi) || (((sbi)->gc_dev) >= DM_DEV_MAX))
+		return;
+
+	if (step_type == DM_GC_CALL_NUMS)
+		goto out;
+
+	f2fs_bug_on(sbi, step_type != NR_DM_GC_STEP);
+
+	if (is_seg) {
+		if (is_data)
+			step_type = DM_GC_DATA_SEGS;
+		else
+			step_type = DM_GC_NODE_SEGS;
+		goto out;
+	}
+
+	if (is_data)
+		step_type = DM_GC_DATA_BLKS;
+	else
+		step_type = DM_GC_NODE_BLKS;
+out:
+	if (is_bg)
+		inc_bd_double_array_val(sbi, dm_bg_gc_step,
+				step_type, sbi->gc_dev, count);
+	else
+		inc_bd_double_array_val(sbi, dm_gc_step,
+				step_type, sbi->gc_dev, count);
+}
+
+static inline void dm_bd_inc_gc_dirty_pages(struct f2fs_sb_info *sbi,
+		long long dirty_pages_gc_before)
+{
+	unsigned long dirty_pages_gc_after, dirty_diff;
+
+	if (!f2fs_support_disk_mago(sbi))
+		return;
+
+	dirty_pages_gc_after = global_node_page_state(NR_FILE_DIRTY);
+	if (dirty_pages_gc_after > dirty_pages_gc_before) {
+		dirty_diff = dirty_pages_gc_after - dirty_pages_gc_before;
+		max_bd_val(sbi, dm_gc_dirty_pages_max, dirty_diff);
+		min_bd_val(sbi, dm_gc_dirty_pages_min, dirty_diff);
+		inc_bd_val(sbi, dm_gc_dirty_pages_tot, dirty_diff);
+	}
+}
+
+static inline void dm_bd_inc_wb_val(struct f2fs_sb_info *sbi,
+		struct f2fs_dm_bd_wb *dm_bd_wb)
+{
+	int i;
+	unsigned int bucket;
+	unsigned int dirty_pages = dm_bd_wb->wb_dirty_pages;
+
+	if (!f2fs_support_disk_mago(sbi))
+		return;
+
+	for (i = 0; i < NR_DM_RADIO; i++)
+		inc_bd_array_val(sbi, dm_wb_radio, i, dm_bd_wb->wb_radio[i]);
+
+	if (dirty_pages <= 8)
+		bucket = DM_WB_PAGES_0_TO_8;
+	else if ((dirty_pages > 8) && (dirty_pages <= 128))
+		bucket = DM_WB_PAGES_8_TO_128;
+	else if ((dirty_pages > 128) && (dirty_pages <= 512))
+		bucket = DM_WB_PAGES_128_TO_512;
+	else
+		bucket = DM_WB_PAGES_GREAT_512;
+
+	inc_bd_double_array_val(sbi, dm_wb_pages, dm_bd_wb->wb_type, bucket, 1);
+}
+#endif /* CONFIG_DISK_MAGO */
 #define bd_mutex_lock(mutex) mutex_lock((mutex))
 #define bd_mutex_unlock(mutex) mutex_unlock((mutex))
 #else
@@ -5578,7 +5966,11 @@ static inline struct f2fs_bigdata_info *F2FS_BD_STAT(struct f2fs_sb_info *sbi)
 #ifdef CONFIG_F2FS_TURBO_ZONE
 #define stat_inc_turbo_bg_gc_tot_blk_count(si, blks)   do { } while (0)
 #endif
-
+#ifdef CONFIG_DISK_MAGO
+#define dm_bd_inc_gc_val(sbi, step_type, is_bg, is_seg, is_data, count) do { } while (0)
+#define dm_bd_inc_gc_dirty_pages(sbi, dirty_pages_gc_before)		do { } while (0)
+#define dm_bd_inc_wb_val(sbi, wb_type, nr_pages)		do { } while (0)
+#endif
 static inline int f2fs_build_stats(struct f2fs_sb_info *sbi) { return 0; }
 static inline void f2fs_destroy_stats(struct f2fs_sb_info *sbi) { }
 static inline void __init f2fs_create_root_stats(void) { }
@@ -5953,6 +6345,10 @@ F2FS_FEATURE_FUNCS(readonly, RO);
 
 #ifdef CONFIG_F2FS_FS_DEDUP
 F2FS_FEATURE_FUNCS(dedup, DEDUP);
+#endif
+
+#ifdef CONFIG_DISK_MAGO
+F2FS_FEATURE_FUNCS(disk_mago, DISK_MAGO);
 #endif
 
 #ifdef CONFIG_F2FS_FS_DISK_TURBO

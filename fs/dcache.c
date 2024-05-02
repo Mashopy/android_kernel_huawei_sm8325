@@ -35,6 +35,11 @@
 #include "internal.h"
 #include "mount.h"
 
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+#include <linux/kswapd_protect_dcache.h>
+#include <linux/swap.h>
+#endif
+
 /*
  * Usage:
  * dcache->d_inode->i_lock protects:
@@ -1148,6 +1153,14 @@ static enum lru_status dentry_lru_isolate(struct list_head *item,
 		spin_unlock(&dentry->d_lock);
 		return LRU_REMOVED;
 	}
+
+#ifdef CONFIG_KSWAPD_PROTECT_DCACHE
+	if (current_is_kswapd() && need_kswapd_protect(dentry)) {
+		kswapd_not_protect_dcache(dentry);
+		spin_unlock(&dentry->d_lock);
+		return LRU_ROTATE;
+	}
+#endif
 
 	if (dentry->d_flags & DCACHE_REFERENCED) {
 		dentry->d_flags &= ~DCACHE_REFERENCED;

@@ -1835,6 +1835,22 @@ redirty_out:
 	return AOP_WRITEPAGE_ACTIVATE;
 }
 
+#ifdef CONFIG_DISK_MAGO
+static inline void clear_diskmago_page_gc(struct page *page)
+{
+
+	if (page_private_dm_base_dev(page)) {
+		clear_page_private_dm_base_dev(page);
+		return;
+	}
+	if (page_private_dm_ext_dev(page)) {
+		clear_page_private_dm_ext_dev(page);
+		return;
+	}
+
+}
+#endif
+
 int f2fs_move_node_page(struct page *node_page, int gc_type)
 {
 	int err = 0;
@@ -1857,12 +1873,23 @@ int f2fs_move_node_page(struct page *node_page, int gc_type)
 			goto out_page;
 		}
 
+#ifdef CONFIG_DISK_MAGO
+		f2fs_set_dev_tag_for_page(sbi, node_page);
+#endif
 		if (__write_node_page(node_page, false, NULL,
 					&wbc, false, FS_GC_NODE_IO, NULL)) {
+#ifdef CONFIG_DISK_MAGO
+			clear_diskmago_page_gc(node_page);
+#endif
 			err = -EAGAIN;
 			f2fs_gc_loop_debug(sbi);
 			unlock_page(node_page);
 		}
+#ifdef CONFIG_DISK_MAGO
+		else {
+			clear_diskmago_page_gc(node_page);
+		}
+#endif
 		goto release_page;
 	} else {
 		/* set page dirty and write it */
@@ -1870,6 +1897,9 @@ int f2fs_move_node_page(struct page *node_page, int gc_type)
 			set_page_dirty(node_page);
 			if (is_gc_test_set(sbi, GC_TEST_ENABLE_GC_STAT))
 				set_page_private(node_page, BGGC_NODE_PAGE);
+#ifdef CONFIG_DISK_MAGO
+			f2fs_set_dev_tag_for_page(sbi, node_page);
+#endif
 		}
 		err = 0;
 	}
@@ -3121,6 +3151,17 @@ retry:
 			dst->i_crtime = src->i_crtime;
 			dst->i_crtime_nsec = src->i_crtime_nsec;
 		}
+
+#ifdef CONFIG_F2FS_FS_COMPRESSION_EX
+		if (f2fs_sb_has_compression(sbi) &&
+			F2FS_FITS_IN_INODE(src, le16_to_cpu(src->i_extra_isize),
+							i_log_cluster_size)) {
+			dst->i_compr_blocks = src->i_compr_blocks;
+			dst->i_compress_algorithm = src->i_compress_algorithm;
+			dst->i_log_cluster_size = src->i_log_cluster_size;
+			dst->i_compress_flag = src->i_compress_flag;
+		}
+#endif
 	}
 
 	new_ni = old_ni;

@@ -339,6 +339,36 @@ get_cache:
 #endif
 }
 
+#ifdef CONFIG_DISK_MAGO
+static void stat_show_ext_curseg(struct seq_file *s, struct f2fs_stat_info *si)
+{
+	if (!f2fs_support_disk_mago(si->sbi))
+		return;
+
+	seq_printf(s, "  - extCOLD   data: %8d %8d %8d %10u %10u %10u\n",
+		   si->curseg[CURSEG_EXT_COLD_DATA],
+		   si->cursec[CURSEG_EXT_COLD_DATA],
+		   si->curzone[CURSEG_EXT_COLD_DATA],
+		   si->dirty_seg[CURSEG_EXT_COLD_DATA],
+		   si->full_seg[CURSEG_EXT_COLD_DATA],
+		   si->valid_blks[CURSEG_EXT_COLD_DATA]);
+	seq_printf(s, "  - extWARM   data: %8d %8d %8d %10u %10u %10u\n",
+		   si->curseg[CURSEG_EXT_WARM_DATA],
+		   si->cursec[CURSEG_EXT_WARM_DATA],
+		   si->curzone[CURSEG_EXT_WARM_DATA],
+		   si->dirty_seg[CURSEG_EXT_WARM_DATA],
+		   si->full_seg[CURSEG_EXT_WARM_DATA],
+		   si->valid_blks[CURSEG_EXT_WARM_DATA]);
+	seq_printf(s, "  - extHOT    data: %8d %8d %8d %10u %10u %10u\n",
+		   si->curseg[CURSEG_EXT_HOT_DATA],
+		   si->cursec[CURSEG_EXT_HOT_DATA],
+		   si->curzone[CURSEG_EXT_HOT_DATA],
+		   si->dirty_seg[CURSEG_EXT_HOT_DATA],
+		   si->full_seg[CURSEG_EXT_HOT_DATA],
+		   si->valid_blks[CURSEG_EXT_HOT_DATA]);
+}
+#endif
+
 static int stat_show(struct seq_file *s, void *v)
 {
 	struct f2fs_stat_info *si;
@@ -385,7 +415,7 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->inline_inode);
 		seq_printf(s, "  - Inline_dentry Inode: %u\n",
 			   si->inline_dir);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		seq_printf(s, "  - Compressed Inode: %u, Blocks: %llu\n",
 			   si->compr_inode, si->compr_blocks);
 #endif
@@ -439,6 +469,9 @@ static int stat_show(struct seq_file *s, void *v)
 			   si->dirty_seg[CURSEG_COLD_NODE],
 			   si->full_seg[CURSEG_COLD_NODE],
 			   si->valid_blks[CURSEG_COLD_NODE]);
+#ifdef CONFIG_DISK_MAGO
+		stat_show_ext_curseg(s, si);
+#endif
 		seq_printf(s, "  - Pinned file: %8d %8d %8d\n",
 			   si->curseg[CURSEG_COLD_DATA_PINNED],
 			   si->cursec[CURSEG_COLD_DATA_PINNED],
@@ -483,6 +516,9 @@ static int stat_show(struct seq_file *s, void *v)
 				   si->main_area_segs - si->dirty_count -
 				   si->prefree_count - si->free_segs,
 				   si->dirty_count);
+#ifdef CONFIG_DISK_MAGO
+		seq_printf(s, "  - Mirror: %d\n", si->sbi->mirror_space);
+#endif
 		seq_printf(s, "  - Prefree: %d\n  - Free: %d (%d)\n\n",
 			   si->prefree_count, si->free_segs, si->free_secs);
 		seq_printf(s, "CP calls: %d (BG: %d)\n",
@@ -564,7 +600,7 @@ static int stat_show(struct seq_file *s, void *v)
 			"volatile IO: %4d (Max. %4d)\n",
 			   si->inmem_pages, si->aw_cnt, si->max_aw_cnt,
 			   si->vw_cnt, si->max_vw_cnt);
-#ifdef CONFIG_F2FS_FS_COMPRESSION
+#if defined(CONFIG_F2FS_FS_COMPRESSION) || defined(CONFIG_F2FS_FS_COMPRESSION_EX)
 		seq_printf(s, "  - compress: %4d, hit:%8d\n", si->compress_pages, si->compress_page_hit);
 #endif
 		seq_printf(s, "  - nodes: %4d in %4d\n",
@@ -646,6 +682,31 @@ static int stat_show(struct seq_file *s, void *v)
 			/* turbo bg gc total mv blocks*/
 			seq_printf(s, "  - turbo_bg_gc_tot_blks: %d\n",
 				si->turbo_bg_gc_tot_blks);
+		}
+#endif
+#ifdef CONFIG_DISK_MAGO
+		if (f2fs_support_disk_mago(si->sbi)) {
+			seq_printf(s, "\nMulti device info:\n");
+			seq_printf(s, "  - start_segno: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].start_segno, si->sbi->devs[DM_EXT_DEV].start_segno);
+			seq_printf(s, "  - end_segno: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].end_segno, si->sbi->devs[DM_EXT_DEV].end_segno);
+			seq_printf(s, "  - free_segs: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].free_segs, si->sbi->devs[DM_EXT_DEV].free_segs);
+			seq_printf(s, "  - reserved_segments: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].reserved_segments,
+				si->sbi->devs[DM_EXT_DEV].reserved_segments);
+			seq_printf(s, "  - overprovision_segments: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].overprovision_segments,
+				si->sbi->devs[DM_EXT_DEV].overprovision_segments);
+			seq_printf(s, "  - user_block_count: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].user_block_count,
+				si->sbi->devs[DM_EXT_DEV].user_block_count);
+			seq_printf(s, "  - written_valid_blocks: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].written_valid_blocks,
+				si->sbi->devs[DM_EXT_DEV].written_valid_blocks);
+			seq_printf(s, "  - block_count: %u   %u \n",
+				si->sbi->devs[DM_BASE_DEV].block_count, si->sbi->devs[DM_EXT_DEV].block_count);
 		}
 #endif
 	}

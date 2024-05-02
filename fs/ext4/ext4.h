@@ -1022,15 +1022,15 @@ struct ext4_inode_info {
 
 	spinlock_t i_raw_lock;	/* protects updates to the raw inode */
 
+	/* mballoc */
+	spinlock_t i_prealloc_lock;
+	struct list_head i_prealloc_list;
+
 	/*
 	 * File creation time. Its function is same as that of
 	 * struct timespec64 i_{a,c,m}time in the generic inode.
 	 */
 	struct timespec64 i_crtime;
-
-	/* mballoc */
-	struct list_head i_prealloc_list;
-	spinlock_t i_prealloc_lock;
 
 	/* extents status tree */
 	struct ext4_es_tree i_es_tree;
@@ -1044,12 +1044,6 @@ struct ext4_inode_info {
 
 	/* ialloc */
 	ext4_group_t	i_last_alloc_group;
-
-	/* allocation reservation info for delalloc */
-	/* In case of bigalloc, this refer to clusters rather than blocks */
-	unsigned int i_reserved_data_blocks;
-	ext4_lblk_t i_da_metadata_calc_last_lblock;
-	int i_da_metadata_calc_len;
 
 	/* pending cluster reservations for bigalloc file systems */
 	struct ext4_pending_tree i_pending_tree;
@@ -1065,6 +1059,12 @@ struct ext4_inode_info {
 	/* quota space reservation, managed internally by quota code */
 	qsize_t i_reserved_quota;
 #endif
+
+	/* allocation reservation info for delalloc */
+        /* In case of bigalloc, this refer to clusters rather than blocks */
+	unsigned int i_reserved_data_blocks;
+	ext4_lblk_t i_da_metadata_calc_last_lblock;
+	int i_da_metadata_calc_len;
 
 	/* Lock protecting lists below */
 	spinlock_t i_completed_io_lock;

@@ -21,7 +21,11 @@
 #include "fscrypt_private.h"
 
 struct fscrypt_blk_crypto_key {
+#ifdef CONFIG_DISK_MAGO
+	struct blk_crypto_key base[2];
+#else
 	struct blk_crypto_key base;
+#endif
 	int num_devs;
 	struct request_queue *devs[];
 };
@@ -62,6 +66,22 @@ static unsigned int fscrypt_get_dun_bytes(const struct fscrypt_info *ci)
 		sb->s_cop->get_ino_and_lblk_bits(sb, &ino_bits, &lblk_bits);
 	return DIV_ROUND_UP(lblk_bits, 8);
 }
+
+#ifdef CONFIG_DISK_MAGO
+static inline bool __is_emmc_devices(struct request_queue *q)
+{
+	struct keyslot_manager *ksm;
+
+	if (!q)
+		return false;
+
+	ksm = q->ksm;
+	if (ksm && keyslot_manager_get_max_dun_bytes(ksm) == sizeof(u32))
+		return true;
+
+	return false;
+}
+#endif
 
 /* Enable inline encryption for this file if supported. */
 int fscrypt_select_encryption_impl(struct fscrypt_info *ci,
@@ -122,6 +142,10 @@ int fscrypt_select_encryption_impl(struct fscrypt_info *ci,
 	dun_bytes = fscrypt_get_dun_bytes(ci);
 
 	for (i = 0; i < num_devs; i++) {
+#ifdef CONFIG_DISK_MAGO
+		if (__is_emmc_devices(devs[i]))
+			dun_bytes = sizeof(__le32);
+#endif
 		if (!keyslot_manager_crypto_mode_supported(devs[i]->ksm,
 							   crypto_mode,
 							   dun_bytes,
@@ -168,6 +192,22 @@ int fscrypt_prepare_inline_crypt_key(struct fscrypt_prepared_key *prep_key,
 	BUILD_BUG_ON(FSCRYPT_MAX_HW_WRAPPED_KEY_SIZE >
 		     BLK_CRYPTO_MAX_WRAPPED_KEY_SIZE);
 
+#ifdef CONFIG_DISK_MAGO
+	for (i = 0; i < num_devs; i++) {
+		if (__is_emmc_devices(blk_key->devs[i]))
+			dun_bytes = sizeof(__le32);
+
+		err = blk_crypto_init_key(&blk_key->base[i], raw_key, raw_key_size,
+				  is_hw_wrapped, crypto_mode, dun_bytes,
+				  sb->s_blocksize);
+		if (err) {
+			fscrypt_err(inode, "dev: %d error %d initializing blk-crypto key", i, err);
+			goto fail;
+		}
+	}
+
+	dun_bytes = sizeof(__le64);
+#else
 	err = blk_crypto_init_key(&blk_key->base, raw_key, raw_key_size,
 				  is_hw_wrapped, crypto_mode, dun_bytes,
 				  sb->s_blocksize);
@@ -175,6 +215,7 @@ int fscrypt_prepare_inline_crypt_key(struct fscrypt_prepared_key *prep_key,
 		fscrypt_err(inode, "error %d initializing blk-crypto key", err);
 		goto fail;
 	}
+#endif
 
 	/*
 	 * We have to start using blk-crypto on all the filesystem's devices.
@@ -190,6 +231,11 @@ int fscrypt_prepare_inline_crypt_key(struct fscrypt_prepared_key *prep_key,
 			goto fail;
 		}
 		queue_refs++;
+
+#ifdef CONFIG_DISK_MAGO
+		if (__is_emmc_devices(blk_key->devs[i]))
+			dun_bytes = sizeof(__le32);
+#endif
 
 		err = blk_crypto_start_using_mode(crypto_mode, dun_bytes,
 						  sb->s_blocksize,
@@ -224,7 +270,11 @@ void fscrypt_destroy_inline_crypt_key(struct fscrypt_prepared_key *prep_key)
 
 	if (blk_key) {
 		for (i = 0; i < blk_key->num_devs; i++) {
+#ifdef CONFIG_DISK_MAGO
+			blk_crypto_evict_key(blk_key->devs[i], &blk_key->base[i]);
+#else
 			blk_crypto_evict_key(blk_key->devs[i], &blk_key->base);
+#endif
 			blk_put_queue(blk_key->devs[i]);
 		}
 		kzfree(blk_key);
@@ -293,6 +343,30 @@ static void fscrypt_generate_dun(const struct fscrypt_info *ci, u64 lblk_num,
 		dun[i] = le64_to_cpu(iv.dun[i]);
 }
 
+#ifdef CONFIG_DISK_MAGO
+/*
+ * The fscrypt_generate_dun() generate iv according to policy flag.
+ * Now the flag of inode fscrypt policy is for ufs device, so we need
+ * to add a new function to generate crypto iv for the mmc device.
+ */
+static void fscrypt_generate_mmc_dun(const struct fscrypt_info *ci,
+				     u64 first_lblk,
+				     u64 dun[BLK_CRYPTO_DUN_ARRAY_SIZE])
+{
+	u64 lblk_num;
+	union fscrypt_iv iv;
+	int i;
+
+	WARN_ON_ONCE(first_lblk > U32_MAX);
+	lblk_num = (u32)(ci->ci_hashed_ino + first_lblk);
+	memset(&iv, 0, ci->ci_mode->ivsize);
+	iv.lblk_num = cpu_to_le64(lblk_num);
+	memset(dun, 0, BLK_CRYPTO_MAX_IV_SIZE);
+	for (i = 0; i < ci->ci_mode->ivsize/sizeof(dun[0]); i++)
+		dun[i] = le64_to_cpu(iv.dun[i]);
+}
+#endif
+
 /**
  * fscrypt_set_bio_crypt_ctx - prepare a file contents bio for inline encryption
  * @bio: a bio which will eventually be submitted to the file
@@ -323,8 +397,19 @@ void fscrypt_set_bio_crypt_ctx(struct bio *bio, const struct inode *inode,
 	if (!fscrypt_inode_uses_inline_crypto(inode))
 		return;
 
+#ifdef CONFIG_DISK_MAGO
+	if (bio->bi_disk && bio->bi_disk->queue &&
+			__is_emmc_devices(bio->bi_disk->queue)) {
+		fscrypt_generate_mmc_dun(ci, first_lblk, dun);
+		bio_crypt_set_ctx(bio, &ci->ci_key.blk_key->base[1], dun, gfp_mask);
+	} else {
+		fscrypt_generate_dun(ci, first_lblk, dun);
+		bio_crypt_set_ctx(bio, &ci->ci_key.blk_key->base[0], dun, gfp_mask);
+	}
+#else
 	fscrypt_generate_dun(ci, first_lblk, dun);
 	bio_crypt_set_ctx(bio, &ci->ci_key.blk_key->base, dun, gfp_mask);
+#endif
 }
 EXPORT_SYMBOL_GPL(fscrypt_set_bio_crypt_ctx);
 
@@ -413,10 +498,23 @@ bool fscrypt_mergeable_bio(struct bio *bio, const struct inode *inode,
 	 * uses the same pointer.  I.e., there's currently no need to support
 	 * merging requests where the keys are the same but the pointers differ.
 	 */
+
+#ifdef CONFIG_DISK_MAGO
+	if (bc->bc_key != &inode->i_crypt_info->ci_key.blk_key->base[0] &&
+		bc->bc_key != &inode->i_crypt_info->ci_key.blk_key->base[1])
+#else
 	if (bc->bc_key != &inode->i_crypt_info->ci_key.blk_key->base)
+#endif
 		return false;
 
+#ifdef CONFIG_DISK_MAGO
+	if (__is_emmc_devices(bio->bi_disk->queue))
+		fscrypt_generate_mmc_dun(inode->i_crypt_info, next_lblk, next_dun);
+	else
+		fscrypt_generate_dun(inode->i_crypt_info, next_lblk, next_dun);
+#else
 	fscrypt_generate_dun(inode->i_crypt_info, next_lblk, next_dun);
+#endif
 	return bio_crypt_dun_is_contiguous(bc, bio->bi_iter.bi_size, next_dun);
 }
 EXPORT_SYMBOL_GPL(fscrypt_mergeable_bio);

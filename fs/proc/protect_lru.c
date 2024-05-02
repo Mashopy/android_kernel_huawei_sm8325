@@ -62,6 +62,7 @@ static int sysctl_zero;
 static int sysctl_one = 1;
 static int sysctl_one_hundred = 100;
 static struct mutex handler_mutex;
+static unsigned long protect_min_mbyte;
 static unsigned long protect_max_mbytes[PROTECT_LEVELS_MAX];
 static unsigned long protect_cur_mbytes[PROTECT_LEVELS_MAX];
 
@@ -1007,7 +1008,7 @@ struct ctl_table protect_lru_table[] = {
 		.maxlen		= sizeof(protect_max_mbytes),
 		.mode		= 0640,
 		.proc_handler	= protect_max_mbytes_handler,
-		.extra1         = &sysctl_zero,
+		.extra1         = &protect_min_mbyte,
 	},
 	{
 		.procname	= "protect_cur_mbytes",

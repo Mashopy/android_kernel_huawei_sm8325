@@ -11,6 +11,10 @@
 #include <linux/slab.h>
 #include <linux/buffer_head.h>
 
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+#include <linux/mmc/dsm_sdcard.h>
+#endif
+
 #include "exfat_raw.h"
 #include "exfat_fs.h"
 
@@ -28,19 +32,24 @@ void __exfat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
 	va_list args;
 	struct va_format vaf;
 
-	if (report) {
-		va_start(args, fmt);
-		vaf.fmt = fmt;
-		vaf.va = &args;
+	va_start(args, fmt);
+	vaf.fmt = fmt;
+	vaf.va = &args;
+	if (report)
 		exfat_err(sb, "error, %pV", &vaf);
-		va_end(args);
-	}
+	va_end(args);
 
 	if (opts->errors == EXFAT_ERRORS_PANIC) {
 		panic("exFAT-fs (%s): fs panic from previous error\n",
 			sb->s_id);
 	} else if (opts->errors == EXFAT_ERRORS_RO && !sb_rdonly(sb)) {
 		sb->s_flags |= SB_RDONLY;
+#ifdef CONFIG_HUAWEI_SDCARD_DSM
+		if (sdcard_dclient && !dsm_client_ocuppy(sdcard_dclient)) {
+			dsm_client_record(sdcard_dclient, "exfat_fs_error: %pV", &vaf);
+			dsm_client_notify(sdcard_dclient, DSM_SDCARD_FILESYSTEM_ERR);
+		}
+#endif
 		exfat_err(sb, "Filesystem has been set read-only");
 	}
 }
