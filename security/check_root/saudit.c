@@ -22,6 +22,7 @@
 #include <linux/stacktrace.h>
 #include <linux/time.h>
 #include <linux/version.h>
+#include <linux/sched.h>
 
 #define SAUDIT_STACK_DEPTH 16
 #define SAUDIT_SELF_DEPTH 2
@@ -167,6 +168,16 @@ static void saudit_log_config(struct saudit_buffer *sab, int idx, int status,
 	}
 }
 
+void saudit_log_platform(struct saudit_buffer *sab, struct timespec64 *tv)
+{
+	struct timeval now = {0};
+	now.tv_sec = tv->tv_sec;
+	saudit_log_format(sab,
+		"time=%ld,pid=%d,pcomm=%.20s,gid=%d,gcomm=%.20s,",
+		now.tv_sec, current->pid, current->comm,
+		current->tgid, current->group_leader->comm);
+}
+
 void saudit_log(int idx, int status, unsigned int flags, const char *fmt, ...)
 {
 	va_list args;
@@ -195,10 +206,14 @@ void saudit_log(int idx, int status, unsigned int flags, const char *fmt, ...)
 #else
 	do_gettimeofday(&tv);
 #endif
+#ifdef CONFIG_ARCH_MONACO
+	saudit_log_platform(sab, &tv);
+#else
 	saudit_log_format(sab,
 		"time=%ull,pid=%d,pcomm=%.20s,gid=%d,gcomm=%.20s,",
 		(unsigned long long)tv.tv_sec, current->pid, current->comm,
 		current->tgid, current->group_leader->comm);
+#endif
 
 	if (fmt) {
 		va_start(args, fmt);

@@ -5,8 +5,16 @@
  */
 
 #include "hw_kernel_stp_uploader.h"
+#include <linux/rtc.h>
+#include <linux/time.h>
+#include <securec.h>
 
 #define KSTP_LOG_TAG "kernel_stp_uploader"
+
+#define YEAR_BASE 1900
+#define SECONDS_PER_MINUTE 60
+#define STP_DATE_LEN 16
+#define TIMESTAMP_FORMAT "%04d%02d%02d%02d%02d%02d"
 
 static struct kobject *g_kernel_stp_kobj;
 static struct kset *g_kernel_stp_kset;
@@ -15,6 +23,7 @@ static DEFINE_MUTEX(upload_mutex);
 const struct stp_item_fun g_funcs[] = {
 	{KERNEL_STP_UPLOAD, kernel_stp_upload_parse},
 	{KERNEL_STP_KSHIELD_UPLOAD, kernel_stp_kshield_upload_parse},
+	{KERNEL_STP_REPORT_SECURITY_INFO, kernel_stp_report_security_info_parse},
 };
 
 const struct stp_item_info item_info[] = {
@@ -37,7 +46,7 @@ const struct stp_item_info item_info[] = {
 
 const struct stp_item_info *get_item_info_by_idx(int idx)
 {
-	if (idx < STP_ITEM_MAX)
+	if (idx >= 0 && idx < STP_ITEM_MAX)
 		return &item_info[idx];
 	else
 		return NULL;
@@ -132,6 +141,23 @@ int kernel_stp_kshield_upload_parse(struct stp_item result, const char *addition
 	return 0;
 }
 
+int kernel_stp_report_security_info_parse(struct stp_item result,
+			const char *addition_info, char *upload_info)
+{
+	if (upload_info == NULL || addition_info == NULL) {
+		kstp_log_error(KSTP_LOG_TAG, "input arguments invalid");
+		return -EINVAL;
+	}
+
+	(void)result;
+	if (snprintf_s(upload_info, STP_INFO_MAXLEN, STP_INFO_MAXLEN - 1,
+		"security_guard=%s", addition_info) < 0) {
+		kstp_log_error(KSTP_LOG_TAG, "snprintf_s error");
+		return -1;
+	}
+	return 0;
+}
+
 /* concatenate kernel_stp data of type int and type char array */
 static int kernel_stp_data_adapter(char **uevent_envp, char *result)
 {
@@ -210,6 +236,30 @@ static int kernel_stp_upload_cmd(struct stp_item result, const char *addition_in
 	return ret;
 }
 
+static void get_current_time(char *buf, int length)
+{
+	struct rtc_time tm;
+	struct timespec64 tv;
+
+	ktime_get_real_ts64(&tv);
+	tv.tv_sec -= sys_tz.tz_minuteswest * SECONDS_PER_MINUTE;
+	rtc_time64_to_tm(tv.tv_sec, &tm);
+
+	(void)snprintf_s(buf, length, length - 1,
+		TIMESTAMP_FORMAT, tm.tm_year + YEAR_BASE, tm.tm_mon + 1,
+		tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+}
+
+static int event_info_to_json(const struct event_info *info, char *output, uint32_t length)
+{
+	uint8_t date[STP_DATE_LEN] = {0};
+
+	get_current_time(date, sizeof(date));
+	return snprintf_s(output, length, length - 1,
+		"{\"eventId\":%llu,\"date\":\"%s\",\"version\":\"%s\",\"eventContent\":%s}",
+		info->id, date, info->version, info->content);
+}
+
 int kernel_stp_upload(struct stp_item result, const char *addition_info)
 {
 	return kernel_stp_upload_cmd(result, addition_info, KERNEL_STP_UPLOAD);
@@ -220,3 +270,32 @@ int kernel_stp_kshield_upload(struct stp_item result, const char *addition_info)
 	return kernel_stp_upload_cmd(result, addition_info, KERNEL_STP_KSHIELD_UPLOAD);
 }
 
+int kernel_stp_report_security_info(const struct event_info *info)
+{
+	int ret;
+	struct stp_item result = {0};
+	char *addition_info = NULL;
+
+	if (info == NULL) {
+		kstp_log_error(KSTP_LOG_TAG, "input arguments invalid");
+		return -EINVAL;
+	}
+
+	addition_info = kzalloc(STP_INFO_MAXLEN, GFP_KERNEL);
+	if (addition_info == NULL) {
+		kstp_log_error(KSTP_LOG_TAG, "failed to alloc addition_info");
+		return -EINVAL;
+	}
+
+	ret = event_info_to_json(info, addition_info, STP_INFO_MAXLEN);
+	if (ret < 0) {
+		kstp_log_error(KSTP_LOG_TAG, "event_info_to_json failed");
+		kfree(addition_info);
+		return ret;
+	}
+
+	ret = kernel_stp_upload_cmd(result, addition_info, KERNEL_STP_REPORT_SECURITY_INFO);
+	kfree(addition_info);
+
+	return ret;
+}

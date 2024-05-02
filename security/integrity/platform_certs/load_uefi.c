@@ -120,13 +120,28 @@ static __init void uefi_revocationlist_x509(const char *source,
 
 /*
  * Return the appropriate handler for particular signature list types found in
- * the UEFI db and MokListRT tables.
+ * the UEFI db tables.
  */
 static __init efi_element_handler_t get_handler_for_db(const efi_guid_t *
 						       sig_type)
 {
 	if (efi_guidcmp(*sig_type, efi_cert_x509_guid) == 0)
 		return add_to_platform_keyring;
+	return 0;
+}
+
+/*
+ * Return the appropriate handler for particular signature list types found in
+ * the MokListRT tables.
+ */
+static __init efi_element_handler_t get_handler_for_mok(const efi_guid_t *sig_type)
+{
+	if (efi_guidcmp(*sig_type, efi_cert_x509_guid) == 0) {
+		if (IS_ENABLED(CONFIG_INTEGRITY_MACHINE_KEYRING))
+			return add_to_machine_keyring;
+		else
+			return add_to_platform_keyring;
+	}
 	return 0;
 }
 
@@ -191,7 +206,7 @@ static int __init load_uefi_certs(void)
 			pr_info("Couldn't get UEFI MokListRT\n");
 	} else {
 		rc = parse_efi_signature_list("UEFI:MokListRT",
-					      mok, moksize, get_handler_for_db);
+					      mok, moksize, get_handler_for_mok);
 		if (rc)
 			pr_err("Couldn't parse MokListRT signatures: %d\n", rc);
 		kfree(mok);

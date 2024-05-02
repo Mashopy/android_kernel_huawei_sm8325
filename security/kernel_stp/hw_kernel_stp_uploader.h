@@ -18,6 +18,7 @@
 enum stp_item_fun_type {
 	KERNEL_STP_UPLOAD = 0,
 	KERNEL_STP_KSHIELD_UPLOAD = 1,
+	KERNEL_STP_REPORT_SECURITY_INFO = 2,
 	KERNEL_STP_UPLOAD_MAX,
 };
 
@@ -29,6 +30,8 @@ struct stp_item_fun {
 int kernel_stp_upload_parse(struct stp_item result, const char *addition_info,
 			char *upload_info);
 int kernel_stp_kshield_upload_parse(struct stp_item result, const char *addition_info,
+			char *upload_info);
+int kernel_stp_report_security_info_parse(struct stp_item result, const char *addition_info,
 			char *upload_info);
 int kernel_stp_uploader_init(void);
 void kernel_stp_uploader_exit(void);

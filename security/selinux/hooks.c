@@ -1214,6 +1214,8 @@ static inline u16 socket_type_to_security_class(int family, int type, int protoc
 			else if (extsockclass && (protocol == IPPROTO_ICMP ||
 						  protocol == IPPROTO_ICMPV6))
 				return SECCLASS_ICMP_SOCKET;
+			else if (protocol == IPPROTO_MINTP)
+				return SECCLASS_TCP_SOCKET;
 			else
 				return SECCLASS_RAWIP_SOCKET;
 		case SOCK_DCCP:

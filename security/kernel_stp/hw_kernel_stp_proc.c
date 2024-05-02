@@ -14,7 +14,9 @@
 #endif
 #include <linux/version.h>
 
+#ifdef CONFIG_SECURITY_KSHIELD
 #include <chipset_common/security/kshield.h>
+#endif
 
 #define KSTP_LOG_TAG "kernel_stp_proc"
 
@@ -64,8 +66,10 @@ static int handle_stp_proc_write(u32 feature, u32 param, char *str)
 #else
 		return 0;
 #endif
+#ifdef CONFIG_SECURITY_KSHIELD
 	case KERNEL_STP_KSHIELD:
 		return ks_dev_ioctl(param, str);
+#endif
 	case HHEE_SWITCH:
 		return set_hhee_switch(param);
 	default:

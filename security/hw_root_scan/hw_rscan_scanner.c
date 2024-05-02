@@ -85,7 +85,7 @@ struct fault_private {
 
 bool get_xom_enable(void)
 {
-#ifdef CONFIG_HKIP_XOM_CODE
+#if defined(CONFIG_HKIP_XOM_CODE) || defined(CONFIG_JUMP_LABEL)
 	return true;
 #else
 	return false;

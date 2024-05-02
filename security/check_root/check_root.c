@@ -49,15 +49,35 @@ uint get_setids_state(void)
 	return ids;
 }
 
+static uid_t get_real_uid(uid_t uid)
+{
+	kuid_t kuid;
+	uid_t real_uid;
+
+	kuid.val = uid;
+	real_uid = from_kuid_munged(&init_user_ns, kuid);
+	return real_uid;
+}
+
+static gid_t get_real_gid(gid_t gid)
+{
+	kgid_t kgid;
+	gid_t real_gid;
+
+	kgid.val = gid;
+	real_gid = from_kgid_munged(&init_user_ns, kgid);
+	return real_gid;
+}
+
 static int checkroot_risk_id(int curr_id, unsigned int flag)
 {
 	const struct cred *now = current_cred();
 
-	if ((curr_id < ANDROID_THIRD_PART_APK_UID) && (curr_id != AID_SHELL))
+	if (((curr_id < ANDROID_THIRD_PART_APK_UID) && (curr_id != AID_SHELL)) || !curr_id)
 		return 0;
 	if (now)
-		pr_emerg("check_root:Uid %d,Gid %d,try to Privilege Escalate\n",
-			now->uid.val, now->gid.val);
+		pr_emerg("tgid:%d,comm:%s,check_root:Uid %d,Gid %d,try to Privilege Escalate\n",
+			current->tgid, current->comm, now->uid.val, now->gid.val);
 
 #ifdef CONFIG_CHECKROOT_FORCE_STOP
 	if (curr_id >= ANDROID_THIRD_PART_APK_UID) {
@@ -79,22 +99,22 @@ static int checkroot_risk_id(int curr_id, unsigned int flag)
 
 int checkroot_setuid(uid_t uid)
 {
-	return checkroot_risk_id((int)uid, CHECKROOT_SETUID_FLAG);
+	return checkroot_risk_id((int)get_real_uid(uid), CHECKROOT_SETUID_FLAG);
 }
 
 int checkroot_setgid(gid_t gid)
 {
-	return checkroot_risk_id((int)gid, CHECKROOT_SETGID_FLAG);
+	return checkroot_risk_id((int)get_real_gid(gid), CHECKROOT_SETGID_FLAG);
 }
 
 int checkroot_setresuid(uid_t uid)
 {
-	return checkroot_risk_id((int)uid, CHECKROOT_SETRESUID_FLAG);
+	return checkroot_risk_id((int)get_real_uid(uid), CHECKROOT_SETRESUID_FLAG);
 }
 
 int checkroot_setresgid(gid_t gid)
 {
-	return checkroot_risk_id((int)gid, CHECKROOT_SETRESGID_FLAG);
+	return checkroot_risk_id((int)get_real_gid(gid), CHECKROOT_SETRESGID_FLAG);
 }
 
 static int checkroot_readline(struct file *filp, char *buf, int len)
