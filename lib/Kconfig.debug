@@ -981,6 +981,20 @@ config DEFAULT_HUNG_TASK_TIMEOUT
 	  A timeout of 0 disables the check.  The default is two minutes.
 	  Keeping the default should be fine in most cases.
 
+config QCOM_DFX_LOCK_TRACE
+	bool "Lock Trace"
+	help
+	  Say Y to enable the kernel to check trace of lock owner. When
+	  lock cannot be obtained, print the trace of the lock owner
+	  periodically.
+
+config QCOM_DFX_LOCK_TRACE_DEBUG
+	bool "Lock Trace Debug"
+	help
+	  Say Y to enable the kernel to hold the lock and causing hungtask panic.
+	  Then we can test whether the system can find out which process is holding
+	  the lock.
+
 config BOOTPARAM_HUNG_TASK_PANIC
 	bool "Panic (Reboot) On Hung Tasks"
 	depends on DETECT_HUNG_TASK
