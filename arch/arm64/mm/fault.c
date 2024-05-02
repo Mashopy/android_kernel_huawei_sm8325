@@ -28,6 +28,10 @@
 #include <linux/qcom_scm.h>
 #endif
 
+#ifdef CONFIG_HW_ALLOC_ACCT
+#include <linux/alloc_acct.h>
+#endif
+
 #include <asm/acpi.h>
 #include <asm/bug.h>
 #include <asm/cmpxchg.h>
@@ -508,14 +512,22 @@ static int __kprobes do_page_fault(unsigned long addr, unsigned int esr,
 
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, addr);
 
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_spf_start();
+#endif
 	/*
 	 * let's try a speculative page fault without grabbing the
 	 * mmap_sem.
 	 */
 	fault = handle_speculative_fault(mm, addr, mm_flags, &vma);
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_spf_end();
+#endif
 	if (fault != VM_FAULT_RETRY)
 		goto done;
-
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_pgfault_start();
+#endif
 	/*
 	 * As per x86, we may deadlock here. However, since the kernel only
 	 * validly references user space from well defined areas of the code,
@@ -577,6 +589,9 @@ retry:
 		}
 	}
 	up_read(&mm->mmap_sem);
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_pgfault_end();
+#endif
 
 done:
 
@@ -654,6 +669,9 @@ done:
 
 no_context:
 	__do_kernel_fault(addr, esr, regs);
+#ifdef CONFIG_HW_ALLOC_ACCT
+	alloc_acct_pgfault_end();
+#endif
 	return 0;
 }
 
